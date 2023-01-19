@@ -103,8 +103,7 @@ The following events are used:
 * eventNovalue - `#*#give you absolutely nothing for the #1#.#*#`  
     Warn and move on when attempting to sell an item which the merchant will not buy.  
 
-This script depends on having `Write.lua` in your `lua/lib` folder.  
-    [Knightly1/knightlinc](https://gitlab.com/Knightly1/knightlinc/-/blob/master/Write.lua){_target=blank}  
+This script depends on having <a href="https://gitlab.com/Knightly1/knightlinc/-/blob/master/Write.lua" target="_blank">Write.lua</a> in your `lua/lib` folder.  
 
 This does not include the buy routines from ninjadvloot. It does include the sell routines but lootly sell routines seem more robust than the code that was in ninjadvloot.inc.  
 The forage event handling also does not handle fishing events like ninjadvloot did.  
