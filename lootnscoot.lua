@@ -338,7 +338,7 @@ end
 local function lootCorpse(corpseID)
     loot.logger.Debug('Enter lootCorpse')
     if mq.TLO.Cursor() then checkCursor() end
-    if mq.TLO.Me.FreeInventory() <= loot.SaveBagSlots and loot.ReportLoot then mq.cmdf('/%s \a-t[\ax\aylootutils\ax\a-t]\ax My bags are full, I can\'t loot anymore!\ay%s\ax', loot.LootChannel) end
+    if mq.TLO.Me.FreeInventory() <= loot.SaveBagSlots and loot.ReportLoot then mq.cmdf('/%s \a-t[\ax\aylootutils\ax\a-t]\ax My bags are full, I can\'t loot anymore!', loot.LootChannel) end
     mq.cmd('/loot')
     mq.delay(3000, function() return mq.TLO.Window('LootWnd').Open() end)
     mq.doevents('CantLoot')
@@ -377,13 +377,13 @@ local function lootCorpse(corpseID)
                 if not corpseItem.NoDrop() then
                     if corpseItem.Lore() and (haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots) then
                         if loot.ReportLoot then
-                            mq.cmdf('/%s \a-t[\ax\aylootutils\ax\a-t]\ax I already have lore item %s, I can\'t loot another!\ay%s\ax', loot.LootChannel, corpseItem.Name())
+                            mq.cmdf('/%s \a-t[\ax\aylootutils\ax\a-t]\ax I already have lore item %s, I can\'t loot another!', loot.LootChannel, corpseItem.Name())
                         else
                             loot.logger.Warn('Cannot loot lore item')
                         end
                     elseif freeSpace <= loot.SaveBagSlots then
                         if loot.ReportLoot then
-                            mq.cmdf('/%s \a-t[\ax\aylootutils\ax\a-t]\ax My bags are full, I can\'t loot anymore!!\ay%s\ax', loot.LootChannel, corpseItem.Name())
+                            mq.cmdf('/%s \a-t[\ax\aylootutils\ax\a-t]\ax My bags are full, I can\'t loot anymore! \ay%s\ax', loot.LootChannel, corpseItem.Name())
                         else
                             if loot.SpamLootInfo then loot.logger.Warn('Inventory full, cannot loot anymore') end
                         end
