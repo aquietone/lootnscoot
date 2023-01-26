@@ -10,10 +10,6 @@ local function bankItem(itemName)
     mq.delay(100, function() return not mq.TLO.Cursor() end)
 end
 
-local function isTradeskillsItem(item)
-    return item.Tradeskills()
-end
-
 if not mq.TLO.Window('BigBankWnd').Open() then
     printf('\arBank window must be open!')
     return
@@ -23,10 +19,10 @@ for i=1,10 do
     local bagSlot = mq.TLO.InvSlot('pack'..i).Item
     local containerSize = bagSlot.Container()
     if containerSize == 0 then
-        if isTradeskillsItem(bagSlot) then bankItem(bagSlot.Name()) end
+        if bagSlot.Tradeskills() then bankItem(bagSlot.Name()) end
     else
         for j=1,containerSize do
-            if isTradeskillsItem(bagSlot.Item(j)) then bankItem(bagSlot.Item(j).Name()) end
+            if bagSlot.Item(j).Tradeskills() then bankItem(bagSlot.Item(j).Name()) end
         end
     end
 end
