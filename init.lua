@@ -336,7 +336,8 @@ local function lootItem(index, doWhat, button)
     local itemName = mq.TLO.Corpse.Item(index).Name()
     mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
     -- Looting of no drop items is currently disabled with no flag to enable anyways
-    mq.delay(5000, function() return mq.TLO.Window('ConfirmationDialogBox').Open() or not mq.TLO.Corpse.Item(index).NoDrop() end)
+    -- added check to make sure the cursor isn't empty so we can exit the pause early.
+    mq.delay(5000, function() return mq.TLO.Window('ConfirmationDialogBox').Open() or not mq.TLO.Corpse.Item(index).NoDrop() or mq.TLO.Cursor() == nil end)
     if mq.TLO.Window('ConfirmationDialogBox').Open() then mq.cmd('/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup') end
     mq.delay(5000, function() return mq.TLO.Cursor() ~= nil or not mq.TLO.Window('LootWnd').Open() end)
     mq.delay(1) -- force next frame
@@ -393,8 +394,12 @@ local function lootCorpse(corpseID)
                         lootItem(i, getRule(corpseItem), 'leftmouseup')
                     end
                 elseif corpseItem.NoDrop() then
-                        if loot.LootNoDrop then lootItem(i, getRule(corpseItem), 'leftmouseup') end
-                        --table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                        if loot.LootNoDrop then
+                            lootItem(i, getRule(corpseItem), 'leftmouseup')
+                        else
+                            -- forgot to add the else for when we don't want to loot no drop items it gets added to the table to ignore.
+                            table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                        end
                 elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
                     lootItem(i, getRule(corpseItem), 'leftmouseup')
                 end
