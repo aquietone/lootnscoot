@@ -131,6 +131,7 @@ local loot = {
     QuestKeep = 10,
     StackPlatValue = 0,
     NoDropDefaults = "Quest|Keep|Ignore",
+    LootNoDrop = false,
     LootLagDelay = 0,
     SaveBagSlots = 3,
     MinSellPrice = -1,
@@ -196,6 +197,7 @@ local function loadSettings()
             loot[key] = value
         end
     end
+    --print(tostring(loot.LootNoDrop))
 end
 
 local function checkCursor()
@@ -334,8 +336,9 @@ local function lootItem(index, doWhat, button)
     local itemName = mq.TLO.Corpse.Item(index).Name()
     mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
     -- Looting of no drop items is currently disabled with no flag to enable anyways
-    --mq.delay(5000, function() return mq.TLO.Window('ConfirmationDialogBox').Open() or not mq.TLO.Corpse.Item(index).NoDrop() end)
-    --if mq.TLO.Window('ConfirmationDialogBox').Open() then mq.cmd('/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup') end
+    -- added check to make sure the cursor isn't empty so we can exit the pause early.
+    mq.delay(5000, function() return mq.TLO.Window('ConfirmationDialogBox').Open() or not mq.TLO.Corpse.Item(index).NoDrop() or mq.TLO.Cursor() == nil end)
+    if mq.TLO.Window('ConfirmationDialogBox').Open() then mq.cmd('/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup') end
     mq.delay(5000, function() return mq.TLO.Cursor() ~= nil or not mq.TLO.Window('LootWnd').Open() end)
     mq.delay(1) -- force next frame
     -- The loot window closes if attempting to loot a lore item you already have, but lore should have already been checked for
@@ -376,16 +379,27 @@ local function lootCorpse(corpseID)
             if corpseItem() then
                 local stackable = corpseItem.Stackable()
                 local freeStack = corpseItem.FreeStack()
-                if corpseItem.NoDrop() then
-                    table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
-                elseif corpseItem.Lore() then
+                if corpseItem.Lore() then
                     local haveItem = mq.TLO.FindItem(('=%s'):format(corpseItem.Name()))()
                     local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))()
                     if haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots then
                         table.insert(loreItems, corpseItem.ItemLink('CLICKABLE')())
+                    elseif corpseItem.NoDrop() then
+                            if loot.LootNoDrop then 
+                                lootItem(i, getRule(corpseItem), 'leftmouseup')
+                            else
+                                table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                            end
                     else
                         lootItem(i, getRule(corpseItem), 'leftmouseup')
                     end
+                elseif corpseItem.NoDrop() then
+                        if loot.LootNoDrop then
+                            lootItem(i, getRule(corpseItem), 'leftmouseup')
+                        else
+                            -- forgot to add the else for when we don't want to loot no drop items it gets added to the table to ignore.
+                            table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                        end
                 elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
                     lootItem(i, getRule(corpseItem), 'leftmouseup')
                 end
