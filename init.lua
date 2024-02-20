@@ -109,15 +109,18 @@ There is also no flag for combat looting. It will only loot if no mobs are withi
 local mq = require 'mq'
 local success, Write = pcall(require, 'lib.Write')
 if not success then printf('\arERROR: Write.lua could not be loaded\n%s\ax', Write) return end
-
+local eqServer = string.gsub(mq.TLO.EverQuest.Server(),' ','_')
+local eqChar = mq.TLO.Me.Name()
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot = {
     logger = Write,
     Version = "1.0",
     LootFile = mq.configDir .. '/Loot.ini',
+    SettingsFile = mq.configDir.. '/LootNScoot_'..eqServer..'_'..eqChar..'.ini',
     AddNewSales = true,
     LootForage = true,
     DoLoot = true,
+    WasLooting = false,
     CorpseRadius = 100,
     MobsTooClose = 40,
     ReportLoot = true,
@@ -146,7 +149,11 @@ local lootData = {}
 local doSell = false
 local cantLootList = {}
 local cantLootID = 0
-
+local tmpDoLoot = false
+local questItemCount = {
+    name = '',
+    count = 0
+}
 -- Constants
 local spawnSearch = '%s radius %d zradius 50'
 -- If you want destroy to actually loot and destroy items, change Destroy=false to Destroy=true.
@@ -165,7 +172,7 @@ local function writeSettings()
     for option,value in pairs(loot) do
         local valueType = type(value)
         if saveOptionTypes[valueType] then
-            mq.cmdf('/ini "%s" "%s" "%s" "%s"', loot.LootFile, 'Settings', option, value)
+            mq.cmdf('/ini "%s" "%s" "%s" "%s"', loot.SettingsFile, 'Settings', option, value)
         end
     end
 end
@@ -182,11 +189,12 @@ local function split(input, sep)
 end
 
 local function loadSettings()
-    local iniSettings = mq.TLO.Ini.File(loot.LootFile).Section('Settings')
+    local iniSettings = mq.TLO.Ini.File(loot.SettingsFile).Section('Settings')
     local keyCount = iniSettings.Key.Count()
     for i=1,keyCount do
         local key = iniSettings.Key.KeyAtIndex(i)()
         local value = iniSettings.Key(key).Value()
+        --print(key..' = '..value)
         if key == 'Version' then
             loot[key] = value
         elseif value == 'true' or value == 'false' then
@@ -197,6 +205,7 @@ local function loadSettings()
             loot[key] = value
         end
     end
+    tmpDoLoot = loot.DoLoot
     --print(tostring(loot.LootNoDrop))
 end
 
@@ -260,6 +269,11 @@ local function getRule(item)
         if loot.StackPlatValue > 0 and sellPrice*stackSize < loot.StackPlatValue then lootDecision = 'Ignore' end
         addRule(itemName, firstLetter, lootDecision)
     end
+    if questItemCount.name == itemName then
+        if questItemCount.count < loot.QuestKeep then
+            questItemCount.count = questItemCount.count + 1
+        end
+    end
     return lootData[firstLetter][itemName]
 end
 
@@ -292,6 +306,8 @@ local function commandHandler(...)
             loot.logger.Info("Reloaded Loot File")
         elseif args[1] == 'bank' then
             loot.bankStuff()
+        elseif args[1] == 'loot' then
+            loot.lootMobs()
         elseif args[1] == 'tsbank' then
             loot.markTradeSkillAsBank()
         end
@@ -349,10 +365,15 @@ local function lootItem(index, doWhat, button)
 end
 
 local function lootCorpse(corpseID)
+
+    if tmpDoLoot == false then return end
     loot.logger.Debug('Enter lootCorpse')
     if mq.TLO.Cursor() then checkCursor() end
     if mq.TLO.Me.FreeInventory() <= loot.SaveBagSlots then
-        report('My bags are full, I can\'t loot anymore!')
+        report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.')
+        tmpDoLoot = false
+        loot.WasLooting = true
+        return
     end
     for i=1,3 do
         mq.cmd('/loot')
@@ -380,10 +401,12 @@ local function lootCorpse(corpseID)
                 local stackable = corpseItem.Stackable()
                 local freeStack = corpseItem.FreeStack()
                 if corpseItem.Lore() then
-                    local haveItem = mq.TLO.FindItem(('=%s'):format(corpseItem.Name()))()
-                    local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))()
-                    if haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots then
+                    local haveItem = mq.TLO.FindItem(('=%s'):format(corpseItem.Name()))() or -1
+                    local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))() or -1
+                  --  report('Have Banked:: '..tostring(haveItemBank)..' Have ON ME:: '..tostring(haveItem))                  ---- DEBUG LINE
+                    if haveItem~= -1 or haveItemBank~= -1 or freeSpace <= loot.SaveBagSlots then
                         table.insert(loreItems, corpseItem.ItemLink('CLICKABLE')())
+                        report('\ayLootNScoot::\arLORE ITEM:: \ayI Already have \ag'..corpseItem.Name()..'\ar ::LORE ITEM')
                     elseif corpseItem.NoDrop() then
                             if loot.LootNoDrop then 
                                 lootItem(i, getRule(corpseItem), 'leftmouseup')
@@ -391,13 +414,13 @@ local function lootCorpse(corpseID)
                                 table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
                             end
                     else
+                        report('\ayLootNScoot::\arLORE ITEM:: \ayLooting Lore Item::\ag '..corpseItem.Name())
                         lootItem(i, getRule(corpseItem), 'leftmouseup')
                     end
                 elseif corpseItem.NoDrop() then
                         if loot.LootNoDrop then
                             lootItem(i, getRule(corpseItem), 'leftmouseup')
                         else
-                            -- forgot to add the else for when we don't want to loot no drop items it gets added to the table to ignore.
                             table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
                         end
                 elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
@@ -572,6 +595,7 @@ function loot.sellStuff()
     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
     loot.logger.Info(string.format('Total plat value sold: \ag%s\ax', newTotalPlat))
+    if mq.TLO.Me.FreeInventory() >= loot.SaveBagSlots and loot.WasLooting then tmpDoLoot = true end
 end
 
 -- BANKING
@@ -691,7 +715,7 @@ local function processArgs(args)
 end
 
 local function init(args)
-    local iniFile = mq.TLO.Ini.File(loot.LootFile)
+    local iniFile = mq.TLO.Ini.File(loot.SettingsFile)
     if not (iniFile.Exists() and iniFile.Section('Settings').Exists()) then
         writeSettings()
     else
@@ -706,7 +730,8 @@ end
 init({...})
 
 while not loot.Terminate do
-    if loot.DoLoot then loot.lootMobs() end
+    if mq.TLO.Me.FreeInventory() > loot.SaveBagSlots and loot.WasLooting then tmpDoLoot, loot.WasLooting = true, false end
+    if tmpDoLoot then loot.lootMobs() end
     if doSell then loot.sellStuff() doSell = false end
     mq.delay(1000)
 end
