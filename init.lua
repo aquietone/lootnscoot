@@ -379,6 +379,7 @@ local function lootCorpse(corpseID)
         report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.')
         tmpDoLoot = false
         loot.WasLooting = true
+        writeSettings()
         return
     end
     for i=1,3 do
@@ -600,7 +601,10 @@ function loot.sellStuff()
     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
     loot.logger.Info(string.format('Total plat value sold: \ag%s\ax', newTotalPlat))
-    if mq.TLO.Me.FreeInventory() >= loot.SaveBagSlots and loot.WasLooting then tmpDoLoot = true end
+    if mq.TLO.Me.FreeInventory() >= loot.SaveBagSlots and loot.WasLooting then
+        tmpDoLoot = true
+        writeSettings()
+    end
 end
 
 -- BANKING
