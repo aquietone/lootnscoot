@@ -412,7 +412,7 @@ local function lootCorpse(corpseID)
                     local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))() or -1
                     if haveItem~= -1 or haveItemBank~= -1 or freeSpace <= loot.SaveBagSlots then
                         table.insert(loreItems, corpseItem.ItemLink('CLICKABLE')())
-                        report('\ayLootNScoot::\arLORE ITEM:: \ayI Already have \ag'..corpseItem.Name()..'\ar ::LORE ITEM')
+                        report('\ayLootNScoot::\arLORE ITEM:: \ayI Already have \ag'..corpseItem.ItemLink('CLICKABLE')()..'\ar ::LORE ITEM')
                     elseif corpseItem.NoDrop() then
                             if loot.LootNoDrop then 
                                 lootItem(i, getRule(corpseItem), 'leftmouseup')
@@ -420,7 +420,7 @@ local function lootCorpse(corpseID)
                                 table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
                             end
                     else
-                        report('\ayLootNScoot::\arLORE ITEM:: \ayLooting Lore Item::\ag '..corpseItem.Name())
+                        report('\ayLootNScoot::\arLORE ITEM:: \ayLooting Lore Item::\ag '..corpseItem.ItemLink('CLICKABLE')())
                         lootItem(i, getRule(corpseItem), 'leftmouseup')
                     end
                 elseif corpseItem.NoDrop() then
