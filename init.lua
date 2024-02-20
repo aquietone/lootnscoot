@@ -207,12 +207,12 @@ local function loadSettings()
         end
     end
     tmpDoLoot = loot.DoLoot
-    shouldLootActions.Destroy = loot.DoDestroy or false
     if tonumber(loot.Version) < tonumber(version) then
         loot.Version = tostring(version)
         print('Updating Settings File to Version '..tostring(version))
         writeSettings()
-     end
+    end
+    shouldLootActions.Destroy = loot.DoDestroy
 end
 
 local function checkCursor()
