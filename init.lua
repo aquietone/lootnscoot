@@ -403,7 +403,6 @@ local function lootCorpse(corpseID)
                 if corpseItem.Lore() then
                     local haveItem = mq.TLO.FindItem(('=%s'):format(corpseItem.Name()))() or -1
                     local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))() or -1
-                  --  report('Have Banked:: '..tostring(haveItemBank)..' Have ON ME:: '..tostring(haveItem))                  ---- DEBUG LINE
                     if haveItem~= -1 or haveItemBank~= -1 or freeSpace <= loot.SaveBagSlots then
                         table.insert(loreItems, corpseItem.ItemLink('CLICKABLE')())
                         report('\ayLootNScoot::\arLORE ITEM:: \ayI Already have \ag'..corpseItem.Name()..'\ar ::LORE ITEM')
