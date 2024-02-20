@@ -111,10 +111,11 @@ local success, Write = pcall(require, 'lib.Write')
 if not success then printf('\arERROR: Write.lua could not be loaded\n%s\ax', Write) return end
 local eqServer = string.gsub(mq.TLO.EverQuest.Server(),' ','_')
 local eqChar = mq.TLO.Me.Name()
+local version = 1.2
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot = {
     logger = Write,
-    Version = "1.0",
+    Version = '"'..tostring(version)..'"',
     LootFile = mq.configDir .. '/Loot.ini',
     SettingsFile = mq.configDir.. '/LootNScoot_'..eqServer..'_'..eqChar..'.ini',
     AddNewSales = true,
@@ -141,6 +142,7 @@ local loot = {
     StackableOnly = false,
     CorpseRotTime = "440s",
     Terminate = true,
+    DoDestroy = false,
 }
 loot.logger.prefix = 'lootnscoot'
 
@@ -194,9 +196,8 @@ local function loadSettings()
     for i=1,keyCount do
         local key = iniSettings.Key.KeyAtIndex(i)()
         local value = iniSettings.Key(key).Value()
-        --print(key..' = '..value)
         if key == 'Version' then
-            loot[key] = value
+            loot[key] = tostring(value)
         elseif value == 'true' or value == 'false' then
             loot[key] = value == 'true' and true or false
         elseif tonumber(value) then
@@ -206,7 +207,12 @@ local function loadSettings()
         end
     end
     tmpDoLoot = loot.DoLoot
-    --print(tostring(loot.LootNoDrop))
+    shouldLootActions.Destroy = loot.DoDestroy or false
+    if tonumber(loot.Version) < tonumber(version) then
+        loot.Version = tostring(version)
+        print('Updating Settings File to Version '..tostring(version))
+        writeSettings()
+     end
 end
 
 local function checkCursor()
