@@ -1,2 +1,7 @@
+1.2.0
+- Split settings into a separate config file - grimmier
+- Track wasLooting state when bags get filled and looting stops - grimmier
+- Handle looting no drop items - grimmier
+
 1.0.0
 - Initial release
