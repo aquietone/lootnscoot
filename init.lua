@@ -152,10 +152,7 @@ local doSell = false
 local cantLootList = {}
 local cantLootID = 0
 local tmpDoLoot = false
-local questItemCount = {
-    name = '',
-    count = 0
-}
+
 -- Constants
 local spawnSearch = '%s radius %d zradius 50'
 -- If you want destroy to actually loot and destroy items, change Destroy=false to Destroy=true.
@@ -274,11 +271,6 @@ local function getRule(item)
         if not stackable and loot.StackableOnly then lootDecision = 'Ignore' end
         if loot.StackPlatValue > 0 and sellPrice*stackSize < loot.StackPlatValue then lootDecision = 'Ignore' end
         addRule(itemName, firstLetter, lootDecision)
-    end
-    if questItemCount.name == itemName then
-        if questItemCount.count < loot.QuestKeep then
-            questItemCount.count = questItemCount.count + 1
-        end
     end
     return lootData[firstLetter][itemName]
 end
@@ -408,9 +400,9 @@ local function lootCorpse(corpseID)
                 local stackable = corpseItem.Stackable()
                 local freeStack = corpseItem.FreeStack()
                 if corpseItem.Lore() then
-                    local haveItem = mq.TLO.FindItem(('=%s'):format(corpseItem.Name()))() or -1
-                    local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))() or -1
-                    if haveItem~= -1 or haveItemBank~= -1 or freeSpace <= loot.SaveBagSlots then
+                    local haveItem = mq.TLO.FindItem(('=%s'):format(corpseItem.Name()))()
+                    local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))()
+                    if haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots then
                         table.insert(loreItems, corpseItem.ItemLink('CLICKABLE')())
                         report('\ayLootNScoot::\arLORE ITEM:: \ayI Already have \ag'..corpseItem.ItemLink('CLICKABLE')()..'\ar ::LORE ITEM')
                     elseif corpseItem.NoDrop() then
@@ -602,7 +594,7 @@ function loot.sellStuff()
     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
     loot.logger.Info(string.format('Total plat value sold: \ag%s\ax', newTotalPlat))
     if mq.TLO.Me.FreeInventory() >= loot.SaveBagSlots and loot.WasLooting then
-        tmpDoLoot = true
+        tmpDoLoot, WasLooting = true, false
         writeSettings()
     end
 end
