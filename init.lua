@@ -121,7 +121,6 @@ local loot = {
     AddNewSales = true,
     LootForage = true,
     DoLoot = true,
-    BagsFull = false,
     CorpseRadius = 100,
     MobsTooClose = 40,
     ReportLoot = true,
@@ -152,7 +151,7 @@ local lootData = {}
 local doSell = false
 local cantLootList = {}
 local cantLootID = 0
-
+local areFull = false
 -- Constants
 local spawnSearch = '%s radius %d zradius 50'
 -- If you want destroy to actually loot and destroy items, change Destroy=false to Destroy=true.
@@ -359,6 +358,12 @@ end
 
 -- LOOTING
 
+local function CheckBags()
+    if mq.TLO.Me.FreeInventory() <= loot.SaveBagSlots then
+        if not areFull then areFull = true end
+    elseif areFull then areFull = false end
+end
+
 function eventCantLoot()
     cantLootID = mq.TLO.Target.ID()
 end
@@ -383,19 +388,16 @@ local function lootItem(index, doWhat, button)
     report('%sing \ay%s\ax', doWhat, itemName)
     if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then mq.cmd('/destroy') end
     if mq.TLO.Cursor() then checkCursor() end
+    mq.delay(10)
+    CheckBags()
+    if areFull then report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.') end
 end
 
 local function lootCorpse(corpseID)
 
-    if loot.BagsFull then return end
+    if areFull then return end
     loot.logger.Debug('Enter lootCorpse')
     if mq.TLO.Cursor() then checkCursor() end
-    if mq.TLO.Me.FreeInventory() <= loot.SaveBagSlots then
-        report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.')
-        loot.BagsFull = true
-        writeSettings()
-        return
-    end
     for i=1,3 do
         mq.cmd('/loot')
         mq.delay(1000, function() return mq.TLO.Window('LootWnd').Open() end)
@@ -615,10 +617,7 @@ function loot.sellStuff()
     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
     loot.logger.Info(string.format('Total plat value sold: \ag%s\ax', newTotalPlat))
-    if mq.TLO.Me.FreeInventory() >= loot.SaveBagSlots and loot.BagsFull then
-        loot.BagsFull = false
-        writeSettings()
-    end
+    CheckBags()
 end
 
 -- BANKING
@@ -753,7 +752,7 @@ end
 init({...})
 
 while not loot.Terminate do
-    if mq.TLO.Me.FreeInventory() > loot.SaveBagSlots and loot.BagsFull then loot.BagsFull = false writeSettings() end
+    CheckBags()
     if loot.DoLoot then loot.lootMobs() end
     if doSell then loot.sellStuff() doSell = false end
     mq.delay(1000)
