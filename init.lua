@@ -752,7 +752,7 @@ end
 init({...})
 
 while not loot.Terminate do
-    if loot.DoLoot then loot.lootMobs() end
+    if loot.DoLoot and not areFull then loot.lootMobs() end
     if doSell then loot.sellStuff() doSell = false end
     mq.delay(1000)
 end
