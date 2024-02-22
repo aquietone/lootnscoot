@@ -743,7 +743,7 @@ local function init(args)
     else
         loadSettings()
     end
-
+    CheckBags()
     setupEvents()
     setupBinds()
     processArgs(args)
@@ -752,7 +752,6 @@ end
 init({...})
 
 while not loot.Terminate do
-    CheckBags()
     if loot.DoLoot then loot.lootMobs() end
     if doSell then loot.sellStuff() doSell = false end
     mq.delay(1000)
