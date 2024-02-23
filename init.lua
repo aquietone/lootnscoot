@@ -297,7 +297,7 @@ local function getRule(item)
                 return 'Keep'
             else
                 report("\awIgnoring Quest Item:\ag %s \awCount:\ar %s \awof\ar %s",itemName,tostring(countHave),qKeep)
-                return 'Ignore'
+                return 'Destroy'
             end
         end
     end
@@ -390,6 +390,7 @@ local function lootItem(index, doWhat, button)
     if mq.TLO.Cursor() then checkCursor() end
     mq.delay(10)
     CheckBags()
+
     if areFull then report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.') end
 end
 
