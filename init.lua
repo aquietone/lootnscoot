@@ -297,9 +297,9 @@ local function getRule(item)
                 qVal = 'Keep'
             end
         end
-        return qVal
+        return qVal,qKeep
     end
-    return lootData[firstLetter][itemName]
+    return lootData[firstLetter][itemName],0
 end
 
 -- EVENTS
@@ -368,7 +368,7 @@ end
 ---@param index number @The current index we are looking at in loot window, 1-based.
 ---@param doWhat string @The action to take for the item.
 ---@param button string @The mouse button to use to loot the item. Currently only leftmouseup implemented.
-local function lootItem(index, doWhat, button)
+local function lootItem(index, doWhat, button, qKeep)
     loot.logger.Debug('Enter lootItem')
     if not shouldLootActions[doWhat] then return end
     local corpseItemID = mq.TLO.Corpse.Item(index).ID()
@@ -376,7 +376,9 @@ local function lootItem(index, doWhat, button)
     mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
     -- Looting of no drop items is currently disabled with no flag to enable anyways
     -- added check to make sure the cursor isn't empty so we can exit the pause early.-- or not mq.TLO.Corpse.Item(index).NoDrop() 
+    mq.delay(1)
     if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then mq.cmd('/destroy') end
+    mq.delay(1) -- for good measure.
     mq.delay(5000, function() return mq.TLO.Window('ConfirmationDialogBox').Open() or mq.TLO.Cursor() == nil end)
     if mq.TLO.Window('ConfirmationDialogBox').Open() then mq.cmd('/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup') end
     mq.delay(5000, function() return mq.TLO.Cursor() ~= nil or not mq.TLO.Window('LootWnd').Open() end)
@@ -385,12 +387,8 @@ local function lootItem(index, doWhat, button)
     if not mq.TLO.Window('LootWnd').Open() then return end
     report('%sing \ay%s\ax', doWhat, itemName)
     checkCursor()
-    local firstLetter = itemName:sub(1,1):upper()
-    if string.find(lootData[firstLetter][itemName],'Quest') then
+    if qKeep > 0 then
         local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
-        local qKeep = loot.QuestKeep
-        local _, position = string.find(lootData[firstLetter][itemName], '|')
-        if position then qKeep = tonumber(string.sub(lootData[firstLetter][itemName], position + 1)) end
         report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s",itemName,tostring(countHave),qKeep)
     end
     CheckBags()
@@ -426,6 +424,7 @@ local function lootCorpse(corpseID)
             local freeSpace = mq.TLO.Me.FreeInventory()
             local corpseItem = mq.TLO.Corpse.Item(i)
             if corpseItem() then
+                local itemRule, qKeep = getRule(corpseItem)
                 local stackable = corpseItem.Stackable()
                 local freeStack = corpseItem.FreeStack()
                 if corpseItem.Lore() then
@@ -433,29 +432,31 @@ local function lootCorpse(corpseID)
                     local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))()
                     if haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots then
                         table.insert(loreItems, corpseItem.ItemLink('CLICKABLE')())
+                        lootItem(i,'Ignore','leftmouseup', 0)
                     elseif corpseItem.NoDrop() then
                             if loot.LootNoDrop then
-                                lootItem(i, getRule(corpseItem), 'leftmouseup')
+                                lootItem(i, itemRule, 'leftmouseup', qKeep)
                             else
                                 table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                                lootItem(i,'Ignore','leftmouseup',0)
                             end
                     else
-                        lootItem(i, getRule(corpseItem), 'leftmouseup')
-                        print(getRule(corpseItem))
+                        lootItem(i, itemRule, 'leftmouseup', qKeep)
                     end
                 elseif corpseItem.NoDrop() then
                         if loot.LootNoDrop then
-                            lootItem(i, getRule(corpseItem), 'leftmouseup')
+                            lootItem(i, itemRule, 'leftmouseup', qKeep)
                         else
                             table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                            lootItem(i,'Ignore','leftmouseup',0)
                         end
                 elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
-                    lootItem(i, getRule(corpseItem), 'leftmouseup')
+                    lootItem(i, itemRule, 'leftmouseup', qKeep)
                 end
             end
-            mq.delay(100)
+            mq.delay(1)
             if mq.TLO.Cursor() then checkCursor() end
-            mq.delay(100)
+            mq.delay(1)
             if not mq.TLO.Window('LootWnd').Open() then break end
         end
         if loot.ReportLoot and (#noDropItems > 0 or #loreItems > 0) then
