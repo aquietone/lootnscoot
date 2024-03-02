@@ -111,38 +111,39 @@ local success, Write = pcall(require, 'lib.Write')
 if not success then printf('\arERROR: Write.lua could not be loaded\n%s\ax', Write) return end
 local eqServer = string.gsub(mq.TLO.EverQuest.Server(),' ','_')
 local eqChar = mq.TLO.Me.Name()
-local version = 1.3
+local version = 1.4
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot = {
     logger = Write,
     Version = '"'..tostring(version)..'"',
     LootFile = mq.configDir .. '/Loot.ini',
     SettingsFile = mq.configDir.. '/LootNScoot_'..eqServer..'_'..eqChar..'.ini',
-    AddNewSales = true,
-    LootForage = true,
-    DoLoot = true,
+    GlobalLootOn = true,
+    CombatLooting = false,
     CorpseRadius = 100,
     MobsTooClose = 40,
-    ReportLoot = true,
-    LootChannel = "dgt",
-    SpamLootInfo = false,
-    LootForageSpam = false,
-    GlobalLootOn = true,
-    CombatLooting = true,
-    GMLSelect = true,
-    ExcludeBag1 = "Extraplanar Trade Satchel",
-    QuestKeep = 10,
-    LootQuest = false,
-    StackPlatValue = 0,
-    NoDropDefaults = "Quest|Keep|Ignore",
-    LootNoDrop = false,
-    LootLagDelay = 0,
     SaveBagSlots = 3,
     MinSellPrice = -1,
+    StackPlatValue = 0,
     StackableOnly = false,
+    DoLoot = true,
+    LootForage = true,
+    LootNoDrop = false,
+    LootQuest = false,
+    DoDestroy = false,
+    AlwaysDestroy = false,
+    QuestKeep = 10,
+    LootChannel = "dgt",
+    ReportLoot = true,
+    SpamLootInfo = false,
+    LootForageSpam = false,
+    AddNewSales = true,
+    GMLSelect = true,
+    ExcludeBag1 = "Extraplanar Trade Satchel",
+    NoDropDefaults = "Quest|Keep|Ignore",
+    LootLagDelay = 0,
     CorpseRotTime = "440s",
     Terminate = true,
-    DoDestroy = false,
 }
 loot.logger.prefix = 'lootnscoot'
 
@@ -296,9 +297,11 @@ local function getRule(item)
             if countHave < tonumber(qKeep) then
                 qVal = 'Keep'
             end
+            if loot.AlwaysDestroy and qVal == 'Ignore' then qVal = 'Destroy' end
         end
         return qVal,qKeep
     end
+    if loot.AlwaysDestroy and lootData[firstLetter][itemName] == 'Ignore' then return 'Destroy',0 end
     return lootData[firstLetter][itemName],0
 end
 
@@ -356,9 +359,7 @@ end
 -- LOOTING
 
 local function CheckBags()
-    if mq.TLO.Me.FreeInventory() <= loot.SaveBagSlots then
-        if not areFull then areFull = true end
-    elseif areFull then areFull = false end
+    areFull = mq.TLO.Me.FreeInventory() <= loot.SaveBagSlots
 end
 
 function eventCantLoot()
@@ -377,9 +378,7 @@ local function lootItem(index, doWhat, button, qKeep)
     local itemLink = corpseItem.ItemLink('CLICKABLE')()
     mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
     -- Looting of no drop items is currently disabled with no flag to enable anyways
-    -- added check to make sure the cursor isn't empty so we can exit the pause early.-- or not mq.TLO.Corpse.Item(index).NoDrop() 
-    mq.delay(1)
-    if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then mq.cmd('/destroy') end
+    -- added check to make sure the cursor isn't empty so we can exit the pause early.-- or not mq.TLO.Corpse.Item(index).NoDrop()    
     mq.delay(1) -- for good measure.
     mq.delay(5000, function() return mq.TLO.Window('ConfirmationDialogBox').Open() or mq.TLO.Cursor() == nil end)
     if mq.TLO.Window('ConfirmationDialogBox').Open() then mq.cmd('/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup') end
@@ -387,17 +386,20 @@ local function lootItem(index, doWhat, button, qKeep)
     mq.delay(1) -- force next frame
     -- The loot window closes if attempting to loot a lore item you already have, but lore should have already been checked for
     if not mq.TLO.Window('LootWnd').Open() then return end
-    report('%sing \ay%s\ax', doWhat, itemLink)
+    if doWhat == 'Destroy' then mq.cmd('/destroy') end
     checkCursor()
-    if qKeep > 0 then
+    if qKeep > 0 and doWhat == 'Keep' then
         local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
-        report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s", itemLink,tostring(countHave),qKeep)
+        report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s", itemLink, tostring(countHave), qKeep)
+    else
+        report('%sing \ay%s\ax', doWhat, itemLink)
     end
     CheckBags()
     if areFull then report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.') end
 end
 
 local function lootCorpse(corpseID)
+    CheckBags()
     if areFull then return end
     loot.logger.Debug('Enter lootCorpse')
     if mq.TLO.Cursor() then checkCursor() end
