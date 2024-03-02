@@ -371,8 +371,10 @@ end
 local function lootItem(index, doWhat, button, qKeep)
     loot.logger.Debug('Enter lootItem')
     if not shouldLootActions[doWhat] then return end
-    local corpseItemID = mq.TLO.Corpse.Item(index).ID()
-    local itemName = mq.TLO.Corpse.Item(index).Name()
+    local corpseItem = mq.TLO.Corpse.Item(index)
+    local corpseItemID =corpseItem.ID()
+    local itemName = corpseItem.Name()
+    local itemLink = corpseItem.ItemLink('CLICKABLE')()
     mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
     -- Looting of no drop items is currently disabled with no flag to enable anyways
     -- added check to make sure the cursor isn't empty so we can exit the pause early.-- or not mq.TLO.Corpse.Item(index).NoDrop() 
@@ -385,11 +387,11 @@ local function lootItem(index, doWhat, button, qKeep)
     mq.delay(1) -- force next frame
     -- The loot window closes if attempting to loot a lore item you already have, but lore should have already been checked for
     if not mq.TLO.Window('LootWnd').Open() then return end
-    report('%sing \ay%s\ax', doWhat, itemName)
+    report('%sing \ay%s\ax', doWhat, itemLink)
     checkCursor()
     if qKeep > 0 then
         local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
-        report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s",itemName,tostring(countHave),qKeep)
+        report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s", itemLink,tostring(countHave),qKeep)
     end
     CheckBags()
     if areFull then report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.') end
@@ -423,6 +425,7 @@ local function lootCorpse(corpseID)
         for i=1,items do
             local freeSpace = mq.TLO.Me.FreeInventory()
             local corpseItem = mq.TLO.Corpse.Item(i)
+            local itemLink = corpseItem.ItemLink('CLICKABLE')()
             if corpseItem() then
                 local itemRule, qKeep = getRule(corpseItem)
                 local stackable = corpseItem.Stackable()
@@ -431,13 +434,13 @@ local function lootCorpse(corpseID)
                     local haveItem = mq.TLO.FindItem(('=%s'):format(corpseItem.Name()))()
                     local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))()
                     if haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots then
-                        table.insert(loreItems, corpseItem.ItemLink('CLICKABLE')())
+                        table.insert(loreItems, itemLink)
                         lootItem(i,'Ignore','leftmouseup', 0)
                     elseif corpseItem.NoDrop() then
                             if loot.LootNoDrop then
                                 lootItem(i, itemRule, 'leftmouseup', qKeep)
                             else
-                                table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                                table.insert(noDropItems, itemLink)
                                 lootItem(i,'Ignore','leftmouseup',0)
                             end
                     else
@@ -447,7 +450,7 @@ local function lootCorpse(corpseID)
                         if loot.LootNoDrop then
                             lootItem(i, itemRule, 'leftmouseup', qKeep)
                         else
-                            table.insert(noDropItems, corpseItem.ItemLink('CLICKABLE')())
+                            table.insert(noDropItems, itemLink)
                             lootItem(i,'Ignore','leftmouseup',0)
                         end
                 elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
@@ -625,6 +628,7 @@ function loot.sellStuff()
     mq.flushevents('Sell')
     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
+    report('Total plat value sold: \ag%s\ax', newTotalPlat)
     loot.logger.Info(string.format('Total plat value sold: \ag%s\ax', newTotalPlat))
     CheckBags()
 end
