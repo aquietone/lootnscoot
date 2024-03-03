@@ -386,7 +386,7 @@ local function lootItem(index, doWhat, button, qKeep)
     mq.delay(1) -- force next frame
     -- The loot window closes if attempting to loot a lore item you already have, but lore should have already been checked for
     if not mq.TLO.Window('LootWnd').Open() then return end
-    if doWhat == 'Destroy' then mq.cmd('/destroy') end
+    if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then mq.cmd('/destroy') end
     checkCursor()
     if qKeep > 0 and doWhat == 'Keep' then
         local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
@@ -631,7 +631,6 @@ function loot.sellStuff()
     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
     report('Total plat value sold: \ag%s\ax', newTotalPlat)
-    loot.logger.Info(string.format('Total plat value sold: \ag%s\ax', newTotalPlat))
     CheckBags()
 end
 
