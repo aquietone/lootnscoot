@@ -158,7 +158,7 @@ local spawnSearch = '%s radius %d zradius 50'
 -- If you want destroy to actually loot and destroy items, change Destroy=false to Destroy=true.
 -- Otherwise, destroy behaves the same as ignore.
 local shouldLootActions = {Keep=true, Bank=true, Sell=true, Destroy=false, Ignore=false}
-local validActions = {keep='Keep',bank='Bank',sell='Sell',ignore='Ignore',destroy='Destroy'}
+local validActions = {keep='Keep',bank='Bank',sell='Sell',ignore='Ignore',destroy='Destroy',quest='Quest'}
 local saveOptionTypes = {string=1,number=1,boolean=1}
 
 -- FORWARD DECLARATIONS
@@ -338,16 +338,14 @@ local function commandHandler(...)
             loot.lootMobs()
         elseif args[1] == 'tsbank' then
             loot.markTradeSkillAsBank()
+        elseif validActions[args[1]] and mq.TLO.Cursor() then
+            addRule(mq.TLO.Cursor(), mq.TLO.Cursor():sub(1,1), validActions[args[1]])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", mq.TLO.Cursor(), validActions[args[1]]))
         end
     elseif #args == 2 then
-        if validActions[args[1]] and args[2] ~= 'NULL' then
-            addRule(args[2], args[2]:sub(1,1), validActions[args[1]])
-            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", args[2], validActions[args[1]]))
-        end
-    elseif #args == 3 then
-        if args[1] == 'quest' and args[2] ~= 'NULL' then
-            addRule(args[2], args[2]:sub(1,1), 'Quest|'..args[3])
-            loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", args[2], args[3]))
+        if args[1] == 'quest' and mq.TLO.Cursor() then
+            addRule(mq.TLO.Cursor(),mq.TLO.Cursor():sub(1,1), 'Quest|'..args[2])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[2]))
         end
     end
 end
