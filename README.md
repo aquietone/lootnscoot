@@ -71,14 +71,17 @@ Optionally, configure settings using:
 
 The script will setup a bind for "/lootutils":  
 
-* `/lootutils <action> "${Cursor.Name}"`  
-    Set the loot rule for an item. "action" may be one of:  
+* `/lootutils <action>`  
+    Set the loot rule for an item on cursor. "action" may be one of:  
         - Keep  
         - Bank  
         - Sell  
         - Ignore  
         - Destroy  
-        - Quest|#  
+        - Quest or Quest|#
+
+* `/lootutils quest #`
+    Set Quest|# where # is the number you want to keep. without the number we default to QuestKeep Setting.
 
 * `/lootutils reload`  
     Reload the contents of `Loot.ini`  
@@ -87,7 +90,10 @@ The script will setup a bind for "/lootutils":
 * `/lootutils tsbank`  
     Mark all tradeskill items in inventory as Bank  
 
-If running in standalone mode, the bind also supports:  
+If running in standalone mode, the bind also supports: 
+
+* `/lootutils loot`  
+    Runs lootutils.lootMobs() one time reguardless of DoLoot = false.
 
 * `/lootutils sell`  
     Runs lootutils.sellStuff() one time  
