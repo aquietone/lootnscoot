@@ -10,6 +10,10 @@ I may have glossed over some of the events or edge cases so it may have some iss
 
 Or those things might just work, I just haven't tested it very much using lvl 1 toons on project lazarus.  
 
+* Settings are stored per character in the config dir `LootNScoot_Server_CharName.ini`
+
+* Loot Items are stored for all characters in the config dir `Loot.ini`
+
 This script can be used in two ways:  
 
 1. Included within a larger script using require, for example if you have some KissAssist-like lua script:
@@ -78,13 +82,14 @@ The script will setup a bind for "/lootutils":
         - Sell  
         - Ignore  
         - Destroy  
-        - Quest or Quest|#
+        - Quest or `Quest #`
+        - Tribute
 
-* `/lootutils quest #`
-    Set Quest|# where # is the number you want to keep. without the number we default to QuestKeep Setting.
+        * Quest items can be entered as either `/lootutils quest` or `/lootutils quest #` where # is the number you want to keep. Otherwise we use the QuestKeep Setting from the Settings file.
+        * Tribute function not yet implimented. currently Tribute acts as Keep when it comes to selling functions.
 
 * `/lootutils reload`  
-    Reload the contents of `Loot.ini`  
+    Reload the Settings `LootNScoot_Server_CharName.ini` and the contents of `Loot.ini`  
 * `/lootutils bank`  
     Put all items from inventory marked as Bank into the bank  
 * `/lootutils tsbank`  
