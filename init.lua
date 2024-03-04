@@ -152,11 +152,9 @@ local loot = {
 loot.logger.prefix = 'lootnscoot'
 
 -- Internal settings
-local lootData = {}
-local doSell = false
-local cantLootList = {}
+local lootData, cantLootList = {}, {}
+local doSell, doTribute, areFull = false, false, false
 local cantLootID = 0
-local areFull = false
 -- Constants
 local spawnSearch = '%s radius %d zradius 50'
 -- If you want destroy to actually loot and destroy items, change DoDestroy=false to DoDestroy=true in the Settings Ini.
@@ -361,6 +359,8 @@ local function commandHandler(...)
 			loot.logger.Info("Reloaded Settings And Loot Files")
 			elseif args[1] == 'bank' then
 			loot.bankStuff()
+            elseif args[1] == 'tribute' then
+            doTribute = true
 			elseif args[1] == 'loot' then
 			loot.lootMobs()
 			elseif args[1] == 'tsbank' then
@@ -587,8 +587,9 @@ local function openVendor()
 	loot.logger.Debug('Opening merchant window')
 	mq.cmd('/nomodkey /click right target')
 	loot.logger.Debug('Waiting for merchant window to populate')
-	mq.delay(1000, function() return mq.TLO.Window('MerchantWnd').Open() end)
-	if not mq.TLO.Window('MerchantWnd').Open() then return false end
+	mq.delay(1000, function() return mq.TLO.Window('MerchantWnd').Open() or mq.TLO.Window('TributeMasterWnd').Open() end)
+	if not mq.TLO.Window('MerchantWnd').Open() or mq.TLO.Window('TributeMasterWnd').Open() then return false end
+    if mq.TLO.Window('TributeMasterWnd').Open() then return true end
 	mq.delay(5000, function() return mq.TLO.Merchant.ItemsReceived() end)
 	return mq.TLO.Merchant.ItemsReceived()
 end
@@ -658,6 +659,58 @@ function loot.sellStuff()
 	local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
 	report('Total plat value sold: \ag%s\ax', newTotalPlat)
 	CheckBags()
+end
+
+-- TRIBUTEING
+
+local function tributeToVendor(itemToTrib)
+    if NEVER_SELL[itemToTrib.Name()] then return end
+    while mq.TLO.FindItemCount('='..itemToTrib.Name())() > 0 do
+        if mq.TLO.Window('TributeMasterWnd').Open() then
+            loot.logger.Info('Tributeing '..itemToTrib.Name())
+            mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToTrib.Name())
+            mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Value.Tribute() end)
+            if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
+            mq.delay(1000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
+        end
+    end
+end
+
+function loot.tributeStuff()
+    if not mq.TLO.Window('TributeMasterWnd').Open() then
+        if not goToVendor() then return end
+        if not openVendor() then return end
+    end
+    -- Check top level inventory items that are marked as well, which aren't bags
+    for i=1,10 do
+        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+        if bagSlot.Container() == 0 then
+            if bagSlot.ID() then
+                local itemToTrib = bagSlot
+                local tribRule = getRule(bagSlot)
+                if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
+            end
+        end
+    end
+    -- Check items in bags which are marked as tribute
+    for i=1,10 do
+        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+        local containerSize = bagSlot.Container()
+        if containerSize and containerSize > 0 then
+            for j=1,containerSize do
+                local itemToTrib = bagSlot.Item(j)
+                if itemToTrib.ID() then
+                    local tribRule = getRule(itemToTrib)
+                    if tribRule == 'Tribute' then
+                        tributeToVendor(itemToTrib)
+                    end
+                end
+            end
+        end
+    end
+    mq.flushevents('Tribute')
+    if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
+    CheckBags()
 end
 
 -- BANKING
@@ -794,6 +847,7 @@ init({...})
 while not loot.Terminate do
 	if loot.DoLoot and not areFull then loot.lootMobs() end
 	if doSell then loot.sellStuff() doSell = false end
+    if doTribute then loot.tributeStuff() doTribute = false end
 	mq.doevents()
 	mq.delay(1000)
 end
