@@ -197,11 +197,11 @@ local function loadSettings()
 		local value = iniSettings.Key(key).Value()
 		if key == 'Version' then
 			loot[key] = tostring(value)
-			elseif value == 'true' or value == 'false' then
+		elseif value == 'true' or value == 'false' then
 			loot[key] = value == 'true' and true or false
-			elseif tonumber(value) then
+		elseif tonumber(value) then
 			loot[key] = tonumber(value)
-			else
+		else
 			loot[key] = value
 		end
 	end
@@ -352,24 +352,24 @@ local function commandHandler(...)
 	if #args == 1 then
 		if args[1] == 'sell' and not loot.Terminate then
 			doSell = true
-			elseif args[1] == 'reload' then
+		elseif args[1] == 'reload' then
 			lootData = {}
 			loadSettings()
 			loot.Terminate = false
 			loot.logger.Info("Reloaded Settings And Loot Files")
-			elseif args[1] == 'bank' then
+		elseif args[1] == 'bank' then
 			loot.bankStuff()
-            elseif args[1] == 'tribute' then
-            doTribute = true
-			elseif args[1] == 'loot' then
+		elseif args[1] == 'tribute' then
+			doTribute = true
+		elseif args[1] == 'loot' then
 			loot.lootMobs()
-			elseif args[1] == 'tsbank' then
+		elseif args[1] == 'tsbank' then
 			loot.markTradeSkillAsBank()
-			elseif validActions[args[1]] and mq.TLO.Cursor() then
+		elseif validActions[args[1]] and mq.TLO.Cursor() then
 			addRule(mq.TLO.Cursor(), mq.TLO.Cursor():sub(1,1), validActions[args[1]])
 			loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", mq.TLO.Cursor(), validActions[args[1]]))
 		end
-		elseif #args == 2 then
+	elseif #args == 2 then
 		if args[1] == 'quest' and mq.TLO.Cursor() then
 			addRule(mq.TLO.Cursor(),mq.TLO.Cursor():sub(1,1), 'Quest|'..args[2])
 			loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[2]))
@@ -416,7 +416,7 @@ local function lootItem(index, doWhat, button, qKeep)
 	if qKeep > 0 and doWhat == 'Keep' then
 		local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
 		report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s", itemLink, tostring(countHave), qKeep)
-		else
+	else
 		report('%sing \ay%s\ax', doWhat, itemLink)
 	end
 	CheckBags()
@@ -464,24 +464,24 @@ local function lootCorpse(corpseID)
 					if haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots then
 						table.insert(loreItems, itemLink)
 						lootItem(i,'Ignore','leftmouseup', 0)
-						elseif corpseItem.NoDrop() then
+					elseif corpseItem.NoDrop() then
 						if loot.LootNoDrop then
 							lootItem(i, itemRule, 'leftmouseup', qKeep)
-							else
+						else
 							table.insert(noDropItems, itemLink)
 							lootItem(i,'Ignore','leftmouseup',0)
 						end
-						else
+					else
 						lootItem(i, itemRule, 'leftmouseup', qKeep)
 					end
-					elseif corpseItem.NoDrop() then
+				elseif corpseItem.NoDrop() then
 					if loot.LootNoDrop then
 						lootItem(i, itemRule, 'leftmouseup', qKeep)
-						else
+					else
 						table.insert(noDropItems, itemLink)
 						lootItem(i,'Ignore','leftmouseup',0)
 					end
-					elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
+				elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
 					lootItem(i, itemRule, 'leftmouseup', qKeep)
 				end
 			end
@@ -589,7 +589,7 @@ local function openVendor()
 	loot.logger.Debug('Waiting for merchant window to populate')
 	mq.delay(1000, function() return mq.TLO.Window('MerchantWnd').Open() or mq.TLO.Window('TributeMasterWnd').Open() end)
 	if not mq.TLO.Window('MerchantWnd').Open() or mq.TLO.Window('TributeMasterWnd').Open() then return false end
-    if mq.TLO.Window('TributeMasterWnd').Open() then return true end
+	if mq.TLO.Window('TributeMasterWnd').Open() then return true end
 	mq.delay(5000, function() return mq.TLO.Merchant.ItemsReceived() end)
 	return mq.TLO.Merchant.ItemsReceived()
 end
@@ -664,53 +664,53 @@ end
 -- TRIBUTEING
 
 local function tributeToVendor(itemToTrib)
-    if NEVER_SELL[itemToTrib.Name()] then return end
-    while mq.TLO.FindItemCount('='..itemToTrib.Name())() > 0 do
-        if mq.TLO.Window('TributeMasterWnd').Open() then
-            loot.logger.Info('Tributeing '..itemToTrib.Name())
-            mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToTrib.Name())
-            mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Value.Tribute() end)
-            if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
-            mq.delay(1000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
-        end
-    end
+	if NEVER_SELL[itemToTrib.Name()] then return end
+	while mq.TLO.FindItemCount('='..itemToTrib.Name())() > 0 do
+		if mq.TLO.Window('TributeMasterWnd').Open() then
+			loot.logger.Info('Tributeing '..itemToTrib.Name())
+			mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToTrib.Name())
+			mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Value.Tribute() end)
+			if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
+			mq.delay(1000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
+		end
+	end
 end
 
 function loot.tributeStuff()
-    if not mq.TLO.Window('TributeMasterWnd').Open() then
-        if not goToVendor() then return end
-        if not openVendor() then return end
-    end
-    -- Check top level inventory items that are marked as well, which aren't bags
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        if bagSlot.Container() == 0 then
-            if bagSlot.ID() then
-                local itemToTrib = bagSlot
-                local tribRule = getRule(bagSlot)
-                if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
-            end
-        end
-    end
-    -- Check items in bags which are marked as tribute
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        local containerSize = bagSlot.Container()
-        if containerSize and containerSize > 0 then
-            for j=1,containerSize do
-                local itemToTrib = bagSlot.Item(j)
-                if itemToTrib.ID() then
-                    local tribRule = getRule(itemToTrib)
-                    if tribRule == 'Tribute' then
-                        tributeToVendor(itemToTrib)
-                    end
-                end
-            end
-        end
-    end
-    mq.flushevents('Tribute')
-    if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
-    CheckBags()
+	if not mq.TLO.Window('TributeMasterWnd').Open() then
+		if not goToVendor() then return end
+		if not openVendor() then return end
+	end
+	-- Check top level inventory items that are marked as well, which aren't bags
+	for i=1,10 do
+		local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+		if bagSlot.Container() == 0 then
+			if bagSlot.ID() then
+				local itemToTrib = bagSlot
+				local tribRule = getRule(bagSlot)
+				if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
+			end
+		end
+	end
+	-- Check items in bags which are marked as tribute
+	for i=1,10 do
+		local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+		local containerSize = bagSlot.Container()
+		if containerSize and containerSize > 0 then
+			for j=1,containerSize do
+				local itemToTrib = bagSlot.Item(j)
+				if itemToTrib.ID() then
+					local tribRule = getRule(itemToTrib)
+					if tribRule == 'Tribute' then
+						tributeToVendor(itemToTrib)
+					end
+				end
+			end
+		end
+	end
+	mq.flushevents('Tribute')
+	if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
+	CheckBags()
 end
 
 -- BANKING
@@ -804,10 +804,10 @@ function eventForage()
 			end
 			-- will a lore item we already have even show up on cursor?
 			-- free inventory check won't cover an item too big for any container so may need some extra check related to that?
-			elseif (shouldLootActions[ruleAction] or currentItemAmount < ruleAmount) and (not cursorItem.Lore() or currentItemAmount == 0) and (mq.TLO.Me.FreeInventory() or (cursorItem.Stackable() and cursorItem.FreeStack())) then
+		elseif (shouldLootActions[ruleAction] or currentItemAmount < ruleAmount) and (not cursorItem.Lore() or currentItemAmount == 0) and (mq.TLO.Me.FreeInventory() or (cursorItem.Stackable() and cursorItem.FreeStack())) then
 			if loot.LootForageSpam then loot.logger.Info('Keeping foraged item '..foragedItem) end
 			mq.cmd('/autoinv')
-			else
+		else
 			if loot.LootForageSpam then loot.logger.Warn('Unable to process item '..foragedItem) end
 			break
 		end
@@ -821,9 +821,9 @@ local function processArgs(args)
 	if #args == 1 then
 		if args[1] == 'sell' then
 			loot.sellStuff()
-			elseif args[1] == 'once' then
+		elseif args[1] == 'once' then
 			loot.lootMobs()
-			elseif args[1] == 'standalone' then
+		elseif args[1] == 'standalone' then
 			loot.Terminate = false
 		end
 	end
@@ -847,7 +847,7 @@ init({...})
 while not loot.Terminate do
 	if loot.DoLoot and not areFull then loot.lootMobs() end
 	if doSell then loot.sellStuff() doSell = false end
-    if doTribute then loot.tributeStuff() doTribute = false end
+	if doTribute then loot.tributeStuff() doTribute = false end
 	mq.doevents()
 	mq.delay(1000)
 end
