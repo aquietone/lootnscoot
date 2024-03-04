@@ -51,8 +51,10 @@ end
 
 `lootutils.sellStuff()` will run until it has attempted to sell all items marked as sell to the targeted vendor.  
 
-Note that in the above example, loot.sellStuff() isn't being called directly from the bind callback.  
-Selling may take some time and includes delays, so it is best to be called from your main loop.  
+`lootutils.tributeStuff()` will run until it has attempted to tribute all items marked as tribute to the targeted tribute master.
+
+Note that in the above example, `loot.sellStuff()` or `loot.tributeStuff()` aren't being called directly from the bind callback.  
+These functions may take some time and includes delays, so it is best to be called from your main loop.  
 
 Optionally, configure settings using:  
 
@@ -86,14 +88,15 @@ The script will setup a bind for "/lootutils":
         - Tribute
 
         * Quest items can be entered as either `/lootutils quest` or `/lootutils quest #` where # is the number you want to keep. Otherwise we use the QuestKeep Setting from the Settings file.
-        * Tribute function not yet implimented. currently Tribute acts as Keep when it comes to selling functions.
 
 * `/lootutils reload`  
-    Reload the Settings `LootNScoot_Server_CharName.ini` and the contents of `Loot.ini`  
+    Reload the Settings `LootNScoot_Server_CharName.ini` and the contents of `Loot.ini` 
+
 * `/lootutils bank`  
     Put all items from inventory marked as Bank into the bank  
+
 * `/lootutils tsbank`  
-    Mark all tradeskill items in inventory as Bank  
+    Mark all tradeskill items in inventory as Bank 
 
 If running in standalone mode, the bind also supports: 
 
@@ -102,6 +105,9 @@ If running in standalone mode, the bind also supports:
 
 * `/lootutils sell`  
     Runs lootutils.sellStuff() one time  
+
+* `/lootutils tribute`  
+Runs lootutils.tributeStuff() one time 
 
 The following events are used:  
 
