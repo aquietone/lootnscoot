@@ -669,7 +669,7 @@ local function tributeToVendor(itemToTrib)
 		if mq.TLO.Window('TributeMasterWnd').Open() then
 			loot.logger.Info('Tributeing '..itemToTrib.Name())
 			mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToTrib.Name())
-			mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Value.Tribute() end)
+			mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
 			if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
 			mq.delay(1000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
 		end
