@@ -68,7 +68,7 @@ The script will setup a bind for "/lootutils":
             - Keep
             - Bank
             - Sell
-            - Tribute (Not Implemented)
+            - Tribute
             - Ignore
             - Destroy
             - Quest|#
@@ -81,7 +81,7 @@ The script will setup a bind for "/lootutils":
         Mark all tradeskill items in inventory as Bank
 
 If running in standalone mode, the bind also supports:
-    /lootutils sell
+    /lootutils sellstuff
         Runs lootutils.sellStuff() one time
 
 The following events are used:
@@ -350,13 +350,8 @@ end
 local function commandHandler(...)
     local args = {...}
     if #args == 1 then
-        if args[1] == 'sell' and not loot.Terminate then
-            if not mq.TLO.Cursor() then
-                doSell = true
-            else
-                addRule(mq.TLO.Cursor(), mq.TLO.Cursor():sub(1,1), 'Sell')
-                loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", mq.TLO.Cursor(), 'Sell'))
-            end
+        if args[1] == 'sellstuff' and not loot.Terminate then
+            doSell = true
         elseif args[1] == 'reload' then
             lootData = {}
             loadSettings()
@@ -391,6 +386,14 @@ local function commandHandler(...)
         if args[1] == 'quest' and mq.TLO.Cursor() then
             addRule(mq.TLO.Cursor(),mq.TLO.Cursor():sub(1,1), 'Quest|'..args[2])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[2]))
+        elseif validActions[args[1]] and args[2] ~= 'NULL' then
+            addRule(args[2], args[2]:sub(1,1), validActions[args[1]])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", args[2], validActions[args[1]]))
+        end
+    elseif #args == 3 then
+        if validActions[args[1]] and args[2] ~= 'NULL' then
+            addRule(args[2], args[2]:sub(1,1), validActions[args[1]]..'|'..args[3])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s|%s\ax", args[2], validActions[args[1]], args[3]))
         end
     end
 end
