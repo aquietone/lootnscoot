@@ -119,7 +119,7 @@ local loot = {
     Version = '"'..tostring(version)..'"',
     LootFile = mq.configDir .. '/Loot.ini',
     SettingsFile = mq.configDir.. '/LootNScoot_'..eqServer..'_'..eqChar..'.ini',
-    GlobalLootOn = true,        -- Enable Global Loot Items.
+    GlobalLootOn = true,        -- Enable Global Loot Items. not implimented yet
     CombatLooting = false,      -- Enables looting during combat. Not recommended on the MT
     CorpseRadius = 100,         -- Radius to activly loot corpses
     MobsTooClose = 40,          -- Don't loot if mobs are in this range.
@@ -143,6 +143,7 @@ local loot = {
     SpamLootInfo = false,       -- Echo Spam for Looting
     LootForageSpam = false,     -- Echo spam for Foraged Items
     AddNewSales = true,         -- Adds 'Sell' Flag to items automatically if you sell them while the script is running.
+    AddNewTributes = true,      -- Adds 'Tribute' Flag to items automatically if you Tribute them while the script is running.
     GMLSelect = true,           -- not implimented yet
     ExcludeBag1 = "Extraplanar Trade Satchel", -- Name of Bag to ignore items in when selling
     NoDropDefaults = "Quest|Keep|Ignore",   -- not implimented yet
@@ -166,7 +167,7 @@ local saveOptionTypes = {string=1,number=1,boolean=1}
 
 -- FORWARD DECLARATIONS
 
-local eventForage, eventSell, eventCantLoot
+local eventForage, eventSell, eventCantLoot, eventTribute
 
 -- UTILITIES
 
@@ -341,6 +342,7 @@ local function setupEvents()
         mq.event("Forage", "You have scrounged up #*#", eventForage)
     end
     mq.event("Novalue", "#*#give you absolutely nothing for the #1#.#*#", eventNovalue)
+    mq.event("Tribute", "#*#We graciously accept your #1# as tribute, thank you!#*#" , eventTribute)
 end
 
 -- BINDS
@@ -359,9 +361,17 @@ local function commandHandler(...)
             lootData = {}
             loadSettings()
             loot.Terminate = false
-            loot.logger.Info("Reloaded Settings And Loot Files")
+            loot.logger.Info("\ayReloaded Settings \axAnd \atLoot Files")
         elseif args[1] == 'bank' then
             loot.bankStuff()
+        elseif args[1] == 'config' then
+            local confReport = string.format("\ayLoot N Scoot Settings\ax")
+            for key, value in pairs(loot) do
+                if type(value) ~= "function" and type(value) ~= "table" then
+                    confReport = confReport .. string.format("\n\at%s\ax = \ag%s\ax", key, tostring(value))
+                end
+            end
+            loot.logger.Info(confReport)
         elseif args[1] == 'tribute' then
             if not mq.TLO.Cursor() then
                 doTribute = true
@@ -595,11 +605,19 @@ local function openVendor()
     loot.logger.Debug('Opening merchant window')
     mq.cmd('/nomodkey /click right target')
     loot.logger.Debug('Waiting for merchant window to populate')
-    mq.delay(1000, function() return mq.TLO.Window('MerchantWnd').Open() or mq.TLO.Window('TributeMasterWnd').Open() end)
-    if not mq.TLO.Window('MerchantWnd').Open() or mq.TLO.Window('TributeMasterWnd').Open() then return false end
-    if mq.TLO.Window('TributeMasterWnd').Open() then return true end
+    mq.delay(1000, function() return mq.TLO.Window('MerchantWnd').Open() end)
+    if not mq.TLO.Window('MerchantWnd').Open() then return false end
     mq.delay(5000, function() return mq.TLO.Merchant.ItemsReceived() end)
     return mq.TLO.Merchant.ItemsReceived()
+end
+
+local function openTribMaster()
+    loot.logger.Debug('Opening Tribute Window')
+    mq.cmd('/nomodkey /click right target')
+    loot.logger.Debug('Waiting for Tribute Window to populate')
+    mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Open() end)
+    if not mq.TLO.Window('TributeMasterWnd').Open() then return false end
+    return mq.TLO.Window('TributeMasterWnd').Open()
 end
 
 local NEVER_SELL = {['Diamond Coin']=true, ['Celestial Crest']=true, ['Gold Coin']=true, ['Taelosian Symbols']=true, ['Planar Symbols']=true}
@@ -628,8 +646,9 @@ function loot.sellStuff()
         if not goToVendor() then return end
         if not openVendor() then return end
     end
-
+    local flag = false
     local totalPlat = mq.TLO.Me.Platinum()
+    if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
     -- sell any top level inventory items that are marked as well, which aren't bags
     for i=1,10 do
         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
@@ -662,6 +681,7 @@ function loot.sellStuff()
             end
         end
     end
+    if flag then flag ,loot.AlwaysEval = false,true end
     mq.flushevents('Sell')
     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
@@ -671,11 +691,28 @@ end
 
 -- TRIBUTEING
 
+function eventTribute(line, itemName)
+    local firstLetter = itemName:sub(1,1):upper()
+    if lootData[firstLetter] and lootData[firstLetter][itemName] == 'Tribute' then return end
+    if lookupIniLootRule(firstLetter, itemName) == 'Tribute' then
+        lootData[firstLetter] = lootData[firstLetter] or {}
+        lootData[firstLetter][itemName] = 'Tribute'
+        return
+    end
+    if loot.AddNewTributes then
+        loot.logger.Info(string.format('Setting %s to Tribute', itemName))
+        if not lootData[firstLetter] then lootData[firstLetter] = {} end
+        lootData[firstLetter][itemName] = 'Tribute'
+        mq.cmdf('/ini "%s" "%s" "%s" "%s"', loot.LootFile, firstLetter, itemName, 'Tribute')
+    end
+end
+
 local function tributeToVendor(itemToTrib)
     if NEVER_SELL[itemToTrib.Name()] then return end
     while mq.TLO.FindItemCount('='..itemToTrib.Name())() > 0 do
         if mq.TLO.Window('TributeMasterWnd').Open() then
             loot.logger.Info('Tributeing '..itemToTrib.Name())
+            report(itemToTrib.Name())
             mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToTrib.Name())
             mq.delay(1) -- progress frame
             mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
@@ -690,15 +727,17 @@ end
 function loot.tributeStuff()
     if not mq.TLO.Window('TributeMasterWnd').Open() then
         if not goToVendor() then return end
-        if not openVendor() then return end
+        if not openTribMaster() then return end
     end
+    local flag = false
+    if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
     -- Check top level inventory items that are marked as well, which aren't bags
     for i=1,10 do
         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
         if bagSlot.Container() == 0 then
             if bagSlot.ID() then
                 local itemToTrib = bagSlot
-                local tribRule = getRule(bagSlot)
+                local tribRule = getRule(itemToTrib)
                 if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
             end
         end
@@ -712,13 +751,12 @@ function loot.tributeStuff()
                 local itemToTrib = bagSlot.Item(j)
                 if itemToTrib.ID() then
                     local tribRule = getRule(itemToTrib)
-                    if tribRule == 'Tribute' then
-                        tributeToVendor(itemToTrib)
-                    end
+                    if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
                 end
             end
         end
     end
+    if flag then flag ,loot.AlwaysEval = false,true end
     mq.flushevents('Tribute')
     if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
     CheckBags()
