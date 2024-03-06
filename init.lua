@@ -694,6 +694,27 @@ end
 
 -- TRIBUTEING
 
+local function AreBagsOpen()
+    local total = {
+    bags = 0,
+    open = 0,
+    }
+    for i = 23, 32 do
+    local slot = mq.TLO.Me.Inventory(i)
+        if slot and slot.Container() and slot.Container() > 0 then
+            total.bags = total.bags + 1
+            if slot.Open() then
+                total.open = total.open + 1
+            end
+        end
+    end
+    if total.bags == total.open then
+        return true
+    else
+        return false
+    end
+end
+
 function eventTribute(line, itemName)
     local firstLetter = itemName:sub(1,1):upper()
     if lootData[firstLetter] and lootData[firstLetter][itemName] == 'Tribute' then return end
@@ -732,6 +753,10 @@ function loot.tributeStuff()
         if not goToVendor() then return end
         if not openTribMaster() then return end
     end
+    mq.cmd('/keypress OPEN_INV_BAGS')
+    -- tributes requires the bags to be open
+    mq.delay(1000, AreBagsOpen)
+    mq.delay(1)
     local flag = false
     if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
     -- Check top level inventory items that are marked as well, which aren't bags
@@ -763,6 +788,7 @@ function loot.tributeStuff()
     mq.flushevents('Tribute')
     if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
     CheckBags()
+    mq.cmd('/keypress CLOSE_INV_BAGS')
 end
 
 -- BANKING
