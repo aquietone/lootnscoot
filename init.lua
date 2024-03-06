@@ -143,9 +143,9 @@ local loot = {
     SpamLootInfo = false,       -- Echo Spam for Looting
     LootForageSpam = false,     -- Echo spam for Foraged Items
     AddNewSales = true,         -- Adds 'Sell' Flag to items automatically if you sell them while the script is running.
-    GMLSelect = true,
+    GMLSelect = true,           -- not implimented yet
     ExcludeBag1 = "Extraplanar Trade Satchel", -- Name of Bag to ignore items in when selling
-    NoDropDefaults = "Quest|Keep|Ignore",
+    NoDropDefaults = "Quest|Keep|Ignore",   -- not implimented yet
     LootLagDelay = 0,           -- not implimented yet
     CorpseRotTime = "440s",     -- not implimented yet
     Terminate = true,
@@ -265,6 +265,7 @@ local function report(message, ...)
     end
 end
 
+---@return string,number
 local function getRule(item)
     local itemName = item.Name()
     local lootDecision = 'Keep'
@@ -275,8 +276,8 @@ local function getRule(item)
     local firstLetter = itemName:sub(1,1):upper()
     local stackSize = item.StackSize()
     local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
-    local qKeep = 0
-    
+    local qKeep = '0'
+
     lootData[firstLetter] = lootData[firstLetter] or {}
     lootData[firstLetter][itemName] = lootData[firstLetter][itemName] or lookupIniLootRule(firstLetter, itemName)
     -- Re-Evaluate the settings if AlwaysEval is on. Items that do not meet the Characters settings are reset to NUll and re-evaluated as if they were new items.
@@ -308,10 +309,10 @@ local function getRule(item)
         if loot.LootQuest then
             --look to see if Quantity attached to Quest|qty
             local _, position = string.find(lootData[firstLetter][itemName], '|')
-            if position then qKeep = tonumber(string.sub(lootData[firstLetter][itemName], position + 1)) else qKeep = 0 end
+            if position then qKeep = string.sub(lootData[firstLetter][itemName], position + 1) else qKeep = '0' end
             -- if Quantity is tied to the entry then use that otherwise use default Quest Keep Qty.
-            if qKeep == 0 then
-                qKeep = loot.QuestKeep
+            if qKeep == '0' then
+                qKeep = tostring(loot.QuestKeep)
             end
             -- If we have less than we want to keep loot it.
             if countHave < tonumber(qKeep) then
@@ -319,7 +320,7 @@ local function getRule(item)
             end
             if loot.AlwaysDestroy and qVal == 'Ignore' then qVal = 'Destroy' end
         end
-        return qVal,qKeep
+        return qVal,tonumber(qKeep) or 0
     end
     if loot.AlwaysDestroy and lootData[firstLetter][itemName] == 'Ignore' then return 'Destroy',0 end
     return lootData[firstLetter][itemName],0
@@ -582,7 +583,7 @@ local function goToVendor()
         return false
     end
     local vendorName = mq.TLO.Target.CleanName()
-    
+
     loot.logger.Info('Doing business with '..vendorName)
     if mq.TLO.Target.Distance() > 15 then
         navToID(mq.TLO.Target.ID())
@@ -627,7 +628,7 @@ function loot.sellStuff()
         if not goToVendor() then return end
         if not openVendor() then return end
     end
-    
+
     local totalPlat = mq.TLO.Me.Platinum()
     -- sell any top level inventory items that are marked as well, which aren't bags
     for i=1,10 do
