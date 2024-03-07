@@ -83,6 +83,8 @@ The script will setup a bind for "/lootutils":
 If running in standalone mode, the bind also supports:
     /lootutils sellstuff
         Runs lootutils.sellStuff() one time
+    /lootutils tributestuff
+        Runs lootutils.tributeStuff() one time
 
 The following events are used:
     - eventCantLoot - #*#may not loot this corpse#*#
@@ -367,13 +369,8 @@ local function commandHandler(...)
                 end
             end
             loot.logger.Info(confReport)
-        elseif args[1] == 'tribute' then
-            if not mq.TLO.Cursor() then
+        elseif args[1] == 'tributestuff' then
                 doTribute = true
-            else
-                addRule(mq.TLO.Cursor(), mq.TLO.Cursor():sub(1,1), 'Tribute')
-                loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", mq.TLO.Cursor(), 'Tribute'))
-            end
         elseif args[1] == 'loot' then
             loot.lootMobs()
         elseif args[1] == 'tsbank' then
