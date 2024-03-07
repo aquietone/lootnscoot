@@ -61,6 +61,8 @@ This script can be used in two ways:
             Will run one iteration of loot.lootMobs().
         /lua run lootnscoot sell
             Will run one iteration of loot.sellStuff().
+        /lua run lootnscoot cleanup
+            Will run one iteration of loot.cleanupBags().
 
 The script will setup a bind for "/lootutils":
     /lootutils <action> "${Cursor.Name}"
@@ -85,6 +87,8 @@ If running in standalone mode, the bind also supports:
         Runs lootutils.sellStuff() one time
     /lootutils tributestuff
         Runs lootutils.tributeStuff() one time
+    /lootutils cleanup
+        Runs lootutils.cleanupBags() one time
 
 The following events are used:
     - eventCantLoot - #*#may not loot this corpse#*#
@@ -361,6 +365,8 @@ local function commandHandler(...)
             loot.logger.Info("\ayReloaded Settings \axAnd \atLoot Files")
         elseif args[1] == 'bank' then
             loot.bankStuff()
+        elseif args[1] == 'cleanup' then
+            loot.cleanupBags()
         elseif args[1] == 'config' then
             local confReport = string.format("\ayLoot N Scoot Settings\ax")
             for key, value in pairs(loot) do
@@ -788,6 +794,58 @@ function loot.tributeStuff()
     mq.cmd('/keypress CLOSE_INV_BAGS')
 end
 
+-- CLEANUP
+
+local function destroyItem(itemToDestroy)
+    if NEVER_SELL[itemToDestroy.Name()] then return end
+    while mq.TLO.FindItemCount('='..itemToDestroy.Name())() > 0 do
+        loot.logger.Info('!!Destroying!! '..itemToDestroy.Name())
+        mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToDestroy.Name())
+        mq.delay(1) -- progress frame
+        mq.cmdf('/destroy')
+        mq.delay(1)
+        mq.delay(1000, function() return not mq.TLO.Cursor() end)
+        if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
+    end
+end
+
+function loot.cleanupBags()
+
+   -- mq.cmd('/keypress OPEN_INV_BAGS')
+   -- mq.delay(1000, AreBagsOpen)
+   -- mq.delay(1)
+    local flag = false
+    if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
+    -- Check top level inventory items that are marked as well, which aren't bags
+    for i=1,10 do
+        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+        if bagSlot.Container() == 0 then
+            if bagSlot.ID() then
+                local itemToDestroy = bagSlot
+                local destroyRule = getRule(itemToDestroy)
+                if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
+            end
+        end
+    end
+    -- Check items in bags which are marked as Destroy
+    for i=1,10 do
+        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+        local containerSize = bagSlot.Container()
+        if containerSize and containerSize > 0 then
+            for j=1,containerSize do
+                local itemToDestroy = bagSlot.Item(j)
+                if itemToDestroy.ID() then
+                    local destroyRule = getRule(itemToDestroy)
+                    if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
+                end
+            end
+        end
+    end
+    if flag then flag ,loot.AlwaysEval = false,true end
+    CheckBags()
+   -- mq.cmd('/keypress CLOSE_INV_BAGS')
+end
+
 -- BANKING
 
 function loot.markTradeSkillAsBank()
@@ -898,6 +956,8 @@ local function processArgs(args)
             loot.sellStuff()
         elseif args[1] == 'tributestuff' then
             loot.tributeStuff()
+        elseif args[1] == 'cleanup' then
+            loot.cleanupBags()
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
