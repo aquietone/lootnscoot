@@ -11,6 +11,10 @@ around things like:
 Or those things might just work, I just haven't tested it very much using lvl 1 toons
 on project lazarus.
 
+Settings are saved per character in config\LootNScoot_[ServerName]_[CharName].ini
+if you would like to use a global settings file. you can Change this inside the above file to point at your global file instead. 
+example= SettingsFile=D:\MQ_EMU\Config/LootNScoot_GlobalSettings.ini
+
 This script can be used in two ways:
     1. Included within a larger script using require, for example if you have some KissAssist-like lua script:
         To loot mobs, call lootutils.lootMobs():
@@ -170,6 +174,7 @@ local spawnSearch = '%s radius %d zradius 50'
 local shouldLootActions = {Keep=true, Bank=true, Sell=true, Destroy=false, Ignore=false, Tribute=false}
 local validActions = {keep='Keep',bank='Bank',sell='Sell',ignore='Ignore',destroy='Destroy',quest='Quest', tribute='Tribute'}
 local saveOptionTypes = {string=1,number=1,boolean=1}
+local NEVER_SELL = {['Diamond Coin']=true, ['Celestial Crest']=true, ['Gold Coin']=true, ['Taelosian Symbols']=true, ['Planar Symbols']=true}
 
 -- FORWARD DECLARATIONS
 
@@ -272,6 +277,27 @@ local function report(message, ...)
     end
 end
 
+local function AreBagsOpen()
+    local total = {
+    bags = 0,
+    open = 0,
+    }
+    for i = 23, 32 do
+    local slot = mq.TLO.Me.Inventory(i)
+        if slot and slot.Container() and slot.Container() > 0 then
+            total.bags = total.bags + 1
+            if slot.Open() then
+                total.open = total.open + 1
+            end
+        end
+    end
+    if total.bags == total.open then
+        return true
+    else
+        return false
+    end
+end
+
 ---@return string,number
 local function getRule(item)
     local itemName = item.Name()
@@ -284,9 +310,14 @@ local function getRule(item)
     local stackSize = item.StackSize()
     local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
     local qKeep = '0'
+    local globalItem = lookupIniLootRule('GlobalItems', itemName)
 
     lootData[firstLetter] = lootData[firstLetter] or {}
     lootData[firstLetter][itemName] = lootData[firstLetter][itemName] or lookupIniLootRule(firstLetter, itemName)
+    -- Check if item is on global Items list and use those rules insdead.
+    if loot.GlobalLootOn and globalItem ~= 'NULL' then
+        lootData[firstLetter][itemName] = globalItem or lootData[firstLetter][itemName]
+    end
     -- Re-Evaluate the settings if AlwaysEval is on. Items that do not meet the Characters settings are reset to NUll and re-evaluated as if they were new items.
     if loot.AlwaysEval then
         local oldDecision = lootData[firstLetter][itemName] -- whats on file
@@ -364,9 +395,9 @@ local function commandHandler(...)
             loot.Terminate = false
             loot.logger.Info("\ayReloaded Settings \axAnd \atLoot Files")
         elseif args[1] == 'bank' then
-            loot.bankStuff()
+            loot.processItems('Bank')
         elseif args[1] == 'cleanup' then
-            loot.cleanupBags()
+            loot.processItems('Cleanup')
         elseif args[1] == 'config' then
             local confReport = string.format("\ayLoot N Scoot Settings\ax")
             for key, value in pairs(loot) do
@@ -389,14 +420,28 @@ local function commandHandler(...)
         if args[1] == 'quest' and mq.TLO.Cursor() then
             addRule(mq.TLO.Cursor(),mq.TLO.Cursor():sub(1,1), 'Quest|'..args[2])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[2]))
+        elseif args[1] == 'globalitem' and validActions[args[2]] and mq.TLO.Cursor() then
+            addRule(mq.TLO.Cursor(), 'GlobalItems', validActions[args[2]])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", mq.TLO.Cursor(), validActions[args[2]]))
         elseif validActions[args[1]] and args[2] ~= 'NULL' then
             addRule(args[2], args[2]:sub(1,1), validActions[args[1]])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", args[2], validActions[args[1]]))
         end
     elseif #args == 3 then
-        if validActions[args[1]] and args[2] ~= 'NULL' then
+        if args[1] == 'globalitem' and args[2] == 'quest' and mq.TLO.Cursor() then
+            addRule(mq.TLO.Cursor(),'GlobalItems', 'Quest|'..args[3])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[3]))
+        elseif args[1] == 'globalitem' and validActions[args[2]] and args[3] ~= 'NULL' then
+            addRule(args[3], 'GlobalItems', validActions[args[2]])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", args[3], validActions[args[2]]))
+        elseif validActions[args[1]] and args[2] ~= 'NULL' then
             addRule(args[2], args[2]:sub(1,1), validActions[args[1]]..'|'..args[3])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s|%s\ax", args[2], validActions[args[1]], args[3]))
+        end
+    elseif #args == 4 then
+        if args[1] == 'globalitem' and validActions[args[2]] and args[3] ~= 'NULL' then
+            addRule(args[3],'GlobalItems', validActions[args[2]]..'|'..args[4])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s|%s\ax", args[3], validActions[args[2]], args[4]))
         end
     end
 end
@@ -578,6 +623,7 @@ end
 -- SELLING
 
 function eventSell(line, itemName)
+    if NEVER_SELL[itemName] then return end
     local firstLetter = itemName:sub(1,1):upper()
     if lootData[firstLetter] and lootData[firstLetter][itemName] == 'Sell' then return end
     if lookupIniLootRule(firstLetter, itemName) == 'Sell' then
@@ -617,6 +663,73 @@ local function openVendor()
     return mq.TLO.Merchant.ItemsReceived()
 end
 
+local function sellToVendor(itemToSell,bag,slot)
+    if NEVER_SELL[itemToSell] then return end
+    if mq.TLO.Window('MerchantWnd').Open() then
+        loot.logger.Info('Selling '..itemToSell)
+        mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
+        mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemToSell end)
+        mq.cmd('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
+        mq.doevents('eventNovalue')
+        if itemNoValue == itemToSell then
+            addRule(itemToSell, itemToSell:sub(1,1), 'Ignore')
+            itemNoValue = nil
+        end
+        -- TODO: handle vendor not wanting item / item can't be sold
+        mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
+    end
+end
+
+-- function loot.sellStuff()
+--     if not mq.TLO.Window('MerchantWnd').Open() then
+--         if not goToVendor() then return end
+--         if not openVendor() then return end
+--     end
+--     local flag = false
+--     local totalPlat = mq.TLO.Me.Platinum()
+--     if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
+--     -- sell any top level inventory items that are marked as well, which aren't bags
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         if bagSlot.Container() == 0 then
+--             if bagSlot.ID() then
+--                 local itemToSell = bagSlot.Name()
+--                 local sellRule = getRule(bagSlot)
+--                 if sellRule == 'Sell' then sellToVendor(itemToSell) end
+--             end
+--         end
+--     end
+--     -- sell any items in bags which are marked as sell
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         local containerSize = bagSlot.Container()
+--         if containerSize and containerSize > 0 then
+--             for j=1,containerSize do
+--                 local itemToSell = bagSlot.Item(j).Name()
+--                 if itemToSell then
+--                     local sellRule = getRule(bagSlot.Item(j))
+--                     if sellRule == 'Sell' then
+--                         local sellPrice = bagSlot.Item(j).Value() and bagSlot.Item(j).Value()/1000 or 0
+--                         if sellPrice == 0 then
+--                             loot.logger.Warn(string.format('Item \ay%s\ax is set to Sell but has no sell value!', itemToSell))
+--                         else
+--                             sellToVendor(itemToSell)
+--                         end
+--                     end
+--                 end
+--             end
+--         end
+--     end
+--     if flag then flag ,loot.AlwaysEval = false,true end
+--     mq.flushevents('Sell')
+--     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
+--     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
+--     report('Total plat value sold: \ag%s\ax', newTotalPlat)
+--     CheckBags()
+-- end
+
+-- TRIBUTEING
+
 local function openTribMaster()
     loot.logger.Debug('Opening Tribute Window')
     mq.cmd('/nomodkey /click right target')
@@ -624,98 +737,6 @@ local function openTribMaster()
     mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Open() end)
     if not mq.TLO.Window('TributeMasterWnd').Open() then return false end
     return mq.TLO.Window('TributeMasterWnd').Open()
-end
-
-local NEVER_SELL = {['Diamond Coin']=true, ['Celestial Crest']=true, ['Gold Coin']=true, ['Taelosian Symbols']=true, ['Planar Symbols']=true}
-local function sellToVendor(itemToSell)
-    if NEVER_SELL[itemToSell] then return end
-    while mq.TLO.FindItemCount('='..itemToSell)() > 0 do
-        if mq.TLO.Window('MerchantWnd').Open() then
-            loot.logger.Info('Selling '..itemToSell)
-            mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToSell)
-            mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemToSell end)
-            mq.cmd('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
-            mq.doevents('eventNovalue')
-            if itemNoValue == itemToSell then
-                addRule(itemToSell, itemToSell:sub(1,1), 'Ignore')
-                itemNoValue = nil
-                break
-            end
-            -- TODO: handle vendor not wanting item / item can't be sold
-            mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
-        end
-    end
-end
-
-function loot.sellStuff()
-    if not mq.TLO.Window('MerchantWnd').Open() then
-        if not goToVendor() then return end
-        if not openVendor() then return end
-    end
-    local flag = false
-    local totalPlat = mq.TLO.Me.Platinum()
-    if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
-    -- sell any top level inventory items that are marked as well, which aren't bags
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        if bagSlot.Container() == 0 then
-            if bagSlot.ID() then
-                local itemToSell = bagSlot.Name()
-                local sellRule = getRule(bagSlot)
-                if sellRule == 'Sell' then sellToVendor(itemToSell) end
-            end
-        end
-    end
-    -- sell any items in bags which are marked as sell
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        local containerSize = bagSlot.Container()
-        if containerSize and containerSize > 0 then
-            for j=1,containerSize do
-                local itemToSell = bagSlot.Item(j).Name()
-                if itemToSell then
-                    local sellRule = getRule(bagSlot.Item(j))
-                    if sellRule == 'Sell' then
-                        local sellPrice = bagSlot.Item(j).Value() and bagSlot.Item(j).Value()/1000 or 0
-                        if sellPrice == 0 then
-                            loot.logger.Warn(string.format('Item \ay%s\ax is set to Sell but has no sell value!', itemToSell))
-                        else
-                            sellToVendor(itemToSell)
-                        end
-                    end
-                end
-            end
-        end
-    end
-    if flag then flag ,loot.AlwaysEval = false,true end
-    mq.flushevents('Sell')
-    if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
-    local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
-    report('Total plat value sold: \ag%s\ax', newTotalPlat)
-    CheckBags()
-end
-
--- TRIBUTEING
-
-local function AreBagsOpen()
-    local total = {
-    bags = 0,
-    open = 0,
-    }
-    for i = 23, 32 do
-    local slot = mq.TLO.Me.Inventory(i)
-        if slot and slot.Container() and slot.Container() > 0 then
-            total.bags = total.bags + 1
-            if slot.Open() then
-                total.open = total.open + 1
-            end
-        end
-    end
-    if total.bags == total.open then
-        return true
-    else
-        return false
-    end
 end
 
 function eventTribute(line, itemName)
@@ -734,117 +755,109 @@ function eventTribute(line, itemName)
     end
 end
 
-local function tributeToVendor(itemToTrib)
+local function tributeToVendor(itemToTrib,bag,slot)
     if NEVER_SELL[itemToTrib.Name()] then return end
-    while mq.TLO.FindItemCount('='..itemToTrib.Name())() > 0 do
-        if mq.TLO.Window('TributeMasterWnd').Open() then
-            loot.logger.Info('Tributeing '..itemToTrib.Name())
-            report(itemToTrib.Name())
-            mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToTrib.Name())
-            mq.delay(1) -- progress frame
-            mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
-            if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
-            mq.delay(1)
-            mq.delay(1000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
-            mq.delay(1000) -- This delay is necessary because there is seemingly a delay between donating and selecting the next item.
-        end
+    if mq.TLO.Window('TributeMasterWnd').Open() then
+        loot.logger.Info('Tributeing '..itemToTrib.Name())
+        report('\ayTributing \at%s \axfor\ag %s \axpoints!',itemToTrib.Name(),itemToTrib.Tribute())
+        mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
+        mq.delay(1) -- progress frame
+        mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
+        if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
+        mq.delay(1)
+        mq.delay(1000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
+        mq.delay(1000) -- This delay is necessary because there is seemingly a delay between donating and selecting the next item.
     end
 end
 
-function loot.tributeStuff()
-    if not mq.TLO.Window('TributeMasterWnd').Open() then
-        if not goToVendor() then return end
-        if not openTribMaster() then return end
-    end
-    mq.cmd('/keypress OPEN_INV_BAGS')
-    -- tributes requires the bags to be open
-    mq.delay(1000, AreBagsOpen)
-    mq.delay(1)
-    local flag = false
-    if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
-    -- Check top level inventory items that are marked as well, which aren't bags
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        if bagSlot.Container() == 0 then
-            if bagSlot.ID() then
-                local itemToTrib = bagSlot
-                local tribRule = getRule(itemToTrib)
-                if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
-            end
-        end
-    end
-    -- Check items in bags which are marked as tribute
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        local containerSize = bagSlot.Container()
-        if containerSize and containerSize > 0 then
-            for j=1,containerSize do
-                local itemToTrib = bagSlot.Item(j)
-                if itemToTrib.ID() then
-                    local tribRule = getRule(itemToTrib)
-                    if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
-                end
-            end
-        end
-    end
-    if flag then flag ,loot.AlwaysEval = false,true end
-    mq.flushevents('Tribute')
-    if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
-    CheckBags()
-    mq.cmd('/keypress CLOSE_INV_BAGS')
-end
+-- function loot.tributeStuff()
+--     if not mq.TLO.Window('TributeMasterWnd').Open() then
+--         if not goToVendor() then return end
+--         if not openTribMaster() then return end
+--     end
+--     mq.cmd('/keypress OPEN_INV_BAGS')
+--     -- tributes requires the bags to be open
+--     mq.delay(1000, AreBagsOpen)
+--     mq.delay(1)
+--     local flag = false
+--     if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
+--     -- Check top level inventory items that are marked as well, which aren't bags
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         if bagSlot.Container() == 0 then
+--             if bagSlot.ID() then
+--                 local itemToTrib = bagSlot
+--                 local tribRule = getRule(itemToTrib)
+--                 if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
+--             end
+--         end
+--     end
+--     -- Check items in bags which are marked as tribute
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         local containerSize = bagSlot.Container()
+--         if containerSize and containerSize > 0 then
+--             for j=1,containerSize do
+--                 local itemToTrib = bagSlot.Item(j)
+--                 if itemToTrib.ID() then
+--                     local tribRule = getRule(itemToTrib)
+--                     if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
+--                 end
+--             end
+--         end
+--     end
+--     if flag then flag ,loot.AlwaysEval = false,true end
+--     mq.flushevents('Tribute')
+--     if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
+--     CheckBags()
+--     mq.cmd('/keypress CLOSE_INV_BAGS')
+-- end
 
 -- CLEANUP
 
-local function destroyItem(itemToDestroy)
+local function destroyItem(itemToDestroy,bag,slot)
     if NEVER_SELL[itemToDestroy.Name()] then return end
-    while mq.TLO.FindItemCount('='..itemToDestroy.Name())() > 0 do
-        loot.logger.Info('!!Destroying!! '..itemToDestroy.Name())
-        mq.cmdf('/nomodkey /itemnotify "%s" leftmouseup', itemToDestroy.Name())
-        mq.delay(1) -- progress frame
-        mq.cmdf('/destroy')
-        mq.delay(1)
-        mq.delay(1000, function() return not mq.TLO.Cursor() end)
-        if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
-    end
+    loot.logger.Info('!!Destroying!! '..itemToDestroy.Name())
+    mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
+    mq.delay(1) -- progress frame
+    mq.cmdf('/destroy')
+    mq.delay(1)
+    mq.delay(1000, function() return not mq.TLO.Cursor() end)
+    mq.delay(1)
 end
 
-function loot.cleanupBags()
+-- function loot.cleanupBags()
 
-   -- mq.cmd('/keypress OPEN_INV_BAGS')
-   -- mq.delay(1000, AreBagsOpen)
-   -- mq.delay(1)
-    local flag = false
-    if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
-    -- Check top level inventory items that are marked as well, which aren't bags
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        if bagSlot.Container() == 0 then
-            if bagSlot.ID() then
-                local itemToDestroy = bagSlot
-                local destroyRule = getRule(itemToDestroy)
-                if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
-            end
-        end
-    end
-    -- Check items in bags which are marked as Destroy
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        local containerSize = bagSlot.Container()
-        if containerSize and containerSize > 0 then
-            for j=1,containerSize do
-                local itemToDestroy = bagSlot.Item(j)
-                if itemToDestroy.ID() then
-                    local destroyRule = getRule(itemToDestroy)
-                    if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
-                end
-            end
-        end
-    end
-    if flag then flag ,loot.AlwaysEval = false,true end
-    CheckBags()
-   -- mq.cmd('/keypress CLOSE_INV_BAGS')
-end
+--     local flag = false
+--     if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
+--     -- Check top level inventory items that are marked as well, which aren't bags
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         if bagSlot.Container() == 0 then
+--             if bagSlot.ID() then
+--                 local itemToDestroy = bagSlot
+--                 local destroyRule = getRule(itemToDestroy)
+--                 if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
+--             end
+--         end
+--     end
+--     -- Check items in bags which are marked as Destroy
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         local containerSize = bagSlot.Container()
+--         if containerSize and containerSize > 0 then
+--             for j=1,containerSize do
+--                 local itemToDestroy = bagSlot.Item(j)
+--                 if itemToDestroy.ID() then
+--                     local destroyRule = getRule(itemToDestroy)
+--                     if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
+--                 end
+--             end
+--         end
+--     end
+--     if flag then flag ,loot.AlwaysEval = false,true end
+--     CheckBags()
+-- end
 
 -- BANKING
 
@@ -876,43 +889,43 @@ function loot.markTradeSkillAsBank()
     end
 end
 
-local function bankItem(itemName)
-    mq.cmdf('/nomodkey /shiftkey /itemnotify "%s" leftmouseup', itemName)
+local function bankItem(itemName,bag,slot)
+    mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
     mq.delay(100, function() return mq.TLO.Cursor() end)
     mq.cmd('/notify BigBankWnd BIGB_AutoButton leftmouseup')
     mq.delay(100, function() return not mq.TLO.Cursor() end)
 end
 
-function loot.bankStuff()
-    if not mq.TLO.Window('BigBankWnd').Open() then
-        loot.logger.Warn('Bank window must be open!')
-        return
-    end
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        if bagSlot.Container() == 0 then
-            if bagSlot.ID() then
-                local itemToBank = bagSlot.Name()
-                local bankRule = getRule(bagSlot)
-                if bankRule == 'Bank' then bankItem(itemToBank) end
-            end
-        end
-    end
-    -- sell any items in bags which are marked as sell
-    for i=1,10 do
-        local bagSlot = mq.TLO.InvSlot('pack'..i).Item
-        local containerSize = bagSlot.Container()
-        if containerSize and containerSize > 0 then
-            for j=1,containerSize do
-                local itemToBank = bagSlot.Item(j).Name()
-                if itemToBank then
-                    local bankRule = getRule(bagSlot.Item(j))
-                    if bankRule == 'Bank' then bankItem(itemToBank) end
-                end
-            end
-        end
-    end
-end
+-- function loot.bankStuff()
+--     if not mq.TLO.Window('BigBankWnd').Open() then
+--         loot.logger.Warn('Bank window must be open!')
+--         return
+--     end
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         if bagSlot.Container() == 0 then
+--             if bagSlot.ID() then
+--                 local itemToBank = bagSlot.Name()
+--                 local bankRule = getRule(bagSlot)
+--                 if bankRule == 'Bank' then bankItem(itemToBank) end
+--             end
+--         end
+--     end
+--     -- sell any items in bags which are marked as sell
+--     for i=1,10 do
+--         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
+--         local containerSize = bagSlot.Container()
+--         if containerSize and containerSize > 0 then
+--             for j=1,containerSize do
+--                 local itemToBank = bagSlot.Item(j).Name()
+--                 if itemToBank then
+--                     local bankRule = getRule(bagSlot.Item(j))
+--                     if bankRule == 'Bank' then bankItem(itemToBank) end
+--                 end
+--             end
+--         end
+--     end
+-- end
 
 -- FORAGING
 
@@ -948,16 +961,136 @@ function eventForage()
     end
 end
 
+-- Process Items
+
+function loot.processItems(action)
+    local flag = false
+    local totalPlat = 0
+
+    local function processItem(item, action, bag, slot)
+        local rule = getRule(item)
+        if rule == action then
+            if action == 'Sell' then
+                if not mq.TLO.Window('MerchantWnd').Open() then
+                    if not goToVendor() then return end
+                    if not openVendor() then return end
+                end
+                --totalPlat = mq.TLO.Me.Platinum()
+                local sellPrice = item.Value() and item.Value() / 1000 or 0
+                if sellPrice == 0 then
+                    loot.logger.Warn(string.format('Item \ay%s\ax is set to Sell but has no sell value!', item.Name()))
+                else
+                    sellToVendor(item.Name(),bag,slot)
+                    totalPlat = totalPlat + sellPrice
+                    mq.delay(1)
+                end
+            elseif action == 'Tribute' then
+                if not mq.TLO.Window('TributeMasterWnd').Open() then
+                    if not goToVendor() then return end
+                    if not openTribMaster() then return end
+                end
+                mq.cmd('/keypress OPEN_INV_BAGS')
+                -- tributes requires the bags to be open
+                mq.delay(1000, AreBagsOpen)
+                mq.delay(1)
+                tributeToVendor(item, bag, slot)
+                mq.delay(1)
+            elseif action == 'Destroy' then
+                destroyItem(item,bag,slot)
+                mq.delay(1)
+            elseif action == 'Bank' then
+                if not mq.TLO.Window('BigBankWnd').Open() then
+                    loot.logger.Warn('Bank window must be open!')
+                    return
+                end
+                bankItem(item.Name(),bag,slot)
+                mq.delay(1)
+            end
+        end
+    end
+
+    if loot.AlwaysEval then 
+        flag, loot.AlwaysEval = true, false 
+    end
+
+    for i = 1, 10 do
+        local bagSlot = mq.TLO.InvSlot('pack' .. i).Item
+        local containerSize = bagSlot.Container()
+
+        if containerSize then
+            for j = 1, containerSize do
+                local item = bagSlot.Item(j)
+                if item.ID() then
+                    if action == 'Cleanup' then
+                        processItem(item, 'Destroy',i,j)
+                    elseif action == 'Sell' then
+                        processItem(item, 'Sell',i,j)
+                    elseif action == 'Tribute' then
+                        processItem(item, 'Tribute',i,j)
+                    elseif action == 'Bank' then
+                        processItem(item, 'Bank',i,j)
+                    end
+                end
+            end
+        end
+    end
+
+    if flag then
+        flag, loot.AlwaysEval = false, true
+    end
+
+    if action == 'Tribute' then
+        mq.flushevents('Tribute')
+        if mq.TLO.Window('TributeMasterWnd').Open() then
+            mq.TLO.Window('TributeMasterWnd').DoClose()
+            mq.delay(1)
+        end
+        mq.cmd('/keypress CLOSE_INV_BAGS')
+        mq.delay(1)
+    elseif action == 'Sell' then
+        if mq.TLO.Window('MerchantWnd').Open() then
+            mq.TLO.Window('MerchantWnd').DoClose()
+            mq.delay(1)
+        end
+        mq.delay(1)
+        totalPlat = math.floor(totalPlat)
+        report('Total plat value sold: \ag%s\ax',totalPlat )
+    elseif action == 'Bank' then
+        if mq.TLO.Window('BigBankWnd').Open() then
+            mq.TLO.Window('BigBankWnd').DoClose()
+            mq.delay(1)
+        end
+    end
+
+    CheckBags()
+end
+
+-- Legacy functions for backward compatibility
+
+function loot.sellStuff()
+    loot.processItems('Sell')
+end
+function loot.bankStuff()
+    loot.processItems('Bank')
+end
+function loot.cleanupBags()
+    loot.processItems('Cleanup')
+end
+function loot.tributeStuff()
+    loot.processItems('Tribute')
+end
+
+
 --
 
 local function processArgs(args)
     if #args == 1 then
         if args[1] == 'sellstuff' then
-            loot.sellStuff()
+            loot.processItems('Sell') 
         elseif args[1] == 'tributestuff' then
-            loot.tributeStuff()
+            loot.processItems('Tribute')
         elseif args[1] == 'cleanup' then
-            loot.cleanupBags()
+            loot.processItems('Cleanup')
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
@@ -983,8 +1116,8 @@ init({...})
 
 while not loot.Terminate do
     if loot.DoLoot and not areFull then loot.lootMobs() end
-    if doSell then loot.sellStuff() doSell = false end
-    if doTribute then loot.tributeStuff() doTribute = false end
+    if doSell then loot.processItems('Sell') doSell = false end
+    if doTribute then loot.processItems('Tribute') doTribute = false end
     mq.doevents()
     mq.delay(1000)
 end
