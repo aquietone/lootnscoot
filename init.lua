@@ -894,8 +894,10 @@ end
 
 local function processArgs(args)
     if #args == 1 then
-        if args[1] == 'sell' then
+        if args[1] == 'sellstuff' then
             loot.sellStuff()
+        elseif args[1] == 'tributestuff' then
+            loot.tributeStuff()
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
