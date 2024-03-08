@@ -121,6 +121,7 @@ local mq = require 'mq'
 local success, Write = pcall(require, 'lib.Write')
 if not success then printf('\arERROR: Write.lua could not be loaded\n%s\ax', Write) return end
 local eqServer = string.gsub(mq.TLO.EverQuest.Server(),' ','_')
+local guiLoot = require('loot_hist')
 local eqChar = mq.TLO.Me.Name()
 local version = 1.5
 -- Public default settings, also read in from Loot.ini [Settings] section
@@ -162,6 +163,7 @@ local loot = {
     Terminate = true,
 }
 loot.logger.prefix = 'lootnscoot'
+guiLoot.imported = true
 
 -- Internal settings
 local lootData, cantLootList = {}, {}
@@ -398,6 +400,8 @@ local function commandHandler(...)
             loot.processItems('Bank')
         elseif args[1] == 'cleanup' then
             loot.processItems('Cleanup')
+        elseif args[1] == 'gui' then
+            guiLoot.shouldDrawGUI = not guiLoot.shouldDrawGUI
         elseif args[1] == 'config' then
             local confReport = string.format("\ayLoot N Scoot Settings\ax")
             for key, value in pairs(loot) do
@@ -762,10 +766,10 @@ local function tributeToVendor(itemToTrib,bag,slot)
         report('\ayTributing \at%s \axfor\ag %s \axpoints!',itemToTrib.Name(),itemToTrib.Tribute())
         mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
         mq.delay(1) -- progress frame
-        mq.delay(1000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
+        mq.delay(2000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
         if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
         mq.delay(1)
-        mq.delay(1000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
+        mq.delay(2000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
         mq.delay(1000) -- This delay is necessary because there is seemingly a delay between donating and selecting the next item.
     end
 end
@@ -990,6 +994,7 @@ function loot.processItems(action)
                     if not openTribMaster() then return end
                 end
                 mq.cmd('/keypress OPEN_INV_BAGS')
+                mq.delay(1)
                 -- tributes requires the bags to be open
                 mq.delay(1000, AreBagsOpen)
                 mq.delay(1)
@@ -1115,6 +1120,7 @@ end
 init({...})
 
 while not loot.Terminate do
+    if mq.TLO.Window('CharacterListWnd').Open() then loot.Terminate = true end -- exit sctipt if at char select.
     if loot.DoLoot and not areFull then loot.lootMobs() end
     if doSell then loot.processItems('Sell') doSell = false end
     if doTribute then loot.processItems('Tribute') doTribute = false end
