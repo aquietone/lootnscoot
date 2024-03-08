@@ -71,6 +71,7 @@ function guiLoot.GUI()
 			imgui.Separator()
 
 			if imgui.MenuItem('Close Console') then
+				guiLoot.shouldDrawGUI = false
 				guiLoot.SHOW = false
 			end
 
