@@ -2,11 +2,15 @@ local mq = require('mq')
 local imgui = require('ImGui')
 
 
+local mq = require('mq')
+local imgui = require('ImGui')
+
 local guiLoot = {
 	SHOW = false,
 	openGUI = true,
 	shouldDrawGUI = false,
 	imported = false,
+	hideNames = false,
 
 	---@type ConsoleWidget
 	console = nil,
@@ -36,18 +40,16 @@ function MakeColorGradient(freq1, freq2, freq3, phase1, phase2, phase3, center, 
 end
 
 function guiLoot.GUI()
-	if guiLoot.console == nil then
-		guiLoot.console = imgui.ConsoleWidget.new("##Console")
-	end
-	if not guiLoot.shouldDrawGUI then return end
+	if not guiLoot.openGUI then return end
 	local flags = ImGuiWindowFlags.MenuBar
-	imgui.SetNextWindowSize(ImVec2(640, 240), guiLoot.resetPosition and ImGuiCond.Always or ImGuiCond.Once)
+	ImGui.SetNextWindowSize(260, 300, ImGuiCond.FirstUseEver)
 	imgui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(1, 0));
 
 	guiLoot.openGUI, guiLoot.shouldDrawGUI = ImGui.Begin('Looted Items##'..mq.TLO.Me.DisplayName(), guiLoot.openGUI, flags)
 	if not guiLoot.shouldDrawGUI then
 		imgui.End()
 		imgui.PopStyleVar()
+		guiLoot.openGUI = false
 		return
 	end
 
@@ -111,7 +113,10 @@ function guiLoot.EventLoot(line,who,what)
 		if mq.TLO.Plugin('mq2linkdb').IsLoaded() then 
 			item = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or mq.TLO.LinkDB(string.format("=%s",what))()
 		end
-		local text = string.format('\at%s \axLooted %s',who, item)
+		if guiLoot.hideNames then
+			if who ~= 'You' then who = mq.TLO.Spawn(string.format("%s",who)).Class.ShortName() end
+		end
+		local text = string.format('\ao[%s] \at%s \axLooted %s',mq.TLO.Time() ,who, item)
 		guiLoot.console:AppendText(text)
 	end
 end
@@ -119,36 +124,68 @@ end
 local function bind(...)
 	local args = {...}
 	if args[1] == 'show' then
+		guiLoot.openGUI = not guiLoot.openGUI
 		guiLoot.shouldDrawGUI = not guiLoot.shouldDrawGUI
 	elseif args[1] == 'stop' then
 		guiLoot.SHOW = false
+	elseif args[1] == 'hidenames' then
+		guiLoot.hideNames = not guiLoot.hideNames
 	end
 end
 
 local args = {...}
-if args[1] == 'start' then
-	mq.bind('/looted', bind)
-	guiLoot.SHOW = true
+local function checkArgs(args)
+	if args[1] == 'start' then
+		mq.bind('/looted', bind)
+		guiLoot.SHOW = true
+
+	elseif args[1] == 'hidenames' then
+		mq.bind('/looted', bind)
+		guiLoot.SHOW = true
+		guiLoot.hideNames = true
+	else
+		return
+	end
+
 	local echo = "\ay[Looted]\ax Commands:\n"
-	echo = echo .. "\ay[Looted]\ax /looted show \t\atToggles the Gui\n\ax"
-	echo = echo .. "\ay[Looted]\ax /looted stop \t\atExits script\n\ax"
+	echo = echo .. "\ay[Looted]\ax /looted show \t\t\atToggles the Gui.\n\ax"
+	echo = echo .. "\ay[Looted]\ax /looted stop \t\t\atExits script.\n\ax"
+	echo = echo .. "\ay[Looted]\ax /looted hidenames \t\atHides names and shows Class instead.\n\ax"
 	print(echo)
 end
 
-if not mq.TLO.Plugin('mq2linkdb').IsLoaded() then
-	mq.cmd('/plugin linkdb load')
+local function init()
+	checkArgs(args)
+	if not mq.TLO.Plugin('mq2linkdb').IsLoaded() then
+		mq.cmd('/plugin linkdb load')
+	end
+
+	-- if imported set show to true.
+	if guiLoot.imported then
+		guiLoot.SHOW = true
+	end
+
+	-- initialize the gui
+	mq.imgui.init('lootItemsGUI', guiLoot.GUI)
+
+	-- setup events
+	mq.event('echo_Loot', '--#1# have looted a #2#.#*#', guiLoot.EventLoot)
+	mq.event('echo_Loot2', '--#1# has looted a #2#.#*#', guiLoot.EventLoot)
+
+	-- initialize the console
+	if guiLoot.console == nil then
+		guiLoot.console = imgui.ConsoleWidget.new("Loot##Console")
+	end
 end
 
-if guiLoot.imported then
-	guiLoot.SHOW = true
+local function loop()
+	while guiLoot.SHOW do
+		mq.delay(100)
+		mq.doevents()
+	end
 end
-mq.imgui.init('lootItemsGUI', guiLoot.GUI)
-mq.event('echo_Loot', '--#1# have looted a #2#.#*#', guiLoot.EventLoot)
-mq.event('echo_Loot2', '--#1# has looted a #2#.#*#', guiLoot.EventLoot)
 
-while guiLoot.SHOW do
-	mq.delay(100)
-	mq.doevents()
-end
+init()
+loop()
 
 return guiLoot

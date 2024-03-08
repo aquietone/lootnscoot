@@ -402,6 +402,8 @@ local function commandHandler(...)
             loot.processItems('Cleanup')
         elseif args[1] == 'gui' then
             guiLoot.shouldDrawGUI = not guiLoot.shouldDrawGUI
+        elseif args[1] == 'hidenames' then
+            guiLoot.hideNames = not guiLoot.hideNames
         elseif args[1] == 'config' then
             local confReport = string.format("\ayLoot N Scoot Settings\ax")
             for key, value in pairs(loot) do
@@ -766,10 +768,10 @@ local function tributeToVendor(itemToTrib,bag,slot)
         report('\ayTributing \at%s \axfor\ag %s \axpoints!',itemToTrib.Name(),itemToTrib.Tribute())
         mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
         mq.delay(1) -- progress frame
-        mq.delay(2000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
+        mq.delay(5000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
         if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
         mq.delay(1)
-        mq.delay(2000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
+        mq.delay(5000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
         mq.delay(1000) -- This delay is necessary because there is seemingly a delay between donating and selecting the next item.
     end
 end
