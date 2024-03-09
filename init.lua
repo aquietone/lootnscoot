@@ -180,7 +180,7 @@ local NEVER_SELL = {['Diamond Coin']=true, ['Celestial Crest']=true, ['Gold Coin
 
 -- FORWARD DECLARATIONS
 
-local eventForage, eventSell, eventCantLoot, eventTribute
+local eventForage, eventSell, eventCantLoot, eventTribute, eventNoSlot
 
 -- UTILITIES
 
@@ -375,6 +375,7 @@ end
 
 local function setupEvents()
     mq.event("CantLoot", "#*#may not loot this corpse#*#", eventCantLoot)
+    mq.event("NoSlot", "#*#There are no slots of the held item in your inventory#*#", eventNoSlot)
     mq.event("Sell", "#*#You receive#*# for the #1#(s)#*#", eventSell)
     if loot.LootForage then
         mq.event("ForageExtras", "Your forage mastery has enabled you to find something else!", eventForage)
@@ -401,7 +402,7 @@ local function commandHandler(...)
         elseif args[1] == 'cleanup' then
             loot.processItems('Cleanup')
         elseif args[1] == 'gui' then
-            guiLoot.shouldDrawGUI = not guiLoot.shouldDrawGUI
+            guiLoot.openGUI = not guiLoot.openGUI
         elseif args[1] == 'hidenames' then
             guiLoot.hideNames = not guiLoot.hideNames
         elseif args[1] == 'config' then
@@ -464,6 +465,14 @@ end
 
 function eventCantLoot()
     cantLootID = mq.TLO.Target.ID()
+end
+
+function eventNoSlot()
+    -- we don't have a slot big enough for the item on cursor. Dropping it to the ground. 
+    local cantLootItemName = mq.TLO.Cursor()
+    mq.cmd('/drop')
+    mq.delay(1)
+    report("\ay[WARN]\arI can't loot %s, dropping it on the ground!\ax", cantLootItemName)
 end
 
 ---@param index number @The current index we are looking at in loot window, 1-based.
