@@ -1,5 +1,5 @@
 --[[
-lootnscoot.lua v1.0 - aquietone
+lootnscoot.lua v1.5 - aquietone, grimmier
 
 This is a port of the RedGuides copy of ninjadvloot.inc with some updates as well.
 I may have glossed over some of the events or edge cases so it may have some issues
@@ -115,8 +115,6 @@ There is also no flag for combat looting. It will only loot if no mobs are withi
 
 ]]
 
-
----@type Mq
 local mq = require 'mq'
 local success, Write = pcall(require, 'lib.Write')
 if not success then printf('\arERROR: Write.lua could not be loaded\n%s\ax', Write) return end
@@ -270,6 +268,7 @@ end
 local function lookupIniLootRule(section, key)
     return mq.TLO.Ini.File(loot.LootFile).Section(section).Key(key).Value()
 end
+
 -- moved this function up so we can report Quest Items.
 local reportPrefix = '/%s \a-t[\ax\ayLootUtils\ax\a-t]\ax '
 local function report(message, ...)
@@ -678,11 +677,15 @@ local function openVendor()
     return mq.TLO.Merchant.ItemsReceived()
 end
 
-local function sellToVendor(itemToSell,bag,slot)
+local function sellToVendor(itemToSell, bag, slot)
     if NEVER_SELL[itemToSell] then return end
     if mq.TLO.Window('MerchantWnd').Open() then
         loot.logger.Info('Selling '..itemToSell)
-        mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
+        if slot == nil or slot == -1 then
+            mq.cmdf('/nomodkey /itemnotify %s leftmouseup', bag)
+        else
+            mq.cmdf('/nomodkey /itemnotify in pack%s %s leftmouseup', bag, slot)
+        end
         mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemToSell end)
         mq.cmd('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
         mq.doevents('eventNovalue')
@@ -694,54 +697,6 @@ local function sellToVendor(itemToSell,bag,slot)
         mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
     end
 end
-
--- function loot.sellStuff()
---     if not mq.TLO.Window('MerchantWnd').Open() then
---         if not goToVendor() then return end
---         if not openVendor() then return end
---     end
---     local flag = false
---     local totalPlat = mq.TLO.Me.Platinum()
---     if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
---     -- sell any top level inventory items that are marked as well, which aren't bags
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         if bagSlot.Container() == 0 then
---             if bagSlot.ID() then
---                 local itemToSell = bagSlot.Name()
---                 local sellRule = getRule(bagSlot)
---                 if sellRule == 'Sell' then sellToVendor(itemToSell) end
---             end
---         end
---     end
---     -- sell any items in bags which are marked as sell
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         local containerSize = bagSlot.Container()
---         if containerSize and containerSize > 0 then
---             for j=1,containerSize do
---                 local itemToSell = bagSlot.Item(j).Name()
---                 if itemToSell then
---                     local sellRule = getRule(bagSlot.Item(j))
---                     if sellRule == 'Sell' then
---                         local sellPrice = bagSlot.Item(j).Value() and bagSlot.Item(j).Value()/1000 or 0
---                         if sellPrice == 0 then
---                             loot.logger.Warn(string.format('Item \ay%s\ax is set to Sell but has no sell value!', itemToSell))
---                         else
---                             sellToVendor(itemToSell)
---                         end
---                     end
---                 end
---             end
---         end
---     end
---     if flag then flag ,loot.AlwaysEval = false,true end
---     mq.flushevents('Sell')
---     if mq.TLO.Window('MerchantWnd').Open() then mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup') end
---     local newTotalPlat = mq.TLO.Me.Platinum() - totalPlat
---     report('Total plat value sold: \ag%s\ax', newTotalPlat)
---     CheckBags()
--- end
 
 -- TRIBUTEING
 
@@ -785,49 +740,6 @@ local function tributeToVendor(itemToTrib,bag,slot)
     end
 end
 
--- function loot.tributeStuff()
---     if not mq.TLO.Window('TributeMasterWnd').Open() then
---         if not goToVendor() then return end
---         if not openTribMaster() then return end
---     end
---     mq.cmd('/keypress OPEN_INV_BAGS')
---     -- tributes requires the bags to be open
---     mq.delay(1000, AreBagsOpen)
---     mq.delay(1)
---     local flag = false
---     if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
---     -- Check top level inventory items that are marked as well, which aren't bags
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         if bagSlot.Container() == 0 then
---             if bagSlot.ID() then
---                 local itemToTrib = bagSlot
---                 local tribRule = getRule(itemToTrib)
---                 if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
---             end
---         end
---     end
---     -- Check items in bags which are marked as tribute
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         local containerSize = bagSlot.Container()
---         if containerSize and containerSize > 0 then
---             for j=1,containerSize do
---                 local itemToTrib = bagSlot.Item(j)
---                 if itemToTrib.ID() then
---                     local tribRule = getRule(itemToTrib)
---                     if tribRule == 'Tribute' then tributeToVendor(itemToTrib) end
---                 end
---             end
---         end
---     end
---     if flag then flag ,loot.AlwaysEval = false,true end
---     mq.flushevents('Tribute')
---     if mq.TLO.Window('TributeMasterWnd').Open() then mq.TLO.Window('TributeMasterWnd').DoClose() end
---     CheckBags()
---     mq.cmd('/keypress CLOSE_INV_BAGS')
--- end
-
 -- CLEANUP
 
 local function destroyItem(itemToDestroy,bag,slot)
@@ -840,39 +752,6 @@ local function destroyItem(itemToDestroy,bag,slot)
     mq.delay(1000, function() return not mq.TLO.Cursor() end)
     mq.delay(1)
 end
-
--- function loot.cleanupBags()
-
---     local flag = false
---     if loot.AlwaysEval then flag ,loot.AlwaysEval = true,false end
---     -- Check top level inventory items that are marked as well, which aren't bags
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         if bagSlot.Container() == 0 then
---             if bagSlot.ID() then
---                 local itemToDestroy = bagSlot
---                 local destroyRule = getRule(itemToDestroy)
---                 if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
---             end
---         end
---     end
---     -- Check items in bags which are marked as Destroy
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         local containerSize = bagSlot.Container()
---         if containerSize and containerSize > 0 then
---             for j=1,containerSize do
---                 local itemToDestroy = bagSlot.Item(j)
---                 if itemToDestroy.ID() then
---                     local destroyRule = getRule(itemToDestroy)
---                     if destroyRule == 'Destroy' then destroyItem(itemToDestroy) end
---                 end
---             end
---         end
---     end
---     if flag then flag ,loot.AlwaysEval = false,true end
---     CheckBags()
--- end
 
 -- BANKING
 
@@ -904,43 +783,16 @@ function loot.markTradeSkillAsBank()
     end
 end
 
-local function bankItem(itemName,bag,slot)
-    mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
+local function bankItem(itemName, bag, slot)
+    if not slot or slot == -1 then
+        mq.cmdf('/shift /itemnotify %s leftmouseup', bag)
+    else
+        mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
+    end
     mq.delay(100, function() return mq.TLO.Cursor() end)
     mq.cmd('/notify BigBankWnd BIGB_AutoButton leftmouseup')
     mq.delay(100, function() return not mq.TLO.Cursor() end)
 end
-
--- function loot.bankStuff()
---     if not mq.TLO.Window('BigBankWnd').Open() then
---         loot.logger.Warn('Bank window must be open!')
---         return
---     end
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         if bagSlot.Container() == 0 then
---             if bagSlot.ID() then
---                 local itemToBank = bagSlot.Name()
---                 local bankRule = getRule(bagSlot)
---                 if bankRule == 'Bank' then bankItem(itemToBank) end
---             end
---         end
---     end
---     -- sell any items in bags which are marked as sell
---     for i=1,10 do
---         local bagSlot = mq.TLO.InvSlot('pack'..i).Item
---         local containerSize = bagSlot.Container()
---         if containerSize and containerSize > 0 then
---             for j=1,containerSize do
---                 local itemToBank = bagSlot.Item(j).Name()
---                 if itemToBank then
---                     local bankRule = getRule(bagSlot.Item(j))
---                     if bankRule == 'Bank' then bankItem(itemToBank) end
---                 end
---             end
---         end
---     end
--- end
 
 -- FORAGING
 
@@ -1095,7 +947,6 @@ end
 function loot.tributeStuff()
     loot.processItems('Tribute')
 end
-
 
 --
 
