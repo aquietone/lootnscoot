@@ -35,6 +35,7 @@ local guiLoot = {
 	shouldDrawGUI = false,
 	imported = false,
 	hideNames = false,
+	showLinks = false,
 
 	---@type ConsoleWidget
 	console = nil,
@@ -45,25 +46,22 @@ local guiLoot = {
 }
 local lootTable = {}
 
-function MakeColorGradient(freq1, freq2, freq3, phase1, phase2, phase3, center, width, length)
-	local text = ''
-
-	for i = 1, length do
-		local color = IM_COL32(
-			math.floor(math.sin(freq1 * i + phase1) * width + center),
-			math.floor(math.sin(freq2 * i + phase2) * width + center),
-			math.floor(math.sin(freq3 * i + phase3) * width + center)
-		)
-
-		text = text .. string.format("\a#%06xx", bit32.band(color, 0xffffff))
-
-		if i % 50 == 0 then
-			guiLoot.console:AppendText(text)
-			text = ''
+function guiLoot.ReportLoot()
+	if guiLoot.recordData then
+		guiLoot.console:AppendText("\ay[Looted]\at[Loot Report]")
+		for looter, lootData in pairs(lootTable) do
+			guiLoot.console:AppendText("\at[%s] \ax: ", looter)
+			for item, data in pairs(lootData) do
+				local itemName = item
+				local itemLink = data["Link"]
+				local itemCount = data["Count"]
+				guiLoot.console:AppendText("\am\t%s \ax: \ax(%d)", itemLink, itemCount)
+			end
 		end
+	else
+		guiLoot.recordData = true
+		guiLoot.console:AppendText("\ay[Looted]\ag[Recording Data Enabled]\ax Check back later for Data.")
 	end
-
-	guiLoot.console:AppendText(text)
 end
 
 function guiLoot.GUI()
@@ -88,25 +86,6 @@ function guiLoot.GUI()
 		if imgui.BeginMenu('Options') then
 			_, guiLoot.console.autoScroll = imgui.MenuItem('Auto-scroll', nil, guiLoot.console.autoScroll)
 
-			imgui.Separator()
-
-			if imgui.MenuItem('Reset Position') then
-				guiLoot.resetPosition = true
-			end
-
-			imgui.Separator()
-
-			if imgui.MenuItem('Clear Console') then
-				guiLoot.console:Clear()
-			end
-
-			imgui.Separator()
-
-			if imgui.MenuItem('Close Console') then
-				guiLoot.openGUI = false
-			end
-
-			imgui.Separator()
 			local activated = false
 			activated, guiLoot.hideNames = imgui.MenuItem('Hide Names', activated, guiLoot.hideNames)
 			if activated then
@@ -117,15 +96,43 @@ function guiLoot.GUI()
 				end
 			end
 
-			imgui.Separator()
+			local act = false
+			act, guiLoot.showLinks = imgui.MenuItem('Show Links', act, guiLoot.showLinks)
+			if act then
+				if guiLoot.showLinks then
+					guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Enabled\ax")
+				else
+					guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Disabled\ax")
+				end
+			end
+
 			local active = false
 			active, guiLoot.recordData = imgui.MenuItem('Record Data', active, guiLoot.recordData)
 			if active then
 				if guiLoot.recordData then
 					guiLoot.console:AppendText("\ay[Looted]\ax Recording Data\ax")
 				else
+					lootTable = {}
 					guiLoot.console:AppendText("\ay[Looted]\ax Data Cleared\ax")
 				end
+			end
+
+			if imgui.MenuItem('View Report') then
+				guiLoot.ReportLoot()
+			end
+
+			imgui.Separator()
+
+			if imgui.MenuItem('Reset Position') then
+				guiLoot.resetPosition = true
+			end
+
+			if imgui.MenuItem('Clear Console') then
+				guiLoot.console:Clear()
+			end
+
+			if imgui.MenuItem('Close Console') then
+				guiLoot.openGUI = false
 			end
 
 			imgui.Separator()
@@ -170,28 +177,30 @@ function guiLoot.GUI()
 end
 
 function guiLoot.EventLoot(line, who, what)
+	local link = ''
 	if guiLoot.console ~= nil then
-		local item = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or what
-		if mq.TLO.Plugin('mq2linkdb').IsLoaded() then 
-			item = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or mq.TLO.LinkDB(string.format("=%s",what))()
+		link = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or what
+		if mq.TLO.Plugin('mq2linkdb').IsLoaded() and guiLoot.showLinks then
+			link = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or mq.TLO.LinkDB(string.format("=%s",what))()
 		end
 		if guiLoot.hideNames then
 			if who ~= 'You' then who = mq.TLO.Spawn(string.format("%s",who)).Class.ShortName() end
 		end
-		local text = string.format('\ao[%s] \at%s \axLooted %s', mq.TLO.Time(), who, item)
+		local text = string.format('\ao[%s] \at%s \axLooted %s', mq.TLO.Time(), who, link)
 		guiLoot.console:AppendText(text)
 		-- do we want to record loot data?
 		if not guiLoot.recordData then return end
-		local function addRule(Who, item)
-			if not lootTable[Who] then
-				lootTable[Who] = {}
+		local function addRule(who, what, link)
+			if not lootTable[who] then
+				lootTable[who] = {}
 			end
-			if not lootTable[Who][item] then
-				lootTable[Who][item] = {Count = 0}
+			if not lootTable[who][what] then
+				lootTable[who][what] = {Count = 0}
 			end
-			lootTable[Who][item].Count = lootTable[Who][item].Count + 1
+			lootTable[who][what]["Link"] = link
+			lootTable[who][what]["Count"] = (lootTable[who][what]["Count"] or 0) + 1
 		end
-		addRule(who, what)
+		addRule(who, what, link)
 	end
 end
 
@@ -203,22 +212,11 @@ local function bind(...)
 	elseif args[1] == 'stop' then
 		guiLoot.SHOW = false
 	elseif args[1] == 'clear' then
-		lootData = {}
+		lootTable = {}
 	elseif args[1] == 'report' then
 		guiLoot.openGUI = true
 		guiLoot.shouldDrawGUI = true
-		if guiLoot.recordData then
-			guiLoot.console:AppendText("\ay[Looted]\at[Loot Report]")
-				for looter, lootData in pairs(lootTable) do
-					guiLoot.console:AppendText("\at[%s] \ax: ",looter)
-					for item, countData in pairs(lootData) do
-						guiLoot.console:AppendText("\am\t%s \ax:\ag %s",mq.TLO.LinkDB(string.format("=%s",item))(), countData.Count)
-					end
-				end
-		else
-			guiLoot.recordData = true
-			guiLoot.console:AppendText("\ay[Looted]\ag[Recording Data Enabled]\ax Check back later for Data.")
-		end
+		guiLoot.ReportLoot()
 	elseif args[1] == 'hidenames' then
 		guiLoot.hideNames = not guiLoot.hideNames
 		if guiLoot.hideNames then
