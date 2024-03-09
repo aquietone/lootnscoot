@@ -40,10 +40,10 @@ local guiLoot = {
 	console = nil,
 	localEcho = false,
 	resetPosition = false,
-
+	recordData = false,
 	winFlags = bit32.bor(ImGuiWindowFlags.MenuBar)
 }
-
+local lootTable = {}
 
 function MakeColorGradient(freq1, freq2, freq3, phase1, phase2, phase3, center, width, length)
 	local text = ''
@@ -111,9 +111,20 @@ function guiLoot.GUI()
 			activated, guiLoot.hideNames = imgui.MenuItem('Hide Names', activated, guiLoot.hideNames)
 			if activated then
 				if guiLoot.hideNames then
-					print("\ay[Looted]\ax Hiding Names\ax")
+					guiLoot.console:AppendText("\ay[Looted]\ax Hiding Names\ax")
 				else
-					print("\ay[Looted]\ax Showing Names\ax")
+					guiLoot.console:AppendText("\ay[Looted]\ax Showing Names\ax")
+				end
+			end
+
+			imgui.Separator()
+			local active = false
+			active, guiLoot.recordData = imgui.MenuItem('Record Data', active, guiLoot.recordData)
+			if active then
+				if guiLoot.recordData then
+					guiLoot.console:AppendText("\ay[Looted]\ax Recording Data\ax")
+				else
+					guiLoot.console:AppendText("\ay[Looted]\ax Data Cleared\ax")
 				end
 			end
 
@@ -124,7 +135,7 @@ function guiLoot.GUI()
 					guiLoot.SHOW = false
 				else
 					guiLoot.openGUI = false
-					print("\ay[Looted]\ax Can Not Exit in Imported Mode.\ar Closing Window instead.\ax")
+					guiLoot.console:AppendText("\ay[Looted]\ax Can Not Exit in Imported Mode.\ar Closing Window instead.\ax")
 				end
 			end
 
@@ -158,11 +169,7 @@ function guiLoot.GUI()
 	ImGui.End()
 end
 
-function StringTrim(s)
-	return s:gsub("^%s*(.-)%s*$", "%1")
-end
-
-function guiLoot.EventLoot(line,who,what)
+function guiLoot.EventLoot(line, who, what)
 	if guiLoot.console ~= nil then
 		local item = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or what
 		if mq.TLO.Plugin('mq2linkdb').IsLoaded() then 
@@ -171,8 +178,20 @@ function guiLoot.EventLoot(line,who,what)
 		if guiLoot.hideNames then
 			if who ~= 'You' then who = mq.TLO.Spawn(string.format("%s",who)).Class.ShortName() end
 		end
-		local text = string.format('\ao[%s] \at%s \axLooted %s',mq.TLO.Time() ,who, item)
+		local text = string.format('\ao[%s] \at%s \axLooted %s', mq.TLO.Time(), who, item)
 		guiLoot.console:AppendText(text)
+		-- do we want to record loot data?
+		if not guiLoot.recordData then return end
+		local function addRule(Who, item)
+			if not lootTable[Who] then
+				lootTable[Who] = {}
+			end
+			if not lootTable[Who][item] then
+				lootTable[Who][item] = {Count = 0}
+			end
+			lootTable[Who][item].Count = lootTable[Who][item].Count + 1
+		end
+		addRule(who, what)
 	end
 end
 
@@ -183,39 +202,34 @@ local function bind(...)
 		guiLoot.shouldDrawGUI = not guiLoot.shouldDrawGUI
 	elseif args[1] == 'stop' then
 		guiLoot.SHOW = false
+	elseif args[1] == 'clear' then
+		lootData = {}
+	elseif args[1] == 'report' then
+		guiLoot.openGUI = true
+		guiLoot.shouldDrawGUI = true
+		if guiLoot.recordData then
+			guiLoot.console:AppendText("\ay[Looted]\at[Loot Report]")
+				for looter, lootData in pairs(lootTable) do
+					guiLoot.console:AppendText("\at[%s] \ax: ",looter)
+					for item, countData in pairs(lootData) do
+						guiLoot.console:AppendText("\am\t%s \ax:\ag %s",mq.TLO.LinkDB(string.format("=%s",item))(), countData.Count)
+					end
+				end
+		else
+			guiLoot.recordData = true
+			guiLoot.console:AppendText("\ay[Looted]\ag[Recording Data Enabled]\ax Check back later for Data.")
+		end
 	elseif args[1] == 'hidenames' then
 		guiLoot.hideNames = not guiLoot.hideNames
 		if guiLoot.hideNames then
-			print("\ay[Looted]\ax Hiding Names\ax")
+			guiLoot.console:AppendText("\ay[Looted]\ax Hiding Names\ax")
 		else
-			print("\ay[Looted]\ax Showing Names\ax")
+			guiLoot.console:AppendText("\ay[Looted]\ax Showing Names\ax")
 		end
 	end
 end
 
-local args = {...}
-local function checkArgs(args)
-	if args[1] == 'start' then
-		mq.bind('/looted', bind)
-		guiLoot.SHOW = true
-
-	elseif args[1] == 'hidenames' then
-		mq.bind('/looted', bind)
-		guiLoot.SHOW = true
-		guiLoot.hideNames = true
-	else
-		return
-	end
-
-	local echo = "\ay[Looted]\ax Commands:\n"
-	echo = echo .. "\ay[Looted]\ax /looted show \t\t\atToggles the Gui.\n\ax"
-	echo = echo .. "\ay[Looted]\ax /looted stop \t\t\atExits script.\n\ax"
-	echo = echo .. "\ay[Looted]\ax /looted hidenames\t\atHides names and shows Class instead.\n\ax"
-	print(echo)
-end
-
 local function init()
-	checkArgs(args)
 	if not mq.TLO.Plugin('mq2linkdb').IsLoaded() then
 		mq.cmd('/plugin linkdb load')
 	end
@@ -241,14 +255,38 @@ local function init()
 	end
 end
 
+local args = {...}
+local function checkArgs(args)
+	init()
+	if args[1] == 'start' then
+		mq.bind('/looted', bind)
+		guiLoot.SHOW = true
+		guiLoot.openGUI = true
+	elseif args[1] == 'hidenames' then
+		mq.bind('/looted', bind)
+		guiLoot.SHOW = true
+		guiLoot.openGUI = true
+		guiLoot.hideNames = true
+	else
+		return
+	end
+	local echo = "\ay[Looted]\ax Commands:\n"
+	echo = echo .. "\ay[Looted]\ax /looted show   \t\t\atToggles the Gui.\n\ax"
+	echo = echo .. "\ay[Looted]\ax /looted report \t\t\atReports loot Data or Enables recording of data if not already.\n\ax"
+	echo = echo .. "\ay[Looted]\ax /looted clear  \t\t\atClears Recorded Data.\n\ax"
+	echo = echo .. "\ay[Looted]\ax /looted hidenames  \t\atHides names and shows Class instead.\n\ax"
+	echo = echo .. "\ay[Looted]\ax /looted stop   \t\t\atExits script.\n\ax"
+	print(echo)
+	guiLoot.console:AppendText(echo)
+end
+
 local function loop()
 	while guiLoot.SHOW do
 		mq.delay(100)
 		mq.doevents()
 	end
 end
-
-init()
+checkArgs(args)
 loop()
 
 return guiLoot
