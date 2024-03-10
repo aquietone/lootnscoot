@@ -13,7 +13,8 @@
 	Standalone Commands
 	/looted show 				-- toggles show hide on window.
 	/looted stop 				-- exit sctipt.
-	/looted hidenames 			-- Toggles showing names or class names. default is names.
+	/looted reported			-- prints out a report of items looted by who and qty. 
+	/looted hidenames 			-- Toggles showing names or class names. default is class.
 
 	Or you can Import into another Lua.
 
@@ -23,7 +24,45 @@
 	2. local guiLoot = require('looted')
 	3. guiLoot.imported = true
 	4. guiLoot.openGUI = true|false to show or hide window.
-	5. guiLoot.hideNames = true|false toggle showing character names default is true.
+	5. guiLoot.hideNames = true|false toggle masking character names default is true (class).
+
+	* You can export menu items from your lua into the console. 
+	* Do this by passing your menu into guiLoot.importGUIElements table. 
+
+	Follow this example export.
+
+	local function guiExport()
+		-- Define a new menu element function
+		local function myCustomMenuElement()
+			if ImGui.BeginMenu('My Custom Menu') then
+				-- Add menu items here
+				_, guiLoot.console.autoScroll = ImGui.MenuItem('Auto-scroll', nil, guiLoot.console.autoScroll)
+				local activated = false
+				activated, guiLoot.hideNames = ImGui.MenuItem('Hide Names', activated, guiLoot.hideNames)
+				if activated then
+					if guiLoot.hideNames then
+						guiLoot.console:AppendText("\ay[Looted]\ax Hiding Names\ax")
+					else
+						guiLoot.console:AppendText("\ay[Looted]\ax Showing Names\ax")
+					end
+				end
+				local act = false
+				act, guiLoot.showLinks = ImGui.MenuItem('Show Links', act, guiLoot.showLinks)
+				if act then
+					guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
+					if guiLoot.showLinks then
+						if not guiLoot.linkdb then guiLoot.loadLDB() end
+						guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Enabled\ax")
+					else
+						guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Disabled\ax")
+					end
+				end
+				ImGui.EndMenu()
+			end
+		end
+		-- Add the custom menu element function to the importGUIElements table
+		table.insert(guiLoot.importGUIElements, myCustomMenuElement)
+	end
 
 ]]
 local mq = require('mq')
@@ -38,6 +77,8 @@ local guiLoot = {
 	showLinks = false,
 	linkdb = false,
 
+	importGUIElements = {},
+
 	---@type ConsoleWidget
 	console = nil,
 	localEcho = false,
@@ -47,13 +88,30 @@ local guiLoot = {
 }
 local lootTable = {}
 
-local function loadLDB()
+---@param names boolean
+---@param links boolean
+---@param record boolean
+function guiLoot.GetSettings(names,links,record)
+	if guiLoot.imported then
+		guiLoot.hideNames = names
+		guiLoot.showLinks = links
+		guiLoot.recordData = record
+	end
+end
+
+function guiLoot.loadLDB()
 	if guiLoot.linkdb then return end
 	local sWarn = "MQ2LinkDB not loaded, Can't lookup links.\n Attempting to Load MQ2LinkDB"
 	guiLoot.console:AppendText(sWarn)
 	print(sWarn)
 	mq.cmdf("/plugin mq2linkdb noauto")
 	guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
+end
+-- draw any imported exported menus from outside this script.
+function drawImportedMenu()
+	for _, menuElement in ipairs(guiLoot.importGUIElements) do
+		menuElement()
+	end
 end
 
 function guiLoot.ReportLoot()
@@ -111,7 +169,7 @@ function guiLoot.GUI()
 			if act then
 				guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
 				if guiLoot.showLinks then
-					if not guiLoot.linkdb then loadLDB() end
+					if not guiLoot.linkdb then guiLoot.loadLDB() end
 					guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Enabled\ax")
 				else
 					guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Disabled\ax")
@@ -164,6 +222,10 @@ function guiLoot.GUI()
 
 			imgui.EndMenu()
 		end
+		-- inside main menu bar draw section
+		if guiLoot.imported and #guiLoot.importGUIElements > 0 then
+			drawImportedMenu()
+		end
 		imgui.EndMenuBar()
 	end
 	-- End of menu bar
@@ -192,11 +254,10 @@ function guiLoot.EventLoot(line, who, what)
 	local link = ''
 	if guiLoot.console ~= nil then
 		link = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or what
-		--guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
 		if guiLoot.linkdb and guiLoot.showLinks then
 			link = mq.TLO.LinkDB(string.format("=%s",what))() or link
 		elseif not guiLoot.linkdb and guiLoot.showLinks then
-			loadLDB()
+			guiLoot.loadLDB()
 			link = mq.TLO.LinkDB(string.format("=%s",what))() or link
 		end
 		if guiLoot.hideNames then

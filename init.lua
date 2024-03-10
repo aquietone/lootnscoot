@@ -121,7 +121,7 @@ if not success then printf('\arERROR: Write.lua could not be loaded\n%s\ax', Wri
 local eqServer = string.gsub(mq.TLO.EverQuest.Server(),' ','_')
 local guiLoot = require('loot_hist')
 local eqChar = mq.TLO.Me.Name()
-local version = 1.5
+local version = 1.6
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot = {
     logger = Write,
@@ -158,7 +158,11 @@ local loot = {
     NoDropDefaults = "Quest|Keep|Ignore",   -- not implimented yet
     LootLagDelay = 0,           -- not implimented yet
     CorpseRotTime = "440s",     -- not implimented yet
+    HideNames = false,          -- Hides names and uses class shortname in looted window
+    LookupLinks = false,        -- Enables Looking up Links for items not on that character. *recommend only running on one charcter that is monitoring.
+    RecordData = false,         -- Enables recording data to report later. 
     Terminate = true,
+
 }
 loot.logger.prefix = 'lootnscoot'
 guiLoot.imported = true
@@ -225,6 +229,7 @@ local function loadSettings()
     end
     shouldLootActions.Destroy = loot.DoDestroy
     shouldLootActions.Tribute = loot.TributeKeep
+
 end
 
 local function checkCursor()
@@ -315,10 +320,7 @@ local function getRule(item)
 
     lootData[firstLetter] = lootData[firstLetter] or {}
     lootData[firstLetter][itemName] = lootData[firstLetter][itemName] or lookupIniLootRule(firstLetter, itemName)
-    -- Check if item is on global Items list and use those rules insdead.
-    if loot.GlobalLootOn and globalItem ~= 'NULL' then
-        lootData[firstLetter][itemName] = globalItem or lootData[firstLetter][itemName]
-    end
+
     -- Re-Evaluate the settings if AlwaysEval is on. Items that do not meet the Characters settings are reset to NUll and re-evaluated as if they were new items.
     if loot.AlwaysEval then
         local oldDecision = lootData[firstLetter][itemName] -- whats on file
@@ -340,6 +342,11 @@ local function getRule(item)
         -- set Tribute flag if tribute value is greater than minTributeValue and the sell price is less than min sell price or has no value
         if tributeValue >= loot.MinTributeValue and (sellPrice < loot.MinSellPrice or sellPrice == 0) then lootDecision = 'Tribute' end
         addRule(itemName, firstLetter, lootDecision)
+    end
+    -- check this before quest item checks. so we have the proper rule to compare.
+    -- Check if item is on global Items list, ignore everything else and use those rules insdead.
+    if loot.GlobalLootOn and globalItem ~= 'NULL' then
+        lootData[firstLetter][itemName] = globalItem or lootData[firstLetter][itemName]
     end
     -- Check if item marked Quest
     if string.find(lootData[firstLetter][itemName],'Quest') then
@@ -394,6 +401,7 @@ local function commandHandler(...)
         elseif args[1] == 'reload' then
             lootData = {}
             loadSettings()
+            guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData)
             loot.Terminate = false
             loot.logger.Info("\ayReloaded Settings \axAnd \atLoot Files")
         elseif args[1] == 'bank' then
@@ -402,6 +410,8 @@ local function commandHandler(...)
             loot.processItems('Cleanup')
         elseif args[1] == 'gui' then
             guiLoot.openGUI = not guiLoot.openGUI
+        elseif args[1] == 'report' then
+            guiLoot.ReportLoot()
         elseif args[1] == 'hidenames' then
             guiLoot.hideNames = not guiLoot.hideNames
         elseif args[1] == 'config' then
@@ -953,6 +963,43 @@ end
 
 --
 
+local function guiExport()
+    
+    -- Define a new menu element function
+    local function myCustomMenuElement()
+        if ImGui.BeginMenu('Loot N Scoot') then
+            -- Add menu items here
+
+            if ImGui.MenuItem('Sell Stuff') then
+                mq.cmd('/lootutils sellstuff')
+            end
+
+            if ImGui.MenuItem('Tribute Stuff') then
+                mq.cmd('/lootutils tributestuff')
+            end
+
+            if ImGui.MenuItem('Bank') then
+                mq.cmd('/lootutils bank')
+            end
+
+            if ImGui.MenuItem('Cleanup') then
+                mq.cmd('/lootutils cleanup')
+            end
+
+            ImGui.Separator()
+
+            if ImGui.MenuItem('Exit LNS') then
+                loot.Terminate = true
+            end
+
+            ImGui.EndMenu()
+        end
+
+    end
+    -- Add the custom menu element function to the importGUIElements table
+    table.insert(guiLoot.importGUIElements, myCustomMenuElement)
+end
+
 local function processArgs(args)
     if #args == 1 then
         if args[1] == 'sellstuff' then
@@ -964,6 +1011,7 @@ local function processArgs(args)
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
+            guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData)
             loot.Terminate = false
         end
     end
@@ -980,6 +1028,8 @@ local function init(args)
     setupEvents()
     setupBinds()
     processArgs(args)
+    guiExport()
+
 end
 
 init({...})
