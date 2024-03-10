@@ -374,7 +374,7 @@ end
 
 local function setupEvents()
     mq.event("CantLoot", "#*#may not loot this corpse#*#", eventCantLoot)
-    mq.event("NoSlot", "#*#There are no slots of the held item in your inventory#*#", eventNoSlot)
+    mq.event("NoSlot", "#*#There are no open slots for the held item in your inventory#*#", eventNoSlot)
     mq.event("Sell", "#*#You receive#*# for the #1#(s)#*#", eventSell)
     if loot.LootForage then
         mq.event("ForageExtras", "Your forage mastery has enabled you to find something else!", eventForage)
@@ -732,8 +732,11 @@ local function tributeToVendor(itemToTrib,bag,slot)
         report('\ayTributing \at%s \axfor\ag %s \axpoints!',itemToTrib.Name(),itemToTrib.Tribute())
         mq.cmdf('/shift /itemnotify in pack%s %s leftmouseup', bag, slot)
         mq.delay(1) -- progress frame
-        mq.delay(5000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == itemToTrib.Tribute() end)
-        if mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() then mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp() end
+
+        mq.delay(5000, function() return mq.TLO.Window('TributeMasterWnd').Child('TMW_ValueLabel').Text() == tostring(itemToTrib.Tribute()) and
+            mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
+
+        mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').LeftMouseUp()
         mq.delay(1)
         mq.delay(5000, function() return not mq.TLO.Window('TributeMasterWnd').Child('TMW_DonateButton').Enabled() end)
         mq.delay(1000) -- This delay is necessary because there is seemingly a delay between donating and selecting the next item.

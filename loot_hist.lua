@@ -34,17 +34,27 @@ local guiLoot = {
 	openGUI = false,
 	shouldDrawGUI = false,
 	imported = false,
-	hideNames = false,
+	hideNames = true,
 	showLinks = false,
+	linkdb = false,
 
 	---@type ConsoleWidget
 	console = nil,
 	localEcho = false,
 	resetPosition = false,
-	recordData = false,
+	recordData = true,
 	winFlags = bit32.bor(ImGuiWindowFlags.MenuBar)
 }
 local lootTable = {}
+
+local function loadLDB()
+	if guiLoot.linkdb then return end
+	local sWarn = "MQ2LinkDB not loaded, Can't lookup links.\n Attempting to Load MQ2LinkDB"
+	guiLoot.console:AppendText(sWarn)
+	print(sWarn)
+	mq.cmdf("/plugin mq2linkdb noauto")
+	guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
+end
 
 function guiLoot.ReportLoot()
 	if guiLoot.recordData then
@@ -55,7 +65,7 @@ function guiLoot.ReportLoot()
 				local itemName = item
 				local itemLink = data["Link"]
 				local itemCount = data["Count"]
-				guiLoot.console:AppendText("\am\t%s \ax: \ax(%d)", itemLink, itemCount)
+				guiLoot.console:AppendText("\ao\t%s \ax: \ax(%d)", itemLink, itemCount)
 			end
 		end
 	else
@@ -99,7 +109,9 @@ function guiLoot.GUI()
 			local act = false
 			act, guiLoot.showLinks = imgui.MenuItem('Show Links', act, guiLoot.showLinks)
 			if act then
+				guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
 				if guiLoot.showLinks then
+					if not guiLoot.linkdb then loadLDB() end
 					guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Enabled\ax")
 				else
 					guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Disabled\ax")
@@ -131,11 +143,11 @@ function guiLoot.GUI()
 				guiLoot.console:Clear()
 			end
 
+			imgui.Separator()
+
 			if imgui.MenuItem('Close Console') then
 				guiLoot.openGUI = false
 			end
-
-			imgui.Separator()
 
 			if imgui.MenuItem('Exit') then
 				if not guiLoot.imported then
@@ -180,11 +192,15 @@ function guiLoot.EventLoot(line, who, what)
 	local link = ''
 	if guiLoot.console ~= nil then
 		link = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or what
-		if mq.TLO.Plugin('mq2linkdb').IsLoaded() and guiLoot.showLinks then
-			link = mq.TLO.FindItem(what).ItemLink('CLICKABLE')() or mq.TLO.LinkDB(string.format("=%s",what))()
+		--guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
+		if guiLoot.linkdb and guiLoot.showLinks then
+			link = mq.TLO.LinkDB(string.format("=%s",what))() or link
+		elseif not guiLoot.linkdb and guiLoot.showLinks then
+			loadLDB()
+			link = mq.TLO.LinkDB(string.format("=%s",what))() or link
 		end
 		if guiLoot.hideNames then
-			if who ~= 'You' then who = mq.TLO.Spawn(string.format("%s",who)).Class.ShortName() end
+			if who ~= 'You' then who = mq.TLO.Spawn(string.format("%s",who)).Class.ShortName() else who = mq.TLO.Me.Class.ShortName() end
 		end
 		local text = string.format('\ao[%s] \at%s \axLooted %s', mq.TLO.Time(), who, link)
 		guiLoot.console:AppendText(text)
@@ -228,9 +244,7 @@ local function bind(...)
 end
 
 local function init()
-	if not mq.TLO.Plugin('mq2linkdb').IsLoaded() then
-		mq.cmd('/plugin linkdb load')
-	end
+	guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
 
 	-- if imported set show to true.
 	if guiLoot.imported then
