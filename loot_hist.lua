@@ -140,7 +140,7 @@ function guiLoot.GUI()
 	ImGui.SetNextWindowSize(260, 300, ImGuiCond.FirstUseEver)
 	--imgui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(1, 0));
 
-	if guiLoot.imported then windowName = 'Looted Items *##Imported_'..mq.TLO.Me.DisplayName() end
+	if guiLoot.imported then windowName = 'Looted Items Local##Imported_'..mq.TLO.Me.DisplayName() end
 	guiLoot.openGUI, guiLoot.shouldDrawGUI = ImGui.Begin(windowName, guiLoot.openGUI, guiLoot.winFlags)
 	if not guiLoot.openGUI then
 		imgui.End()
