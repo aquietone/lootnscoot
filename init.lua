@@ -119,7 +119,10 @@ local mq = require 'mq'
 local success, Write = pcall(require, 'lib.Write')
 if not success then printf('\arERROR: Write.lua could not be loaded\n%s\ax', Write) return end
 local eqServer = string.gsub(mq.TLO.EverQuest.Server(),' ','_')
-local guiLoot = require('loot_hist')
+-- Check for looted module, if found use that. else fall back on our copy, which may be outdated.
+local req, guiLoot = pcall(require,string.format('../looted/init'))
+if not req then req,guiLoot = pcall(require,'loot_hist') print('Looted Not Found! Using Local Copy!') else print('Looted Loaded!') end
+if not req then guiLoot = nil print('NO LOOTED Found, Disabling Looted Features.') end
 local eqChar = mq.TLO.Me.Name()
 local version = 1.6
 -- Public default settings, also read in from Loot.ini [Settings] section
@@ -165,7 +168,7 @@ local loot = {
 
 }
 loot.logger.prefix = 'lootnscoot'
-guiLoot.imported = true
+if guiLoot ~= nil then guiLoot.imported = true end
 
 -- Internal settings
 local lootData, cantLootList = {}, {}
@@ -966,7 +969,7 @@ end
 local function guiExport()
     
     -- Define a new menu element function
-    local function myCustomMenuElement()
+    local function customMenu()
         if ImGui.BeginMenu('Loot N Scoot') then
             -- Add menu items here
 
@@ -997,7 +1000,7 @@ local function guiExport()
 
     end
     -- Add the custom menu element function to the importGUIElements table
-    table.insert(guiLoot.importGUIElements, myCustomMenuElement)
+    if guiLoot ~= nil then table.insert(guiLoot.importGUIElements, customMenu) end
 end
 
 local function processArgs(args)
@@ -1011,7 +1014,7 @@ local function processArgs(args)
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
-            guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData)
+            if guiLoot ~= nil then guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData) end
             loot.Terminate = false
         end
     end
