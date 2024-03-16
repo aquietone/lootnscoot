@@ -277,9 +277,9 @@ function guiLoot.RegisterActor()
 			local text = string.format('\ao[%s] \at%s \ax%s %s', lootEntry.LootedAt, who, item.Action, link)
 			guiLoot.console:AppendText(text)
 			-- do we want to record loot data?
-			if not guiLoot.recordData then return end
-
-			addRule(who, what, link)
+			if guiLoot.recordData then
+				addRule(who, what, link)
+			end
 		end
 	end)
 end

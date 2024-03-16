@@ -608,7 +608,10 @@ local function lootCorpse(corpseID)
             mq.cmdf(skippedItems, loot.LootChannel, corpseName, corpseID)
         end
         if #allItems > 0 then
+            -- send to self and others running lootnscoot
             lootActor:send({mailbox='looted'}, {ID=corpseID, Items=allItems, LootedAt=mq.TLO.Time(), LootedBy=eqChar})
+            -- send to standalone looted gui
+            lootActor:send({mailbox='looted', script='looted'}, {ID=corpseID, Items=allItems, LootedAt=mq.TLO.Time(), LootedBy=eqChar})
         end
     end
     if mq.TLO.Cursor() then checkCursor() end
