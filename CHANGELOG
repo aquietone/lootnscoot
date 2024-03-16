@@ -1,3 +1,9 @@
+1.7.0
+- actor messaging for items looted/left/destroyed sent to loot history ui
+
+1.6.0
+- misc fixes/cleanup - grimmier
+
 1.5.0
 - quest item looting support - grimmier
 - tribute item support - grimmier

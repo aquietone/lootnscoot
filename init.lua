@@ -124,7 +124,8 @@ local req, guiLoot = pcall(require,string.format('../looted/init'))
 if not req then req,guiLoot = pcall(require,'loot_hist') print('Looted Not Found! Using Local Copy!') else print('Looted Loaded!') end
 if not req then guiLoot = nil print('NO LOOTED Found, Disabling Looted Features.') end
 local eqChar = mq.TLO.Me.Name()
-local version = 1.6
+local actors = require('actors')
+local version = 1.7
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot = {
     logger = Write,
@@ -165,7 +166,6 @@ local loot = {
     LookupLinks = false,        -- Enables Looking up Links for items not on that character. *recommend only running on one charcter that is monitoring.
     RecordData = false,         -- Enables recording data to report later. 
     Terminate = true,
-
 }
 loot.logger.prefix = 'lootnscoot'
 if guiLoot ~= nil then guiLoot.imported = true end
@@ -232,7 +232,6 @@ local function loadSettings()
     end
     shouldLootActions.Destroy = loot.DoDestroy
     shouldLootActions.Tribute = loot.TributeKeep
-
 end
 
 local function checkCursor()
@@ -281,7 +280,7 @@ end
 local reportPrefix = '/%s \a-t[\at%s\a-t][\ax\ayLootUtils\ax\a-t]\ax '
 local function report(message, ...)
     if loot.ReportLoot then
-        local prefixWithChannel = reportPrefix:format(loot.LootChannel,mq.TLO.Time())
+        local prefixWithChannel = reportPrefix:format(loot.LootChannel, mq.TLO.Time())
         mq.cmdf(prefixWithChannel.. message, ...)
     end
 end
@@ -377,6 +376,8 @@ end
 
 -- EVENTS
 
+local lootActor = actors.register('lootnscoot', function(message) end)
+
 local itemNoValue = nil
 local function eventNovalue(line, item)
     itemNoValue = item
@@ -404,7 +405,7 @@ local function commandHandler(...)
         elseif args[1] == 'reload' then
             lootData = {}
             loadSettings()
-            guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData)
+            guiLoot.GetSettings(loot.HideNames, loot.LookupLinks, loot.RecordData)
             loot.Terminate = false
             loot.logger.Info("\ayReloaded Settings \axAnd \atLoot Files")
         elseif args[1] == 'bank' then
@@ -490,10 +491,15 @@ end
 ---@param index number @The current index we are looking at in loot window, 1-based.
 ---@param doWhat string @The action to take for the item.
 ---@param button string @The mouse button to use to loot the item. Currently only leftmouseup implemented.
-local function lootItem(index, doWhat, button, qKeep)
+---@param qKeep number @The count to keep, for quest items.
+---@param allItems table @Table of all items seen so far on the corpse, left or looted.
+local function lootItem(index, doWhat, button, qKeep, allItems)
     loot.logger.Debug('Enter lootItem')
-    if not shouldLootActions[doWhat] then return end
     local corpseItem = mq.TLO.Corpse.Item(index)
+    if not shouldLootActions[doWhat] then
+        table.insert(allItems, {Name=corpseItem.Name(), Action='Left', Link=corpseItem.ItemLink('CLICKABLE')()})
+        return
+    end
     local corpseItemID =corpseItem.ID()
     local itemName = corpseItem.Name()
     local itemLink = corpseItem.ItemLink('CLICKABLE')()
@@ -507,7 +513,10 @@ local function lootItem(index, doWhat, button, qKeep)
     mq.delay(1) -- force next frame
     -- The loot window closes if attempting to loot a lore item you already have, but lore should have already been checked for
     if not mq.TLO.Window('LootWnd').Open() then return end
-    if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then mq.cmd('/destroy') end
+    if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then
+        mq.cmd('/destroy')
+        table.insert(allItems, {Name=itemName, Action='Destroyed', Link=itemLink})
+    end
     checkCursor()
     if qKeep > 0 and doWhat == 'Keep' then
         local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
@@ -515,6 +524,7 @@ local function lootItem(index, doWhat, button, qKeep)
     else
         report('%sing \ay%s\ax', doWhat, itemLink)
     end
+    table.insert(allItems, {Name=itemName, Action='Looted', Link=itemLink})
     CheckBags()
     if areFull then report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.') end
 end
@@ -546,6 +556,7 @@ local function lootCorpse(corpseID)
         if mq.TLO.Corpse.DisplayName() == mq.TLO.Me.DisplayName() then mq.cmd('/lootall') return end -- if its our own corpse just loot it.
         local noDropItems = {}
         local loreItems = {}
+        local allItems = {}
         for i=1,items do
             local freeSpace = mq.TLO.Me.FreeInventory()
             local corpseItem = mq.TLO.Corpse.Item(i)
@@ -559,26 +570,26 @@ local function lootCorpse(corpseID)
                     local haveItemBank = mq.TLO.FindItemBank(('=%s'):format(corpseItem.Name()))()
                     if haveItem or haveItemBank or freeSpace <= loot.SaveBagSlots then
                         table.insert(loreItems, itemLink)
-                        lootItem(i,'Ignore','leftmouseup', 0)
+                        lootItem(i,'Ignore','leftmouseup', 0, allItems)
                     elseif corpseItem.NoDrop() then
                         if loot.LootNoDrop then
-                            lootItem(i, itemRule, 'leftmouseup', qKeep)
+                            lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
                         else
                             table.insert(noDropItems, itemLink)
-                            lootItem(i,'Ignore','leftmouseup',0)
+                            lootItem(i, 'Ignore', 'leftmouseup', 0, allItems)
                         end
                     else
-                        lootItem(i, itemRule, 'leftmouseup', qKeep)
+                        lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
                     end
                 elseif corpseItem.NoDrop() then
                     if loot.LootNoDrop then
-                        lootItem(i, itemRule, 'leftmouseup', qKeep)
+                        lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
                     else
                         table.insert(noDropItems, itemLink)
-                        lootItem(i,'Ignore','leftmouseup',0)
+                        lootItem(i,'Ignore','leftmouseup',0, allItems)
                     end
                 elseif freeSpace > loot.SaveBagSlots or (stackable and freeStack > 0) then
-                    lootItem(i, itemRule, 'leftmouseup', qKeep)
+                    lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
                 end
             end
             mq.delay(1)
@@ -595,6 +606,9 @@ local function lootCorpse(corpseID)
                 skippedItems = skippedItems .. ' ' .. loreItem .. ' (lore) '
             end
             mq.cmdf(skippedItems, loot.LootChannel, corpseName, corpseID)
+        end
+        if #allItems > 0 then
+            lootActor:send({mailbox='looted'}, {ID=corpseID, Items=allItems, LootedAt=mq.TLO.Time(), LootedBy=eqChar})
         end
     end
     if mq.TLO.Cursor() then checkCursor() end

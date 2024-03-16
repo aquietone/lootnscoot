@@ -67,6 +67,7 @@
 ]]
 local mq = require('mq')
 local imgui = require('ImGui')
+local actor = require('actors')
 
 local guiLoot = {
 	SHOW = false,
@@ -84,6 +85,7 @@ local guiLoot = {
 	localEcho = false,
 	resetPosition = false,
 	recordData = true,
+	UseActors = true,
 	winFlags = bit32.bor(ImGuiWindowFlags.MenuBar)
 }
 local lootTable = {}
@@ -250,6 +252,38 @@ function guiLoot.GUI()
 	ImGui.End()
 end
 
+local function addRule(who, what, link)
+	if not lootTable[who] then
+		lootTable[who] = {}
+	end
+	if not lootTable[who][what] then
+		lootTable[who][what] = {Count = 0}
+	end
+	lootTable[who][what]["Link"] = link
+	lootTable[who][what]["Count"] = (lootTable[who][what]["Count"] or 0) + 1
+end
+
+function guiLoot.RegisterActor()
+	guiLoot.actor = actor.register('looted', function(message)
+		local lootEntry = message()
+		for _,item in ipairs(lootEntry.Items) do
+			local link = item.Link
+			local what = item.Name
+			local who = lootEntry.LootedBy
+			if guiLoot.hideNames then
+				if who ~= mq.TLO.Me() then who = mq.TLO.Spawn(string.format("%s", who)).Class.ShortName() else who = mq.TLO.Me.Class.ShortName() end
+			end
+
+			local text = string.format('\ao[%s] \at%s \ax%s %s', lootEntry.LootedAt, who, item.Action, link)
+			guiLoot.console:AppendText(text)
+			-- do we want to record loot data?
+			if not guiLoot.recordData then return end
+
+			addRule(who, what, link)
+		end
+	end)
+end
+
 function guiLoot.EventLoot(line, who, what)
 	local link = ''
 	if guiLoot.console ~= nil then
@@ -267,16 +301,6 @@ function guiLoot.EventLoot(line, who, what)
 		guiLoot.console:AppendText(text)
 		-- do we want to record loot data?
 		if not guiLoot.recordData then return end
-		local function addRule(who, what, link)
-			if not lootTable[who] then
-				lootTable[who] = {}
-			end
-			if not lootTable[who][what] then
-				lootTable[who][what] = {Count = 0}
-			end
-			lootTable[who][what]["Link"] = link
-			lootTable[who][what]["Count"] = (lootTable[who][what]["Count"] or 0) + 1
-		end
 		addRule(who, what, link)
 	end
 end
@@ -316,7 +340,11 @@ local function init()
 	end
 
 	-- setup events
-	mq.event('echo_Loot', '--#1# ha#*# looted a #2#.#*#', guiLoot.EventLoot)
+	if guiLoot.UseActors then
+		guiLoot.RegisterActor()
+	else
+		mq.event('echo_Loot', '--#1# ha#*# looted a #2#.#*#', guiLoot.EventLoot)
+	end
 
 	-- initialize the console
 	if guiLoot.console == nil then
