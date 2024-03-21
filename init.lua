@@ -168,7 +168,7 @@ local loot = {
     Terminate = true,
 }
 loot.logger.prefix = 'lootnscoot'
-if guiLoot ~= nil then guiLoot.imported = true end
+if guiLoot ~= nil then guiLoot.imported = true loot.UseActors = true end
 
 -- Internal settings
 local lootData, cantLootList = {}, {}
@@ -989,7 +989,28 @@ local function guiExport()
     local function customMenu()
         if ImGui.BeginMenu('Loot N Scoot') then
             -- Add menu items here
+            if ImGui.BeginMenu('Toggles') then
+                -- Add menu items here
+                _,loot.DoLoot = ImGui.MenuItem("DoLoot", nil, loot.DoLoot)
+                _,loot.GlobalLootOn = ImGui.MenuItem("GlobalLootOn", nil, loot.GlobalLootOn)
+                _,loot.CombatLooting = ImGui.MenuItem("CombatLooting", nil, loot.CombatLooting)
+                _,loot.LootNoDrop = ImGui.MenuItem("LootNoDrop", nil, loot.LootNoDrop)
+                _,loot.LootForage = ImGui.MenuItem("LootForage", nil, loot.LootForage)
+                _,loot.LootQuest = ImGui.MenuItem("LootQuest", nil, loot.LootQuest)
+                _,loot.TributeKeep = ImGui.MenuItem("TributeKeep", nil, loot.TributeKeep)
+                _,loot.BankTradeskills = ImGui.MenuItem("BankTradeskills", nil, loot.BankTradeskills)
+                _,loot.StackableOnly = ImGui.MenuItem("StackableOnly", nil, loot.StackableOnly)
+                ImGui.Separator()
+                _,loot.AlwaysEval = ImGui.MenuItem("AlwaysEval", nil, loot.AlwaysEval)
+                _,loot.AddNewSales = ImGui.MenuItem("AddNewSales", nil, loot.AddNewSales)
+                _,loot.AddNewTributes = ImGui.MenuItem("AddNewTributes", nil, loot.AddNewTributes)
+                ImGui.Separator()
+                _,loot.DoDestroy = ImGui.MenuItem("DoDestroy", nil, loot.DoDestroy)
+                _,loot.AlwaysDestroy = ImGui.MenuItem("AlwaysDestroy", nil, loot.AlwaysDestroy)
 
+                if _ then writeSettings() end
+                ImGui.EndMenu()
+            end
             if ImGui.MenuItem('Sell Stuff') then
                 mq.cmd('/lootutils sellstuff')
             end
@@ -1031,7 +1052,7 @@ local function processArgs(args)
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
-            if guiLoot ~= nil then guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData) end
+            if guiLoot ~= nil then guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData, loot.UseActors) end
             loot.Terminate = false
         end
     end
