@@ -1022,16 +1022,16 @@ local function guiExport()
 
                 -- Add menu items here
                 if ImGui.MenuItem("Sell Stuff##group") then
-                    mq.cmd('%s /lootutils sellstuff', tmpCmd)
+                    mq.cmd(string.format('/%s /lootutils sellstuff', tmpCmd))
                 end
                 if ImGui.MenuItem("Tribute Stuff##group") then
-                    mq.cmd('%s /lootutils tributetuff', tmpCmd)
+                    mq.cmd(string.format('/%s /lootutils tributetuff', tmpCmd))
                 end
                 if ImGui.MenuItem("Bank##group") then
-                    mq.cmd('%s /lootutils bank', tmpCmd)
+                    mq.cmd(string.format('/%s /lootutils bank', tmpCmd))
                 end
                 if ImGui.MenuItem("Cleanup##group") then
-                    mq.cmd('%s /lootutils cleanup', tmpCmd)
+                    mq.cmd(string.format('/%s /lootutils cleanup', tmpCmd))
                 end
                 ImGui.EndMenu()
             end
