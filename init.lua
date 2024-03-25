@@ -152,6 +152,7 @@ local loot = {
     AlwaysDestroy = false,      -- Always Destroy items to clean corpese Will Destroy Non-Quest items marked 'Ignore' items REQUIRES DoDestroy set to true
     QuestKeep = 10,             -- Default number to keep if item not set using Quest|# format.
     LootChannel = "dgt",        -- Channel we report loot to.
+    GroupChannel = "dgae",      -- Channel we use for Group Commands
     ReportLoot = true,          -- Report loot items to group or not.
     SpamLootInfo = false,       -- Echo Spam for Looting
     LootForageSpam = false,     -- Echo spam for Foraged Items
@@ -182,7 +183,7 @@ local shouldLootActions = {Keep=true, Bank=true, Sell=true, Destroy=false, Ignor
 local validActions = {keep='Keep',bank='Bank',sell='Sell',ignore='Ignore',destroy='Destroy',quest='Quest', tribute='Tribute'}
 local saveOptionTypes = {string=1,number=1,boolean=1}
 local NEVER_SELL = {['Diamond Coin']=true, ['Celestial Crest']=true, ['Gold Coin']=true, ['Taelosian Symbols']=true, ['Planar Symbols']=true}
-
+local tmpCmd = loot.GroupChannel or 'dgae'
 -- FORWARD DECLARATIONS
 
 local eventForage, eventSell, eventCantLoot, eventTribute, eventNoSlot
@@ -229,6 +230,12 @@ local function loadSettings()
         loot.Version = tostring(version)
         print('Updating Settings File to Version '..tostring(version))
         writeSettings()
+    end
+    tmpCmd = loot.GroupChannel or 'dgae'
+    if tmpCmd == string.find(tmpCmd, 'dg') then
+        tmpCmd = '/'..tmpCmd
+    elseif tmpCmd == string.find(tmpCmd,'bc')then
+        tmpCmd = '/'..tmpCmd.. ' /'
     end
     shouldLootActions.Destroy = loot.DoDestroy
     shouldLootActions.Tribute = loot.TributeKeep
@@ -1009,6 +1016,23 @@ local function guiExport()
                 _,loot.AlwaysDestroy = ImGui.MenuItem("AlwaysDestroy", nil, loot.AlwaysDestroy)
 
                 if _ then writeSettings() end
+                ImGui.EndMenu()
+            end
+            if ImGui.BeginMenu('Group Commands') then
+
+                -- Add menu items here
+                if ImGui.MenuItem("Sell Stuff##group") then
+                    mq.cmd('%s /lootutils sellstuff', tmpCmd)
+                end
+                if ImGui.MenuItem("Tribute Stuff##group") then
+                    mq.cmd('%s /lootutils tributetuff', tmpCmd)
+                end
+                if ImGui.MenuItem("Bank##group") then
+                    mq.cmd('%s /lootutils bank', tmpCmd)
+                end
+                if ImGui.MenuItem("Cleanup##group") then
+                    mq.cmd('%s /lootutils cleanup', tmpCmd)
+                end
                 ImGui.EndMenu()
             end
             if ImGui.MenuItem('Sell Stuff') then
