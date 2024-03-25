@@ -1025,7 +1025,7 @@ local function guiExport()
                     mq.cmd(string.format('/%s /lootutils sellstuff', tmpCmd))
                 end
                 if ImGui.MenuItem("Tribute Stuff##group") then
-                    mq.cmd(string.format('/%s /lootutils tributetuff', tmpCmd))
+                    mq.cmd(string.format('/%s /lootutils tributestuff', tmpCmd))
                 end
                 if ImGui.MenuItem("Bank##group") then
                     mq.cmd(string.format('/%s /lootutils bank', tmpCmd))
