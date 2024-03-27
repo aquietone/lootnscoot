@@ -152,6 +152,7 @@ local loot = {
     AlwaysDestroy = false,      -- Always Destroy items to clean corpese Will Destroy Non-Quest items marked 'Ignore' items REQUIRES DoDestroy set to true
     QuestKeep = 10,             -- Default number to keep if item not set using Quest|# format.
     LootChannel = "dgt",        -- Channel we report loot to.
+    GroupChannel = "dgae",      -- Channel we use for Group Commands
     ReportLoot = true,          -- Report loot items to group or not.
     SpamLootInfo = false,       -- Echo Spam for Looting
     LootForageSpam = false,     -- Echo spam for Foraged Items
@@ -168,7 +169,7 @@ local loot = {
     Terminate = true,
 }
 loot.logger.prefix = 'lootnscoot'
-if guiLoot ~= nil then guiLoot.imported = true end
+if guiLoot ~= nil then guiLoot.imported = true loot.UseActors = true end
 
 -- Internal settings
 local lootData, cantLootList = {}, {}
@@ -182,7 +183,7 @@ local shouldLootActions = {Keep=true, Bank=true, Sell=true, Destroy=false, Ignor
 local validActions = {keep='Keep',bank='Bank',sell='Sell',ignore='Ignore',destroy='Destroy',quest='Quest', tribute='Tribute'}
 local saveOptionTypes = {string=1,number=1,boolean=1}
 local NEVER_SELL = {['Diamond Coin']=true, ['Celestial Crest']=true, ['Gold Coin']=true, ['Taelosian Symbols']=true, ['Planar Symbols']=true}
-
+local tmpCmd = loot.GroupChannel or 'dgae'
 -- FORWARD DECLARATIONS
 
 local eventForage, eventSell, eventCantLoot, eventTribute, eventNoSlot
@@ -229,6 +230,12 @@ local function loadSettings()
         loot.Version = tostring(version)
         print('Updating Settings File to Version '..tostring(version))
         writeSettings()
+    end
+    tmpCmd = loot.GroupChannel or 'dgae'
+    if tmpCmd == string.find(tmpCmd, 'dg') then
+        tmpCmd = '/'..tmpCmd
+    elseif tmpCmd == string.find(tmpCmd,'bc')then
+        tmpCmd = '/'..tmpCmd.. ' /'
     end
     shouldLootActions.Destroy = loot.DoDestroy
     shouldLootActions.Tribute = loot.TributeKeep
@@ -989,7 +996,45 @@ local function guiExport()
     local function customMenu()
         if ImGui.BeginMenu('Loot N Scoot') then
             -- Add menu items here
+            if ImGui.BeginMenu('Toggles') then
+                -- Add menu items here
+                _,loot.DoLoot = ImGui.MenuItem("DoLoot", nil, loot.DoLoot)
+                _,loot.GlobalLootOn = ImGui.MenuItem("GlobalLootOn", nil, loot.GlobalLootOn)
+                _,loot.CombatLooting = ImGui.MenuItem("CombatLooting", nil, loot.CombatLooting)
+                _,loot.LootNoDrop = ImGui.MenuItem("LootNoDrop", nil, loot.LootNoDrop)
+                _,loot.LootForage = ImGui.MenuItem("LootForage", nil, loot.LootForage)
+                _,loot.LootQuest = ImGui.MenuItem("LootQuest", nil, loot.LootQuest)
+                _,loot.TributeKeep = ImGui.MenuItem("TributeKeep", nil, loot.TributeKeep)
+                _,loot.BankTradeskills = ImGui.MenuItem("BankTradeskills", nil, loot.BankTradeskills)
+                _,loot.StackableOnly = ImGui.MenuItem("StackableOnly", nil, loot.StackableOnly)
+                ImGui.Separator()
+                _,loot.AlwaysEval = ImGui.MenuItem("AlwaysEval", nil, loot.AlwaysEval)
+                _,loot.AddNewSales = ImGui.MenuItem("AddNewSales", nil, loot.AddNewSales)
+                _,loot.AddNewTributes = ImGui.MenuItem("AddNewTributes", nil, loot.AddNewTributes)
+                ImGui.Separator()
+                _,loot.DoDestroy = ImGui.MenuItem("DoDestroy", nil, loot.DoDestroy)
+                _,loot.AlwaysDestroy = ImGui.MenuItem("AlwaysDestroy", nil, loot.AlwaysDestroy)
 
+                if _ then writeSettings() end
+                ImGui.EndMenu()
+            end
+            if ImGui.BeginMenu('Group Commands') then
+
+                -- Add menu items here
+                if ImGui.MenuItem("Sell Stuff##group") then
+                    mq.cmd(string.format('/%s /lootutils sellstuff', tmpCmd))
+                end
+                if ImGui.MenuItem("Tribute Stuff##group") then
+                    mq.cmd(string.format('/%s /lootutils tributestuff', tmpCmd))
+                end
+                if ImGui.MenuItem("Bank##group") then
+                    mq.cmd(string.format('/%s /lootutils bank', tmpCmd))
+                end
+                if ImGui.MenuItem("Cleanup##group") then
+                    mq.cmd(string.format('/%s /lootutils cleanup', tmpCmd))
+                end
+                ImGui.EndMenu()
+            end
             if ImGui.MenuItem('Sell Stuff') then
                 mq.cmd('/lootutils sellstuff')
             end
@@ -1031,7 +1076,7 @@ local function processArgs(args)
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
-            if guiLoot ~= nil then guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData) end
+            if guiLoot ~= nil then guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData, loot.UseActors) end
             loot.Terminate = false
         end
     end
