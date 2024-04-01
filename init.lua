@@ -531,7 +531,9 @@ local function lootItem(index, doWhat, button, qKeep, allItems)
     else
         report('%sing \ay%s\ax', doWhat, itemLink)
     end
-    table.insert(allItems, {Name=itemName, Action='Looted', Link=itemLink})
+    if doWhat ~= 'Destroy' then
+        table.insert(allItems, {Name=itemName, Action='Looted', Link=itemLink})
+    end
     CheckBags()
     if areFull then report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.') end
 end
