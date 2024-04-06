@@ -1001,23 +1001,36 @@ local function guiExport()
             if ImGui.BeginMenu('Toggles') then
                 -- Add menu items here
                 _,loot.DoLoot = ImGui.MenuItem("DoLoot", nil, loot.DoLoot)
+                if _ then writeSettings() end
                 _,loot.GlobalLootOn = ImGui.MenuItem("GlobalLootOn", nil, loot.GlobalLootOn)
+                if _ then writeSettings() end
                 _,loot.CombatLooting = ImGui.MenuItem("CombatLooting", nil, loot.CombatLooting)
+                if _ then writeSettings() end
                 _,loot.LootNoDrop = ImGui.MenuItem("LootNoDrop", nil, loot.LootNoDrop)
+                if _ then writeSettings() end
                 _,loot.LootForage = ImGui.MenuItem("LootForage", nil, loot.LootForage)
+                if _ then writeSettings() end
                 _,loot.LootQuest = ImGui.MenuItem("LootQuest", nil, loot.LootQuest)
+                if _ then writeSettings() end
                 _,loot.TributeKeep = ImGui.MenuItem("TributeKeep", nil, loot.TributeKeep)
+                if _ then writeSettings() end
                 _,loot.BankTradeskills = ImGui.MenuItem("BankTradeskills", nil, loot.BankTradeskills)
+                if _ then writeSettings() end
                 _,loot.StackableOnly = ImGui.MenuItem("StackableOnly", nil, loot.StackableOnly)
+                if _ then writeSettings() end
                 ImGui.Separator()
                 _,loot.AlwaysEval = ImGui.MenuItem("AlwaysEval", nil, loot.AlwaysEval)
+                if _ then writeSettings() end
                 _,loot.AddNewSales = ImGui.MenuItem("AddNewSales", nil, loot.AddNewSales)
+                if _ then writeSettings() end
                 _,loot.AddNewTributes = ImGui.MenuItem("AddNewTributes", nil, loot.AddNewTributes)
+                if _ then writeSettings() end
                 ImGui.Separator()
                 _,loot.DoDestroy = ImGui.MenuItem("DoDestroy", nil, loot.DoDestroy)
-                _,loot.AlwaysDestroy = ImGui.MenuItem("AlwaysDestroy", nil, loot.AlwaysDestroy)
-
                 if _ then writeSettings() end
+                _,loot.AlwaysDestroy = ImGui.MenuItem("AlwaysDestroy", nil, loot.AlwaysDestroy)
+                if _ then writeSettings() end
+                
                 ImGui.EndMenu()
             end
             if ImGui.BeginMenu('Group Commands') then
