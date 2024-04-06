@@ -1,5 +1,5 @@
 --[[
-lootnscoot.lua v1.5 - aquietone, grimmier
+lootnscoot.lua v1.7 - aquietone, grimmier
 
 This is a port of the RedGuides copy of ninjadvloot.inc with some updates as well.
 I may have glossed over some of the events or edge cases so it may have some issues
@@ -147,6 +147,7 @@ local loot = {
     DoLoot = true,              -- Enable auto looting in standalone mode
     LootForage = true,          -- Enable Looting of Foraged Items
     LootNoDrop = false,         -- Enable Looting of NoDrop items.
+    LootNoDropNew = false,      -- Enable looting of new NoDrop items.
     LootQuest = false,          -- Enable Looting of Items Marked 'Quest', requires LootNoDrop on to loot NoDrop quest items
     DoDestroy = false,          -- Enable Destroy functionality. Otherwise 'Destroy' acts as 'Ignore'
     AlwaysDestroy = false,      -- Always Destroy items to clean corpese Will Destroy Non-Quest items marked 'Ignore' items REQUIRES DoDestroy set to true
@@ -313,7 +314,7 @@ local function AreBagsOpen()
     end
 end
 
----@return string,number
+---@return string,number,boolean
 local function getRule(item)
     local itemName = item.Name()
     local lootDecision = 'Keep'
@@ -326,6 +327,7 @@ local function getRule(item)
     local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
     local qKeep = '0'
     local globalItem = lookupIniLootRule('GlobalItems', itemName)
+    local newRule = false
 
     lootData[firstLetter] = lootData[firstLetter] or {}
     lootData[firstLetter][itemName] = lootData[firstLetter][itemName] or lookupIniLootRule(firstLetter, itemName)
@@ -351,6 +353,7 @@ local function getRule(item)
         -- set Tribute flag if tribute value is greater than minTributeValue and the sell price is less than min sell price or has no value
         if tributeValue >= loot.MinTributeValue and (sellPrice < loot.MinSellPrice or sellPrice == 0) then lootDecision = 'Tribute' end
         addRule(itemName, firstLetter, lootDecision)
+        newRule = true
     end
     -- check this before quest item checks. so we have the proper rule to compare.
     -- Check if item is on global Items list, ignore everything else and use those rules insdead.
@@ -378,7 +381,7 @@ local function getRule(item)
         return qVal,tonumber(qKeep) or 0
     end
     if loot.AlwaysDestroy and lootData[firstLetter][itemName] == 'Ignore' then return 'Destroy',0 end
-    return lootData[firstLetter][itemName],0
+    return lootData[firstLetter][itemName], 0, newRule
 end
 
 -- EVENTS
@@ -571,7 +574,7 @@ local function lootCorpse(corpseID)
             local corpseItem = mq.TLO.Corpse.Item(i)
             local itemLink = corpseItem.ItemLink('CLICKABLE')()
             if corpseItem() then
-                local itemRule, qKeep = getRule(corpseItem)
+                local itemRule, qKeep, newRule = getRule(corpseItem)
                 local stackable = corpseItem.Stackable()
                 local freeStack = corpseItem.FreeStack()
                 if corpseItem.Lore() then
@@ -582,7 +585,9 @@ local function lootCorpse(corpseID)
                         lootItem(i,'Ignore','leftmouseup', 0, allItems)
                     elseif corpseItem.NoDrop() then
                         if loot.LootNoDrop then
-                            lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
+                            if not newRule or (newRule and loot.LootNoDropNew) then
+                                lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
+                            end
                         else
                             table.insert(noDropItems, itemLink)
                             lootItem(i, 'Ignore', 'leftmouseup', 0, allItems)
@@ -592,7 +597,9 @@ local function lootCorpse(corpseID)
                     end
                 elseif corpseItem.NoDrop() then
                     if loot.LootNoDrop then
-                        lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
+                        if not newRule or (newRule and loot.LootNoDropNew) then
+                            lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
+                        end
                     else
                         table.insert(noDropItems, itemLink)
                         lootItem(i,'Ignore','leftmouseup',0, allItems)
@@ -1007,6 +1014,8 @@ local function guiExport()
                 _,loot.CombatLooting = ImGui.MenuItem("CombatLooting", nil, loot.CombatLooting)
                 if _ then writeSettings() end
                 _,loot.LootNoDrop = ImGui.MenuItem("LootNoDrop", nil, loot.LootNoDrop)
+                if _ then writeSettings() end
+                _,loot.LootNoDropNew = ImGui.MenuItem("LootNoDropNew", nil, loot.LootNoDropNew)
                 if _ then writeSettings() end
                 _,loot.LootForage = ImGui.MenuItem("LootForage", nil, loot.LootForage)
                 if _ then writeSettings() end

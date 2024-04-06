@@ -1,3 +1,7 @@
+1.7.1
+- Add LootNoDropNew option to toggle automatically looting newly seen no drop items
+- LootNoDrop must also be on, which controls looting no drop items which already have been seen before
+
 1.7.0
 - actor messaging for items looted/left/destroyed sent to loot history ui
 
