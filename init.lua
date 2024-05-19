@@ -452,7 +452,7 @@ local function commandHandler(...)
             loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[2]))
         elseif args[1] == 'globalitem' and validActions[args[2]] and mq.TLO.Cursor() then
             addRule(mq.TLO.Cursor(), 'GlobalItems', validActions[args[2]])
-            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", mq.TLO.Cursor(), validActions[args[2]]))
+            loot.logger.Info(string.format("Setting \ay%s\ax to \agGlobal Item \ay%s\ax", mq.TLO.Cursor(), validActions[args[2]]))
         elseif validActions[args[1]] and args[2] ~= 'NULL' then
             addRule(args[2], args[2]:sub(1,1), validActions[args[1]])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", args[2], validActions[args[1]]))
@@ -460,10 +460,10 @@ local function commandHandler(...)
     elseif #args == 3 then
         if args[1] == 'globalitem' and args[2] == 'quest' and mq.TLO.Cursor() then
             addRule(mq.TLO.Cursor(),'GlobalItems', 'Quest|'..args[3])
-            loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[3]))
+            loot.logger.Info(string.format("Setting \ay%s\ax to \agGlobal Item \ayQuest|%s\ax", mq.TLO.Cursor(), args[3]))
         elseif args[1] == 'globalitem' and validActions[args[2]] and args[3] ~= 'NULL' then
             addRule(args[3], 'GlobalItems', validActions[args[2]])
-            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s\ax", args[3], validActions[args[2]]))
+            loot.logger.Info(string.format("Setting \ay%s\ax to \agGlobal Item \ay%s\ax", args[3], validActions[args[2]]))
         elseif validActions[args[1]] and args[2] ~= 'NULL' then
             addRule(args[2], args[2]:sub(1,1), validActions[args[1]]..'|'..args[3])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s|%s\ax", args[2], validActions[args[1]], args[3]))
@@ -471,7 +471,7 @@ local function commandHandler(...)
     elseif #args == 4 then
         if args[1] == 'globalitem' and validActions[args[2]] and args[3] ~= 'NULL' then
             addRule(args[3],'GlobalItems', validActions[args[2]]..'|'..args[4])
-            loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s|%s\ax", args[3], validActions[args[2]], args[4]))
+            loot.logger.Info(string.format("Setting \ay%s\ax to \agGlobal Item \ay%s|%s\ax", args[3], validActions[args[2]], args[4]))
         end
     end
 end
@@ -504,15 +504,18 @@ end
 ---@param qKeep number @The count to keep, for quest items.
 ---@param allItems table @Table of all items seen so far on the corpse, left or looted.
 local function lootItem(index, doWhat, button, qKeep, allItems)
+    local eval = doWhat
     loot.logger.Debug('Enter lootItem')
     local corpseItem = mq.TLO.Corpse.Item(index)
     if not shouldLootActions[doWhat] then
-        table.insert(allItems, {Name=corpseItem.Name(), Action='Left', Link=corpseItem.ItemLink('CLICKABLE')()})
+        table.insert(allItems, {Name=corpseItem.Name(), Action='Left', Link=corpseItem.ItemLink('CLICKABLE')(), Eval=doWhat})
         return
     end
     local corpseItemID =corpseItem.ID()
     local itemName = corpseItem.Name()
     local itemLink = corpseItem.ItemLink('CLICKABLE')()
+    local globalItem = (loot.GlobalLootOn and lookupIniLootRule('GlobalItems', itemName)~= "NULL") and true or false
+
     mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
     -- Looting of no drop items is currently disabled with no flag to enable anyways
     -- added check to make sure the cursor isn't empty so we can exit the pause early.-- or not mq.TLO.Corpse.Item(index).NoDrop()
@@ -524,18 +527,24 @@ local function lootItem(index, doWhat, button, qKeep, allItems)
     -- The loot window closes if attempting to loot a lore item you already have, but lore should have already been checked for
     if not mq.TLO.Window('LootWnd').Open() then return end
     if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then
+        eval = globalItem and 'Global Destroy' or 'Destroy'
         mq.cmd('/destroy')
-        table.insert(allItems, {Name=itemName, Action='Destroyed', Link=itemLink})
+        table.insert(allItems, {Name=itemName, Action='Destroyed', Link=itemLink, Eval=eval})
     end
     checkCursor()
     if qKeep > 0 and doWhat == 'Keep' then
+        eval = globalItem and 'Global Quest' or 'Quest'
         local countHave = mq.TLO.FindItemCount(string.format("%s",itemName))() + mq.TLO.FindItemBankCount(string.format("%s",itemName))()
         report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s", itemLink, tostring(countHave), qKeep)
     else
+        eval = globalItem and 'Global '..doWhat or doWhat
         report('%sing \ay%s\ax', doWhat, itemLink)
     end
     if doWhat ~= 'Destroy' then
-        table.insert(allItems, {Name=itemName, Action='Looted', Link=itemLink})
+        if not string.find(eval, 'Quest') then
+            eval = globalItem and 'Global '..doWhat or doWhat
+        end
+        table.insert(allItems, {Name=itemName, Action='Looted', Link=itemLink, Eval=eval})
     end
     CheckBags()
     if areFull then report('My bags are full, I can\'t loot anymore! Turning OFF Looting until we sell.') end
