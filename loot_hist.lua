@@ -117,12 +117,16 @@ local lootTable = {}
 ---@param names boolean
 ---@param links boolean
 ---@param record boolean
-function guiLoot.GetSettings(names,links,record)
-	if guiLoot.imported then
-		guiLoot.hideNames = names
-		guiLoot.showLinks = links
-		guiLoot.recordData = record
-	end
+---@param imported boolean
+---@param useactors boolean
+---@param caller string
+function guiLoot.GetSettings(names,links,record,imported,useactors,caller)
+	guiLoot.imported =imported
+	guiLoot.hideNames = names
+	guiLoot.showLinks = links
+	guiLoot.recordData = record
+	guiLoot.UseActors = useactors
+	guiLoot.caller = caller
 end
 
 function guiLoot.loadLDB()
@@ -549,12 +553,12 @@ local function lootedReport_GUI()
 	if showReport then
 		ImGui.SetWindowFontScale(ZoomLvl)
 		local sizeX, sizeY = ImGui.GetContentRegionAvail()
-		ImGui.BeginTable('##LootReport', 4, bit32.bor(ImGuiTableFlags.Borders,ImGuiTableFlags.ScrollY, ImGuiTableFlags.RowBg), ImVec2(sizeX, sizeY-10))
+		ImGui.BeginTable('##LootReport', 4, bit32.bor(ImGuiTableFlags.Borders,ImGuiTableFlags.ScrollY,ImGuiTableFlags.Resizable, ImGuiTableFlags.RowBg), ImVec2(sizeX, sizeY-10))
 		ImGui.TableSetupScrollFreeze(0, 1)
-		ImGui.TableSetupColumn("Looter", ImGuiTableColumnFlags.WidthFixed, 100)
-		ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch, 150)
-		ImGui.TableSetupColumn("Count", ImGuiTableColumnFlags.WidthFixed, 50)
-		ImGui.TableSetupColumn("Tagged", ImGuiTableColumnFlags.WidthFixed, 75)
+		ImGui.TableSetupColumn("Looter", ImGuiTableColumnFlags.None, 100)
+		ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.None,200)
+		ImGui.TableSetupColumn("Count", ImGuiTableColumnFlags.NoResize, 50)
+		ImGui.TableSetupColumn("Tagged", ImGuiTableColumnFlags.NoResize, 75)
 		ImGui.TableHeadersRow()
 		if ImGui.BeginPopupContextItem() then
 			ImGui.SeparatorText("Tags:")

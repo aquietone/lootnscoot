@@ -1109,7 +1109,11 @@ local function processArgs(args)
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
-            if guiLoot ~= nil then guiLoot.init(true, true, 'lootnscoot') end
+
+            if guiLoot ~= nil then
+                guiLoot.GetSettings(loot.HideNames, loot.LookupLinks, loot.RecordData, true, loot.UseActors, 'lootnscoot')
+                guiLoot.init(true, true, 'lootnscoot')
+            end
             loot.Terminate = false
         end
     end
