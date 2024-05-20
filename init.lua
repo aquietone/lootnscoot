@@ -170,7 +170,7 @@ local loot = {
     Terminate = true,
 }
 loot.logger.prefix = 'lootnscoot'
-if guiLoot ~= nil then guiLoot.imported = true loot.UseActors = true end
+if guiLoot ~= nil then  loot.UseActors = true guiLoot.GetSettings(loot.HideNames, loot.LookupLinks, loot.RecordData, true, loot.UseActors, 'lootnscoot') end
 
 -- Internal settings
 local lootData, cantLootList = {}, {}
@@ -415,7 +415,7 @@ local function commandHandler(...)
         elseif args[1] == 'reload' then
             lootData = {}
             loadSettings()
-            guiLoot.GetSettings(loot.HideNames, loot.LookupLinks, loot.RecordData)
+            if guiLoot ~= nil then guiLoot.GetSettings(loot.HideNames, loot.LookupLinks, loot.RecordData, true, loot.UseActors, 'lootnscoot') end
             loot.Terminate = false
             loot.logger.Info("\ayReloaded Settings \axAnd \atLoot Files")
         elseif args[1] == 'bank' then
@@ -1109,7 +1109,7 @@ local function processArgs(args)
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then
-            if guiLoot ~= nil then guiLoot.GetSettings(loot.HideNames,loot.LookupLinks,loot.RecordData, loot.UseActors) end
+            if guiLoot ~= nil then guiLoot.init(true, true, 'lootnscoot') end
             loot.Terminate = false
         end
     end
