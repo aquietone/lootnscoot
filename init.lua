@@ -125,7 +125,7 @@ if not req then req,guiLoot = pcall(require,'loot_hist') print('Looted Not Found
 if not req then guiLoot = nil print('NO LOOTED Found, Disabling Looted Features.') end
 local eqChar = mq.TLO.Me.Name()
 local actors = require('actors')
-local version = 1.7
+local version = 1.8
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot = {
     logger = Write,
@@ -167,6 +167,7 @@ local loot = {
     HideNames = false,          -- Hides names and uses class shortname in looted window
     LookupLinks = false,        -- Enables Looking up Links for items not on that character. *recommend only running on one charcter that is monitoring.
     RecordData = false,         -- Enables recording data to report later. 
+    AutoTag = false,            -- Automatically tag items to sell if they meet the MinSellPrice
     Terminate = true,
 }
 loot.logger.prefix = 'lootnscoot'
@@ -314,7 +315,7 @@ local function AreBagsOpen()
     end
 end
 
----@return string,number,boolean
+---@return string,number,boolean|nil
 local function getRule(item)
     local itemName = item.Name()
     local lootDecision = 'Keep'
@@ -343,6 +344,7 @@ local function getRule(item)
         if (oldDecision == 'Sell' and stackable) and (sellPrice*stackSize >= loot.StackPlatValue) then resetDecision = oldDecision end
         -- if banking tradeskills settings changed re-evaluate
         if oldDecision == 'Bank' and tradeskill and loot.BankTradeskills then resetDecision = oldDecision end
+        
         lootData[firstLetter][itemName] = resetDecision -- pass value on to next check. Items marked 'NULL' will be treated as new and evaluated properly.
     end
     if lootData[firstLetter][itemName] == 'NULL' then
@@ -353,6 +355,11 @@ local function getRule(item)
         -- set Tribute flag if tribute value is greater than minTributeValue and the sell price is less than min sell price or has no value
         if tributeValue >= loot.MinTributeValue and (sellPrice < loot.MinSellPrice or sellPrice == 0) then lootDecision = 'Tribute' end
         addRule(itemName, firstLetter, lootDecision)
+        if loot.AutoTag and lootDecision == 'Keep' then -- Do we want to automatically tag items 'Sell' 
+            if not stackable and sellPrice > loot.MinSellPrice then lootDecision = 'Sell' end -- added stackable check otherwise it would stay set to Ignore when checking Stackable items in next steps.
+            if (stackable and loot.StackPlatValue > 0) and (sellPrice*stackSize >= loot.StackPlatValue) then lootDecision = 'Sell' end
+            addRule(itemName, firstLetter, lootDecision)
+        end
         newRule = true
     end
     -- check this before quest item checks. so we have the proper rule to compare.
@@ -381,6 +388,7 @@ local function getRule(item)
         return qVal,tonumber(qKeep) or 0
     end
     if loot.AlwaysDestroy and lootData[firstLetter][itemName] == 'Ignore' then return 'Destroy',0 end
+
     return lootData[firstLetter][itemName], 0, newRule
 end
 
@@ -1042,6 +1050,8 @@ local function guiExport()
                 _,loot.AddNewSales = ImGui.MenuItem("AddNewSales", nil, loot.AddNewSales)
                 if _ then writeSettings() end
                 _,loot.AddNewTributes = ImGui.MenuItem("AddNewTributes", nil, loot.AddNewTributes)
+                if _ then writeSettings() end
+                _,loot.AutoTag = ImGui.MenuItem("AutoTagSell", nil, loot.AutoTag)
                 if _ then writeSettings() end
                 ImGui.Separator()
                 _,loot.DoDestroy = ImGui.MenuItem("DoDestroy", nil, loot.DoDestroy)
