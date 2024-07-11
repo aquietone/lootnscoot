@@ -551,8 +551,6 @@ local function lootItem(index, doWhat, button, qKeep, allItems)
 end
 
 local function lootCorpse(corpseID)
-    CheckBags()
-    if areFull then return end
     loot.logger.Debug('Enter lootCorpse')
     if mq.TLO.Cursor() then checkCursor() end
     for i=1,3 do
@@ -659,6 +657,8 @@ local function corpseLocked(corpseID)
 end
 
 function loot.lootMobs(limit)
+    CheckBags()
+    if areFull then return end
     loot.logger.Debug('Enter lootMobs')
     local deadCount = mq.TLO.SpawnCount(spawnSearch:format('npccorpse', loot.CorpseRadius))()
     loot.logger.Debug(string.format('There are %s corpses in range.', deadCount))
@@ -1138,7 +1138,7 @@ init({...})
 
 while not loot.Terminate do
     if mq.TLO.Window('CharacterListWnd').Open() then loot.Terminate = true end -- exit sctipt if at char select.
-    if loot.DoLoot and not areFull then loot.lootMobs() end
+    if loot.DoLoot then loot.lootMobs() end
     if doSell then loot.processItems('Sell') doSell = false end
     if doTribute then loot.processItems('Tribute') doTribute = false end
     mq.doevents()
