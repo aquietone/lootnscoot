@@ -175,7 +175,7 @@ if guiLoot ~= nil then  loot.UseActors = true guiLoot.GetSettings(loot.HideNames
 
 -- Internal settings
 local lootData, cantLootList = {}, {}
-local doSell, doTribute, areFull = false, false, false
+local doSell, doBuy, doTribute, areFull = false, false, false, false
 local cantLootID = 0
 -- Constants
 local spawnSearch = '%s radius %d zradius 50'
@@ -186,6 +186,7 @@ local validActions = {keep='Keep',bank='Bank',sell='Sell',ignore='Ignore',destro
 local saveOptionTypes = {string=1,number=1,boolean=1}
 local NEVER_SELL = {['Diamond Coin']=true, ['Celestial Crest']=true, ['Gold Coin']=true, ['Taelosian Symbols']=true, ['Planar Symbols']=true}
 local tmpCmd = loot.GroupChannel or 'dgae'
+local BuyItems = {}
 -- FORWARD DECLARATIONS
 
 local eventForage, eventSell, eventCantLoot, eventTribute, eventNoSlot
@@ -199,6 +200,13 @@ local function writeSettings()
             mq.cmdf('/ini "%s" "%s" "%s" "%s"', loot.SettingsFile, 'Settings', option, value)
         end
     end
+    for option,value in pairs(BuyItems) do
+        local valueType = type(value)
+        if saveOptionTypes[valueType] then
+            mq.cmdf('/ini "%s" "%s" "%s" "%s"', loot.SettingsFile, 'BuyItems', option, value)
+        end
+    end
+
 end
 
 local function split(input, sep)
@@ -241,6 +249,13 @@ local function loadSettings()
     end
     shouldLootActions.Destroy = loot.DoDestroy
     shouldLootActions.Tribute = loot.TributeKeep
+    local iniBuyItems = mq.TLO.Ini.File(loot.SettingsFile).Section('BuyItems')
+    local buyKeyCount = iniBuyItems.Key.Count()
+    for i=1,buyKeyCount do
+        local key = iniBuyItems.Key.KeyAtIndex(i)()
+        local value = iniBuyItems.Key(key).Value()
+        BuyItems[key] = value
+    end
 end
 
 local function checkCursor()
@@ -420,6 +435,8 @@ local function commandHandler(...)
     if #args == 1 then
         if args[1] == 'sellstuff' and not loot.Terminate then
             doSell = true
+        elseif args[1] == 'restock' and not loot.Terminate then
+            doBuy = true
         elseif args[1] == 'reload' then
             lootData = {}
             loadSettings()
@@ -761,6 +778,28 @@ local function sellToVendor(itemToSell, bag, slot)
     end
 end
 
+-- BUYING
+
+local function RestockItems()
+    local rowNum = 0
+    for itemName, qty in pairs(BuyItems) do
+        rowNum = mq.TLO.Window("MerchantWnd/MW_ItemList").List(itemName,2)()  or 0
+        mq.delay(20)
+        local tmpQty = qty - mq.TLO.FindItemCount(itemName)()
+        if rowNum ~= 0 and tmpQty > 0 then
+            mq.TLO.Window("MerchantWnd/MW_ItemList").Select(rowNum)()
+            mq.delay(100)
+            mq.TLO.Window("MerchantWnd/MW_Buy_Button").LeftMouseUp()
+            mq.delay(500, function () return mq.TLO.Window("QuantityWnd").Open() end)
+            mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
+            mq.delay(100, function () return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
+            mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
+            mq.delay(100)
+        end
+        mq.delay(500, function () return mq.TLO.FindItemCount(itemName)() == qty end)
+    end
+end
+
 -- TRIBUTEING
 
 local function openTribMaster()
@@ -968,6 +1007,14 @@ function loot.processItems(action)
             end
         end
     end
+    
+    if action == 'Buy' then
+        if not mq.TLO.Window('MerchantWnd').Open() then
+            if not goToVendor() then return end
+            if not openVendor() then return end
+        end
+        RestockItems()
+    end
 
     if flag then
         flag, loot.AlwaysEval = false, true
@@ -1158,6 +1205,7 @@ while not loot.Terminate do
     if mq.TLO.Window('CharacterListWnd').Open() then loot.Terminate = true end -- exit sctipt if at char select.
     if loot.DoLoot then loot.lootMobs() end
     if doSell then loot.processItems('Sell') doSell = false end
+    if doBuy then loot.processItems('Buy') doBuy = false end
     if doTribute then loot.processItems('Tribute') doTribute = false end
     mq.doevents()
     mq.delay(1000)
