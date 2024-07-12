@@ -475,6 +475,9 @@ local function commandHandler(...)
         if args[1] == 'quest' and mq.TLO.Cursor() then
             addRule(mq.TLO.Cursor(),mq.TLO.Cursor():sub(1,1), 'Quest|'..args[2])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ayQuest|%s\ax", mq.TLO.Cursor(), args[2]))
+        elseif args[1] == 'buy' and mq.TLO.Cursor() then
+            mq.cmdf('/ini "%s" "BuyItems" "%s" "%s"', loot.SettingsFile, mq.TLO.Cursor(), args[2])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ayBuy|%s\ax", mq.TLO.Cursor(), args[2]))
         elseif args[1] == 'globalitem' and validActions[args[2]] and mq.TLO.Cursor() then
             addRule(mq.TLO.Cursor(), 'GlobalItems', validActions[args[2]])
             loot.logger.Info(string.format("Setting \ay%s\ax to \agGlobal Item \ay%s\ax", mq.TLO.Cursor(), validActions[args[2]]))
@@ -489,6 +492,9 @@ local function commandHandler(...)
         elseif args[1] == 'globalitem' and validActions[args[2]] and args[3] ~= 'NULL' then
             addRule(args[3], 'GlobalItems', validActions[args[2]])
             loot.logger.Info(string.format("Setting \ay%s\ax to \agGlobal Item \ay%s\ax", args[3], validActions[args[2]]))
+        elseif args[1] == 'buy' then
+            mq.cmdf('/ini "%s" "BuyItems" "%s" "%s"', loot.SettingsFile, args[2], args[3])
+            loot.logger.Info(string.format("Setting \ay%s\ax to \ayBuy|%s\ax", args[2], args[3]))
         elseif validActions[args[1]] and args[2] ~= 'NULL' then
             addRule(args[2], args[2]:sub(1,1), validActions[args[1]]..'|'..args[3])
             loot.logger.Info(string.format("Setting \ay%s\ax to \ay%s|%s\ax", args[2], validActions[args[1]], args[3]))
