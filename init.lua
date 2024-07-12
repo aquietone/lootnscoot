@@ -1067,15 +1067,23 @@ local function guiExport()
                 if ImGui.MenuItem("Sell Stuff##group") then
                     mq.cmd(string.format('/%s /lootutils sellstuff', tmpCmd))
                 end
+
                 if ImGui.MenuItem("Tribute Stuff##group") then
                     mq.cmd(string.format('/%s /lootutils tributestuff', tmpCmd))
                 end
+
                 if ImGui.MenuItem("Bank##group") then
                     mq.cmd(string.format('/%s /lootutils bank', tmpCmd))
                 end
+
                 if ImGui.MenuItem("Cleanup##group") then
                     mq.cmd(string.format('/%s /lootutils cleanup', tmpCmd))
                 end
+
+                if ImGui.MenuItem("Reload##group") then
+                    mq.cmd(string.format('/%s /lootutils reload', tmpCmd))
+                end
+
                 ImGui.EndMenu()
             end
             if ImGui.MenuItem('Sell Stuff') then
