@@ -125,7 +125,7 @@ if not req then req,guiLoot = pcall(require,'loot_hist') print('Looted Not Found
 if not req then guiLoot = nil print('NO LOOTED Found, Disabling Looted Features.') end
 local eqChar = mq.TLO.Me.Name()
 local actors = require('actors')
-local version = 1.8
+local version = 1.9
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot = {
     logger = Write,
@@ -168,6 +168,7 @@ local loot = {
     LookupLinks = false,        -- Enables Looking up Links for items not on that character. *recommend only running on one charcter that is monitoring.
     RecordData = false,         -- Enables recording data to report later. 
     AutoTag = false,            -- Automatically tag items to sell if they meet the MinSellPrice
+    AutoRestock = false,        -- Automatically restock items from the BuyItems list when selling
     Terminate = true,
 }
 loot.logger.prefix = 'lootnscoot'
@@ -804,6 +805,8 @@ local function RestockItems()
         end
         mq.delay(500, function () return mq.TLO.FindItemCount(itemName)() == qty end)
     end
+    -- close window when done buying
+    return mq.TLO.Window('MerchantWnd').DoClose()
 end
 
 -- TRIBUTEING
@@ -1013,7 +1016,9 @@ function loot.processItems(action)
             end
         end
     end
-    
+    if action == 'Sell' and loot.AutoRestock then
+        RestockItems()
+    end
     if action == 'Buy' then
         if not mq.TLO.Window('MerchantWnd').Open() then
             if not goToVendor() then return end
@@ -1106,6 +1111,8 @@ local function guiExport()
                 if _ then writeSettings() end
                 _,loot.AutoTag = ImGui.MenuItem("AutoTagSell", nil, loot.AutoTag)
                 if _ then writeSettings() end
+                _,loot.AutoRestock = ImGui.MenuItem("AutoRestock", nil, loot.AutoRestock)
+                if _ then writeSettings() end
                 ImGui.Separator()
                 _,loot.DoDestroy = ImGui.MenuItem("DoDestroy", nil, loot.DoDestroy)
                 if _ then writeSettings() end
@@ -1121,6 +1128,10 @@ local function guiExport()
                     mq.cmd(string.format('/%s /lootutils sellstuff', tmpCmd))
                 end
 
+                if ImGui.MenuItem('Restock Items##group') then
+                    mq.cmd(string.format('/%s /lootutils restock', tmpCmd))
+                end
+
                 if ImGui.MenuItem("Tribute Stuff##group") then
                     mq.cmd(string.format('/%s /lootutils tributestuff', tmpCmd))
                 end
@@ -1133,6 +1144,8 @@ local function guiExport()
                     mq.cmd(string.format('/%s /lootutils cleanup', tmpCmd))
                 end
 
+                ImGui.Separator()
+
                 if ImGui.MenuItem("Reload##group") then
                     mq.cmd(string.format('/%s /lootutils reload', tmpCmd))
                 end
@@ -1141,6 +1154,10 @@ local function guiExport()
             end
             if ImGui.MenuItem('Sell Stuff') then
                 mq.cmd('/lootutils sellstuff')
+            end
+
+            if ImGui.MenuItem('Restock') then
+                mq.cmd('/lootutils restock')
             end
 
             if ImGui.MenuItem('Tribute Stuff') then
@@ -1153,6 +1170,12 @@ local function guiExport()
 
             if ImGui.MenuItem('Cleanup') then
                 mq.cmd('/lootutils cleanup')
+            end
+
+            ImGui.Separator()
+
+            if ImGui.MenuItem('Reload') then
+                mq.cmd('/lootutils reload')
             end
 
             ImGui.Separator()
