@@ -698,15 +698,15 @@ function loot.commandHandler(...)
             if needSave then
                 loot.writeSettings()
             end
-            if loot.guiLoot ~= nil then
-                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors,
+            if guiLoot ~= nil then
+                guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors,
                     'lootnscoot')
             end
             loot.Settings.logger.Info("\ayReloaded Settings \axAnd \atLoot Files")
         elseif args[1] == 'import' then
             lootData = {}
-            if loot.guiLoot ~= nil then
-                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors,
+            if guiLoot ~= nil then
+                guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors,
                     'lootnscoot')
             end
             loot.UpdateDB()
@@ -715,11 +715,12 @@ function loot.commandHandler(...)
             loot.processItems('Bank')
         elseif args[1] == 'cleanup' then
             loot.processItems('Cleanup')
-        elseif args[1] == 'gui' and loot.guiLoot ~= nil then
-            loot.guiLoot.openGUI = not loot.guiLoot.openGUI
-        elseif args[1] == 'report' and loot.guiLoot ~= nil then
-            loot.guiLoot.ReportLoot()
-        elseif args[1] == 'hidenames' and loot.guiLoot ~= nil then
+        elseif args[1] == 'gui' then
+            print('Opening GUI')
+            guiLoot.openGUI = not guiLoot.openGUI
+        elseif args[1] == 'report' and guiLoot ~= nil then
+            guiLoot.ReportLoot()
+        elseif args[1] == 'hidenames' and guiLoot ~= nil then
             loot.guiloot.Settings.HideNames = not loot.guiloot.Settings.HideNames
         elseif args[1] == 'config' then
             local confReport = string.format("\ayLoot N Scoot Settings\ax")
