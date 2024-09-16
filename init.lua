@@ -338,8 +338,8 @@ function loot.loadSettings()
     -- SQL setup
     if not File_Exists(ItemsDB) then
         loot.Settings.logger.Warn(string.format(
-            "\ayLoot Rules Database \arNOT found\ax, \atCreating it now\ax. Please run \at/rgl lootimport\ax to Import your \atloot.ini \axfile."))
-        loot.Settings.logger.Warn(string.format("\arOnly run this one One Character\ax. use \at/rgl lootreload\ax to update the data on the other characters."))
+            "\ayLoot Rules Database \arNOT found\ax, \atCreating it now\ax. Please run \at/lootutils import\ax to Import your \atloot.ini \axfile."))
+        loot.Settings.logger.Warn(string.format("\arOnly run this one One Character\ax.\nAnd use \at/lootutils reload\ax to update the data on the other characters."))
     else
         loot.Settings.logger.Info("Loot Rules Database found, loading it now.")
     end
