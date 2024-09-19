@@ -317,18 +317,51 @@ function loot.UpdateDB()
     loot.GlobalItems = loot.load(LootFile, 'GlobalItems')
 
     local db = SQLite3.open(ItemsDB)
+    local batchSize = 500
+    local count = 0
+
+    db:exec("BEGIN TRANSACTION") -- Start transaction for NormalItems
+
+    -- Insert NormalItems in batches
     for k, v in pairs(loot.NormalItems) do
         local stmt, err = db:prepare("INSERT INTO Normal_Rules (item_name, item_rule) VALUES (?, ?)")
         stmt:bind_values(k, v)
         stmt:step()
         stmt:finalize()
+
+        count = count + 1
+        if count % batchSize == 0 then
+            print("Inserted " .. count .. " NormalItems so far...")
+            db:exec("COMMIT")
+            db:exec("BEGIN TRANSACTION")
+        end
     end
+
+    db:exec("COMMIT")
+    print("Inserted all " .. count .. " NormalItems.")
+
+    -- Reset counter for GlobalItems
+    count = 0
+
+    db:exec("BEGIN TRANSACTION")
+
+    -- Insert GlobalItems in batches
     for k, v in pairs(loot.GlobalItems) do
         local stmt, err = db:prepare("INSERT INTO Global_Rules (item_name, item_rule) VALUES (?, ?)")
         stmt:bind_values(k, v)
         stmt:step()
         stmt:finalize()
+
+        count = count + 1
+        if count % batchSize == 0 then
+            print("Inserted " .. count .. " GlobalItems so far...")
+            db:exec("COMMIT")
+            db:exec("BEGIN TRANSACTION")
+        end
     end
+
+    db:exec("COMMIT")
+    print("Inserted all " .. count .. " GlobalItems.")
     db:close()
 end
 
@@ -378,7 +411,6 @@ function loot.loadSettings()
     for k, v in pairs(loot.Settings) do
         if tmpSettings[k] == nil then
             tmpSettings[k] = loot.Settings[k]
-            needSave = true
         end
     end
     tmpCmd = loot.Settings.GroupChannel or 'dgae'
