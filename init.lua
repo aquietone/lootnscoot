@@ -1,5 +1,5 @@
 --[[
-lootnscoot.lua v1.7 - aquietone, grimmier
+loot.lua v1.7 - aquietone, grimmier
 
 This is a port of the RedGuides copy of ninjadvloot.inc with some updates as well.
 I may have glossed over some of the events or edge cases so it may have some issues
