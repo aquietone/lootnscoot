@@ -116,6 +116,7 @@ There is also no flag for combat looting. It will only loot if no mobs are withi
 ]]
 
 local mq = require 'mq'
+local ImGui = require 'ImGui'
 local success, Write = pcall(require, 'lib.Write')
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Write)
@@ -186,6 +187,7 @@ local loot                  = {
         AutoRestock = false,                       -- Automatically restock items from the BuyItems list when selling
         Terminate = true,
     },
+    TempSettings = {},
 }
 
 -- SQL information
@@ -196,6 +198,12 @@ local ItemsDB               = string.format('%s/LootRules_%s.db', mq.configDir, 
 loot.Settings.logger.prefix = 'lootnscoot'
 if guiLoot ~= nil then
     loot.Settings.UseActors = true
+    guiLoot.addItem = loot.addRule
+    guiLoot.modifyItem = loot.modifyItem
+    guiLoot.setNormalItem = loot.setNormalItem
+    guiLoot.setGlobalItem = loot.setGlobalItem
+    guiLoot.setBuyItem = loot.setBuyItem
+
     guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot')
 end
 
@@ -212,6 +220,9 @@ local validActions = { keep = 'Keep', bank = 'Bank', sell = 'Sell', ignore = 'Ig
 local saveOptionTypes = { string = 1, number = 1, boolean = 1, }
 local NEVER_SELL = { ['Diamond Coin'] = true, ['Celestial Crest'] = true, ['Gold Coin'] = true, ['Taelosian Symbols'] = true, ['Planar Symbols'] = true, }
 local tmpCmd = loot.GroupChannel or 'dgae'
+local showSettings = false
+local settingsNoDraw = { Version = true, logger = true, LootFile = true, SettingsFile = true, NoDropDefaults = true, CorpseRotTime = true, LootLagDelay = true, Terminate = true, }
+
 loot.BuyItems = {}
 loot.GlobalItems = {}
 loot.NormalItems = {}
@@ -413,6 +424,7 @@ function loot.loadSettings()
             tmpSettings[k] = loot.Settings[k]
         end
     end
+    loot.Settings = tmpSettings
     tmpCmd = loot.Settings.GroupChannel or 'dgae'
     if tmpCmd == string.find(tmpCmd, 'dg') then
         tmpCmd = '/' .. tmpCmd
@@ -422,6 +434,22 @@ function loot.loadSettings()
     shouldLootActions.Destroy = loot.Settings.DoDestroy
     shouldLootActions.Tribute = loot.Settings.TributeKeep
     loot.BuyItems = loot.load(SettingsFile, 'BuyItems')
+    for k, v in pairs(loot.BuyItems) do
+        if v == 'delete' then
+            loot.BuyItems[k] = nil
+            loot.TempSettings.NeedSave = true
+        end
+    end
+    if guiLoot ~= nil then
+        guiLoot.NormItemsTable = loot.NormalItems
+        guiLoot.GlobItemsTable = loot.GlobalItems
+        guiLoot.BuyItemsTable = loot.BuyItems
+    end
+    if loot.TempSettings.NeedSave then
+        loot.writeSettings()
+        loot.TempSettings.NeedSave = false
+    end
+    loot.SortTables()
 end
 
 function loot.checkCursor()
@@ -743,6 +771,8 @@ function loot.commandHandler(...)
             end
             loot.UpdateDB()
             loot.Settings.logger.Info("\ayImporting the DB from loot.ini \ax and \at Reloading Settings")
+        elseif args[1] == 'settings' then
+            showSettings = not showSettings
         elseif args[1] == 'bank' then
             loot.processItems('Bank')
         elseif args[1] == 'cleanup' then
@@ -1107,21 +1137,23 @@ end
 function loot.RestockItems()
     local rowNum = 0
     for itemName, qty in pairs(loot.BuyItems) do
-        rowNum = mq.TLO.Window("MerchantWnd/MW_ItemList").List(itemName, 2)() or 0
-        mq.delay(20)
-        local tmpQty = qty - mq.TLO.FindItemCount(itemName)()
-        if rowNum ~= 0 and tmpQty > 0 then
-            mq.TLO.Window("MerchantWnd/MW_ItemList").Select(rowNum)()
-            mq.delay(100)
-            mq.TLO.Window("MerchantWnd/MW_Buy_Button").LeftMouseUp()
-            mq.delay(500, function() return mq.TLO.Window("QuantityWnd").Open() end)
-            mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
-            mq.delay(100, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
-            loot.Settings.logger.Info(string.format("\agBuying\ay " .. tmpQty .. "\at " .. itemName))
-            mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
-            mq.delay(100)
+        if tonumber(qty) then
+            rowNum = mq.TLO.Window("MerchantWnd/MW_ItemList").List(itemName, 2)() or 0
+            mq.delay(20)
+            local tmpQty = qty - mq.TLO.FindItemCount(itemName)()
+            if rowNum ~= 0 and tmpQty > 0 then
+                mq.TLO.Window("MerchantWnd/MW_ItemList").Select(rowNum)()
+                mq.delay(100)
+                mq.TLO.Window("MerchantWnd/MW_Buy_Button").LeftMouseUp()
+                mq.delay(500, function() return mq.TLO.Window("QuantityWnd").Open() end)
+                mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
+                mq.delay(100, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
+                loot.Settings.logger.Info(string.format("\agBuying\ay " .. tmpQty .. "\at " .. itemName))
+                mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
+                mq.delay(100)
+            end
+            mq.delay(500, function() return mq.TLO.FindItemCount(itemName)() == qty end)
         end
-        mq.delay(500, function() return mq.TLO.FindItemCount(itemName)() == qty end)
     end
     -- close window when done buying
     return mq.TLO.Window('MerchantWnd').DoClose()
@@ -1407,6 +1439,473 @@ function loot.tributeStuff()
     loot.processItems('Tribute')
 end
 
+-- GUI stuff
+
+function loot.SearchLootTable(search, key, value)
+    if (search == nil or search == "") or key:lower():find(search:lower()) or value:lower():find(search:lower()) then
+        return true
+    else
+        return false
+    end
+end
+
+function loot.SortTables()
+    loot.TempSettings.SortedGlobalItemKeys = {}
+    loot.TempSettings.SortedBuyItemKeys = {}
+    loot.TempSettings.SortedNormalItemKeys = {}
+    loot.TempSettings.SortedSettingsKeys = {}
+
+    for k in pairs(loot.GlobalItems) do
+        table.insert(loot.TempSettings.SortedGlobalItemKeys, k)
+    end
+    table.sort(loot.TempSettings.SortedGlobalItemKeys, function(a, b) return a < b end)
+
+    for k in pairs(loot.BuyItems) do
+        table.insert(loot.TempSettings.SortedBuyItemKeys, k)
+    end
+    table.sort(loot.TempSettings.SortedBuyItemKeys, function(a, b) return a < b end)
+
+    for k in pairs(loot.NormalItems) do
+        table.insert(loot.TempSettings.SortedNormalItemKeys, k)
+    end
+    table.sort(loot.TempSettings.SortedNormalItemKeys, function(a, b) return a < b end)
+
+    for k in pairs(loot.Settings) do
+        table.insert(loot.TempSettings.SortedSettingsKeys, k)
+    end
+    table.sort(loot.TempSettings.SortedSettingsKeys, function(a, b) return a < b end)
+end
+
+function loot.SettingsUI()
+    if not showSettings then return end
+    if ImGui.CollapsingHeader("Loot N Scoot Settings") then
+        local col = math.max(2, math.floor(ImGui.GetContentRegionAvail() / 150))
+        col = col + (col % 2)
+        if ImGui.SmallButton("Save Settings##LootnScoot") then
+            loot.writeSettings()
+        end
+
+        if ImGui.BeginTable("Settings##LootnScoot", 2, ImGuiTableFlags.ScrollY) then
+            ImGui.TableSetupScrollFreeze(2, 1)
+            ImGui.TableSetupColumn("Setting")
+            ImGui.TableSetupColumn("Value")
+            ImGui.TableHeadersRow()
+
+            for i, settingName in ipairs(loot.TempSettings.SortedSettingsKeys) do
+                if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
+                    ImGui.TableNextColumn()
+                    ImGui.Text(settingName)
+                    ImGui.TableNextColumn()
+                    if type(loot.Settings[settingName]) == "boolean" then
+                        loot.Settings[settingName] = ImGui.Checkbox("##" .. settingName, loot.Settings[settingName])
+                    elseif type(loot.Settings[settingName]) == "number" then
+                        loot.Settings[settingName] = ImGui.InputInt("##" .. settingName, loot.Settings[settingName])
+                    elseif type(loot.Settings[settingName]) == "string" then
+                        loot.Settings[settingName] = ImGui.InputText("##" .. settingName, loot.Settings[settingName])
+                    end
+                end
+            end
+            ImGui.EndTable()
+        end
+    end
+
+    if ImGui.CollapsingHeader("Items Tables") then
+        if ImGui.BeginTabBar("Items") then
+            local col = math.max(2, math.floor(ImGui.GetContentRegionAvail() / 150))
+            col = col + (col % 2)
+
+            -- Buy Items
+            if ImGui.BeginTabItem("Buy Items##LootModule") then
+                if loot.TempSettings.BuyItems == nil then
+                    loot.TempSettings.BuyItems = {}
+                end
+                ImGui.Text("Delete the Item Name to remove it from the table")
+
+                if ImGui.SmallButton("Save Changes##BuyItems") then
+                    for k, v in pairs(loot.TempSettings.UpdatedBuyItems) do
+                        if k ~= "" then
+                            loot.BuyItems[k] = v
+                            loot.setBuyItem(k, v)
+                        end
+                    end
+
+                    for k in pairs(loot.TempSettings.DeletedBuyKeys) do
+                        loot.BuyItems[k] = nil
+                        loot.setBuyItem(k, 'delete')
+                    end
+
+                    loot.TempSettings.UpdatedBuyItems = {}
+                    loot.TempSettings.DeletedBuyKeys = {}
+                end
+
+                loot.TempSettings.SearchBuyItems = ImGui.InputText("Search Items##NormalItems",
+                    loot.TempSettings.SearchBuyItems) or nil
+                ImGui.SeparatorText("Add New Item")
+                if ImGui.BeginTable("AddItem", 3, ImGuiTableFlags.Borders) then
+                    ImGui.TableSetupColumn("Item")
+                    ImGui.TableSetupColumn("Qty")
+                    ImGui.TableSetupColumn("Add")
+                    ImGui.TableHeadersRow()
+                    ImGui.TableNextColumn()
+
+                    ImGui.SetNextItemWidth(150)
+                    loot.TempSettings.NewBuyItem = ImGui.InputText("New Item##BuyItems", loot.TempSettings.NewBuyItem)
+                    if ImGui.IsItemHovered() and mq.TLO.Cursor() ~= nil then
+                        if ImGui.IsMouseClicked(0) then
+                            loot.TempSettings.NewBuyItem = mq.TLO.Cursor()
+                            mq.cmd("/autoinv")
+                        end
+                    end
+                    ImGui.TableNextColumn()
+                    ImGui.SetNextItemWidth(120)
+
+                    loot.TempSettings.NewBuyQty = ImGui.InputInt("New Qty##BuyItems", (loot.TempSettings.NewBuyQty or 1),
+                        1, 50)
+                    if loot.TempSettings.NewBuyQty > 1000 then loot.TempSettings.NewBuyQty = 1000 end
+
+                    ImGui.TableNextColumn()
+
+                    if ImGui.Button("Add Item##BuyItems") then
+                        loot.BuyItems[loot.TempSettings.NewBuyItem] = loot.TempSettings.NewBuyQty
+                        loot.setBuyItem(loot.TempSettings.NewBuyItem, loot.TempSettings.NewBuyQty)
+                        loot.TempSettings.NeedSave = true
+                        loot.TempSettings.NewBuyItem = ""
+                        loot.TempSettings.NewBuyQty = 1
+                    end
+                    ImGui.EndTable()
+                end
+                ImGui.SeparatorText("Buy Items Table")
+                if ImGui.BeginTable("Buy Items", col, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
+                    ImGui.TableSetupScrollFreeze(col, 1)
+                    for i = 1, col / 2 do
+                        ImGui.TableSetupColumn("Item")
+                        ImGui.TableSetupColumn("Qty")
+                    end
+                    ImGui.TableHeadersRow()
+
+                    local numDisplayColumns = col / 2
+
+                    if loot.BuyItems ~= nil and loot.TempSettings.SortedBuyItemKeys ~= nil then
+                        loot.TempSettings.UpdatedBuyItems = {}
+                        loot.TempSettings.DeletedBuyKeys = {}
+
+                        local numItems = #loot.TempSettings.SortedBuyItemKeys
+                        local numRows = math.ceil(numItems / numDisplayColumns)
+
+                        for row = 1, numRows do
+                            for column = 0, numDisplayColumns - 1 do
+                                local index = row + column * numRows
+                                local k = loot.TempSettings.SortedBuyItemKeys[index]
+                                if k then
+                                    local v = loot.BuyItems[k]
+                                    if v ~= "delete" then
+                                        if loot.SearchLootTable(loot.TempSettings.SearchBuyItems, k, v) then
+                                            loot.TempSettings.BuyItems[k] = loot.TempSettings.BuyItems[k] or
+                                                { Key = k, Value = v, }
+
+                                            ImGui.TableNextColumn()
+                                            local newKey = ImGui.InputText("##Key" .. k, loot.TempSettings.BuyItems[k].Key)
+
+                                            ImGui.TableNextColumn()
+                                            local newValue = ImGui.InputText("##Value" .. k,
+                                                loot.TempSettings.BuyItems[k].Value)
+
+                                            if newValue ~= v and newKey == k then
+                                                if newValue == "" then newValue = "NULL" end
+                                                loot.TempSettings.UpdatedBuyItems[newKey] = newValue
+                                            elseif newKey ~= "" and newKey ~= k then
+                                                loot.TempSettings.DeletedBuyKeys[k] = true
+                                                if newValue == "" then newValue = "NULL" end
+                                                loot.TempSettings.UpdatedBuyItems[newKey] = newValue
+                                            elseif newKey ~= k and newKey == "" then
+                                                loot.TempSettings.DeletedBuyKeys[k] = true
+                                            end
+
+                                            loot.TempSettings.BuyItems[k].Key = newKey
+                                            loot.TempSettings.BuyItems[k].Value = newValue
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    ImGui.EndTable()
+                end
+                ImGui.EndTabItem()
+            end
+
+            -- Global Items
+            if ImGui.BeginTabItem("Global Items##LootModule") then
+                if loot.TempSettings.GlobalItems == nil then
+                    loot.TempSettings.GlobalItems = {}
+                end
+                ImGui.Text("Delete the Item Name to remove it from the table")
+
+                if ImGui.SmallButton("Save Changes##GlobalItems") then
+                    for k, v in pairs(loot.TempSettings.UpdatedGlobalItems) do
+                        if k ~= "" then
+                            loot.GlobalItems[k] = v
+                            loot.setGlobalItem(k, v)
+                            loot.lootActor:send({ mailbox = 'lootnscoot', },
+                                {
+                                    who = eqChar,
+                                    action = 'modifyitem',
+                                    section =
+                                    "GlobalItems",
+                                    item = k,
+                                    rule = v,
+                                })
+                        end
+                    end
+
+                    for k in pairs(loot.TempSettings.DeletedGlobalKeys) do
+                        loot.GlobalItems[k] = nil
+                        loot.setGlobalItem(k, 'delete')
+                        loot.lootActor:send({ mailbox = 'lootnscoot', },
+                            {
+                                who = eqChar,
+                                section = "GlobalItems",
+                                action = 'deleteitem',
+                                item =
+                                    k,
+                            })
+                    end
+                    loot.TempSettings.UpdatedGlobalItems = {}
+                    loot.TempSettings.DeletedGlobalKeys = {}
+                    loot.TempSettings.NeedSave = true
+                    loot.SortTables()
+                end
+
+                loot.TempSettings.SearchGlobalItems = ImGui.InputText("Search Items##NormalItems",
+                    loot.TempSettings.SearchGlobalItems) or nil
+                ImGui.SeparatorText("Add New Item##GlobalItems")
+                if ImGui.BeginTable("AddItem##GlobalItems", 3, ImGuiTableFlags.Borders) then
+                    ImGui.TableSetupColumn("Item")
+                    ImGui.TableSetupColumn("Value")
+                    ImGui.TableSetupColumn("Add")
+                    ImGui.TableHeadersRow()
+                    ImGui.TableNextColumn()
+
+                    ImGui.SetNextItemWidth(150)
+                    loot.TempSettings.NewGlobalItem = ImGui.InputText("New Item##GlobalItems",
+                        loot.TempSettings.NewGlobalItem) or nil
+                    if ImGui.IsItemHovered() and mq.TLO.Cursor() ~= nil then
+                        if ImGui.IsMouseClicked(0) then
+                            loot.TempSettings.NewGlobalItem = mq.TLO.Cursor()
+                            mq.cmdf("/autoinv")
+                        end
+                    end
+                    ImGui.TableNextColumn()
+                    ImGui.SetNextItemWidth(120)
+
+                    loot.TempSettings.NewGlobalValue = ImGui.InputTextWithHint("New Value##GlobalItems",
+                        "Quest, Keep, Sell, Tribute, Bank, Ignore, Destroy",
+                        loot.TempSettings.NewGlobalValue) or nil
+
+                    ImGui.TableNextColumn()
+
+                    if ImGui.Button("Add Item##GlobalItems") then
+                        if loot.TempSettings.NewGlobalValue ~= "" and loot.TempSettings.NewGlobalValue ~= "" then
+                            loot.GlobalItems[loot.TempSettings.NewGlobalItem] = loot.TempSettings.NewGlobalValue
+                            loot.setGlobalItem(loot.TempSettings.NewGlobalItem, loot.TempSettings.NewGlobalValue)
+                            loot.lootActor:send({ mailbox = 'lootnscoot', },
+                                {
+                                    who = eqChar,
+                                    action = 'addrule',
+                                    section = "GlobalItems",
+                                    item = loot.TempSettings.NewGlobalItem,
+                                    rule = loot.TempSettings.NewGlobalValue,
+                                })
+
+                            loot.TempSettings.NewGlobalItem = ""
+                            loot.TempSettings.NewGlobalValue = ""
+                            loot.TempSettings.NeedSave = true
+                        end
+                    end
+                    ImGui.EndTable()
+                end
+                ImGui.SeparatorText("Global Items Table")
+                if ImGui.BeginTable("GlobalItems", col, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
+                    ImGui.TableSetupScrollFreeze(col, 1)
+                    for i = 1, col / 2 do
+                        ImGui.TableSetupColumn("Item")
+                        ImGui.TableSetupColumn("Setting")
+                    end
+                    ImGui.TableHeadersRow()
+
+                    local numDisplayColumns = col / 2
+
+                    if loot.GlobalItems ~= nil and loot.TempSettings.SortedGlobalItemKeys ~= nil then
+                        loot.TempSettings.UpdatedGlobalItems = {}
+                        loot.TempSettings.DeletedGlobalKeys = {}
+
+                        local numItems = #loot.TempSettings.SortedGlobalItemKeys
+                        local numRows = math.ceil(numItems / numDisplayColumns)
+
+                        for row = 1, numRows do
+                            for column = 0, numDisplayColumns - 1 do
+                                local index = row + column * numRows
+                                local k = loot.TempSettings.SortedGlobalItemKeys[index]
+                                if k then
+                                    local v = loot.GlobalItems[k]
+                                    if loot.SearchLootTable(loot.TempSettings.SearchGlobalItems, k, v) then
+                                        loot.TempSettings.GlobalItems[k] = loot.TempSettings.GlobalItems[k] or
+                                            { Key = k, Value = v, }
+
+                                        ImGui.TableNextColumn()
+                                        ImGui.SetNextItemWidth(140)
+                                        local newKey = ImGui.InputText("##Key" .. k, loot.TempSettings.GlobalItems[k].Key)
+
+                                        ImGui.TableNextColumn()
+                                        local newValue = ImGui.InputText("##Value" .. k,
+                                            loot.TempSettings.GlobalItems[k].Value)
+
+                                        if newValue ~= v and newKey == k then
+                                            if newValue == "" then newValue = "NULL" end
+                                            loot.TempSettings.UpdatedGlobalItems[newKey] = newValue
+                                        elseif newKey ~= "" and newKey ~= k then
+                                            loot.TempSettings.DeletedGlobalKeys[k] = true
+                                            if newValue == "" then newValue = "NULL" end
+                                            loot.TempSettings.UpdatedGlobalItems[newKey] = newValue
+                                        elseif newKey ~= k and newKey == "" then
+                                            loot.TempSettings.DeletedGlobalKeys[k] = true
+                                        end
+
+                                        loot.TempSettings.GlobalItems[k].Key = newKey
+                                        loot.TempSettings.GlobalItems[k].Value = newValue
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    ImGui.EndTable()
+                end
+
+                ImGui.EndTabItem()
+            end
+
+            -- Normal Items
+            if ImGui.BeginTabItem("Normal Items##LootModule") then
+                if loot.TempSettings.NormalItems == nil then
+                    loot.TempSettings.NormalItems = {}
+                end
+                ImGui.Text("Delete the Item Name to remove it from the table")
+
+                if ImGui.SmallButton("Save Changes##NormalItems") then
+                    for k, v in pairs(loot.TempSettings.UpdatedNormalItems) do
+                        loot.NormalItems[k] = v
+                        loot.setNormalItem(k, v)
+                        loot.lootActor:send({ mailbox = 'lootnscoot', },
+                            {
+                                who = eqChar,
+                                action = 'modifyitem',
+                                section = "NormalItems",
+                                item =
+                                    k,
+                                rule = v,
+                            })
+                    end
+                    loot.TempSettings.UpdatedNormalItems = {}
+
+                    for k in pairs(loot.TempSettings.DeletedNormalKeys) do
+                        loot.NormalItems[k] = nil
+                        loot.setNormalItem(k, 'delete')
+                        loot.lootActor:send({ mailbox = 'lootnscoot', },
+                            {
+                                who = eqChar,
+                                action = 'deleteitem',
+                                section = "NormalItems",
+                                item =
+                                    k,
+                            })
+                    end
+                    loot.TempSettings.DeletedNormalKeys = {}
+                    loot.SortTables()
+                end
+
+                loot.TempSettings.SearchItems = ImGui.InputText("Search Items##NormalItems",
+                    loot.TempSettings.SearchItems) or nil
+
+                if ImGui.BeginTable("NormalItems", col, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
+                    ImGui.TableSetupScrollFreeze(col, 1)
+                    for i = 1, col / 2 do
+                        ImGui.TableSetupColumn("Item")
+                        ImGui.TableSetupColumn("Setting")
+                    end
+                    ImGui.TableHeadersRow()
+
+                    local numDisplayColumns = col / 2
+
+                    if loot.NormalItems ~= nil and loot.TempSettings.SortedNormalItemKeys ~= nil then
+                        loot.TempSettings.UpdatedNormalItems = {}
+                        loot.TempSettings.DeletedNormalKeys = {}
+
+                        local numItems = #loot.TempSettings.SortedNormalItemKeys
+                        local numRows = math.ceil(numItems / numDisplayColumns)
+
+                        for row = 1, numRows do
+                            for column = 0, numDisplayColumns - 1 do
+                                local index = row + column * numRows
+                                local k = loot.TempSettings.SortedNormalItemKeys[index]
+                                if k then
+                                    local v = loot.NormalItems[k]
+                                    if loot.SearchLootTable(loot.TempSettings.SearchItems, k, v) then
+                                        loot.TempSettings.NormalItems[k] = loot.TempSettings.NormalItems[k] or
+                                            { Key = k, Value = v, }
+
+                                        ImGui.TableNextColumn()
+                                        ImGui.SetNextItemWidth(140)
+                                        local newKey = ImGui.InputText("##Key" .. k, loot.TempSettings.NormalItems[k]
+                                            .Key)
+
+                                        ImGui.TableNextColumn()
+                                        local newValue = ImGui.InputText("##Value" .. k,
+                                            loot.TempSettings.NormalItems[k].Value)
+
+                                        if newValue ~= v and newKey == k then
+                                            if newValue == "" then newValue = "NULL" end
+                                            loot.TempSettings.UpdatedNormalItems[newKey] = newValue
+                                        elseif newKey ~= "" and newKey ~= k then
+                                            loot.TempSettings.DeletedNormalKeys[k] = true
+                                            if newValue == "" then newValue = "NULL" end
+                                            loot.TempSettings.UpdatedNormalItems[newKey] = newValue
+                                        elseif newKey ~= k and newKey == "" then
+                                            loot.TempSettings.DeletedNormalKeys[k] = true
+                                        end
+
+                                        loot.TempSettings.NormalItems[k].Key = newKey
+                                        loot.TempSettings.NormalItems[k].Value = newValue
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    ImGui.EndTable()
+                end
+                ImGui.EndTabItem()
+            end
+
+            ImGui.EndTabBar()
+        end
+    end
+end
+
+local function RenderUI()
+    if not showSettings then return end
+    ImGui.SetNextWindowSize(ImVec2(500, 500), ImGuiCond.FirstUseEver)
+    local open, show = ImGui.Begin("Loot N Scoot##" .. eqChar, showSettings, ImGuiWindowFlags.None)
+    if not open then
+        showSettings = false
+    end
+    if show then
+        loot.SettingsUI()
+    end
+    ImGui.End()
+end
+
 function loot.guiExport()
     -- Define a new menu element function
     local function customMenu()
@@ -1549,6 +2048,7 @@ function loot.init(args)
     else
         loot.loadSettings()
     end
+    mq.imgui.init("LootNScoot", RenderUI)
     loot.RegisterActors()
     loot.CheckBags()
     loot.setupEvents()
@@ -1575,6 +2075,11 @@ while not loot.Settings.Terminate do
         doTribute = false
     end
     mq.doevents()
+    if loot.TempSettings.NeedSave then
+        loot.writeSettings()
+        loot.TempSettings.NeedSave = false
+        loot.SortTables()
+    end
     mq.delay(1000)
 end
 
