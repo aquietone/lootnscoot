@@ -142,7 +142,7 @@ local LootFile              = mq.configDir .. '/Loot.ini'
 local needDBUpdate          = false
 local lootDBUpdateFile      = mq.configDir .. '/DB_Updated_' .. eqServer .. '.lua'
 
-local version               = 3.0
+local version               = 4
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot                  = {
     Settings = {
@@ -444,7 +444,7 @@ function loot.loadSettings()
                 );
             ]])
         db:close()
-        mq.pickle(lootDBUpdateFile, { version = 3, })
+        mq.pickle(lootDBUpdateFile, { ['version'] = version, })
 
         loot.Settings.logger.Info(string.format("DB Version less than %s, Updating it now.", version))
         needDBUpdate = false
