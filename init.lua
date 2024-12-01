@@ -2067,6 +2067,7 @@ function loot.guiExport()
 end
 
 local function processArgs(args)
+    loot.Settings.Terminate = true
     if #args == 1 then
         if args[1] == 'sellstuff' then
             loot.processItems('Sell')
