@@ -1,5 +1,5 @@
 --[[
-lootnscoot.lua v1.7 - aquietone, grimmier
+loot.lua v1.7 - aquietone, grimmier
 
 This is a port of the RedGuides copy of ninjadvloot.inc with some updates as well.
 I may have glossed over some of the events or edge cases so it may have some issues
@@ -139,8 +139,10 @@ local eqChar                = mq.TLO.Me.Name()
 local actors                = require('actors')
 local SettingsFile          = mq.configDir .. '/LootNScoot_' .. eqServer .. '_' .. eqChar .. '.ini'
 local LootFile              = mq.configDir .. '/Loot.ini'
+local needDBUpdate          = false
+local lootDBUpdateFile      = mq.configDir .. '/DB_Updated_' .. eqServer .. '.lua'
 
-local version               = 2.0
+local version               = 4
 -- Public default settings, also read in from Loot.ini [Settings] section
 local loot                  = {
     Settings = {
@@ -379,6 +381,19 @@ end
 function loot.loadSettings()
     loot.NormalItems = {}
     loot.GlobalItems = {}
+
+    -- check if the DB structure needs updating
+    if not File_Exists(lootDBUpdateFile) then
+        needDBUpdate = true
+        loot.Settings.Version = version
+    else
+        local tmp = dofile(lootDBUpdateFile)
+        if tmp.version < version then
+            needDBUpdate = true
+            loot.Settings.Version = version
+        end
+    end
+
     -- SQL setup
     if not File_Exists(ItemsDB) then
         loot.Settings.logger.Warn(string.format(
@@ -387,23 +402,53 @@ function loot.loadSettings()
     else
         loot.Settings.logger.Info("Loot Rules Database found, loading it now.")
     end
-    -- Create the database and its table if it doesn't exist
-    local db = SQLite3.open(ItemsDB)
-    db:exec([[
+
+    if not needDBUpdate then
+        -- Create the database and its table if it doesn't exist
+        local db = SQLite3.open(ItemsDB)
+        db:exec([[
                 CREATE TABLE IF NOT EXISTS Global_Rules (
-                "item_name" TEXT NOT NULL UNIQUE,
-                "item_rule" TEXT NOT NULL,
-                "item_classes" TEXT,
-                "id" INTEGER PRIMARY KEY AUTOINCREMENT
-            );
-                CREATE TABLE IF NOT EXISTS Normal_Rules (
-                "item_name" TEXT NOT NULL UNIQUE,
-                "item_rule" TEXT NOT NULL,
-                "item_classes" TEXT,
-                "id" INTEGER PRIMARY KEY AUTOINCREMENT
-            );
-        ]])
-    db:close()
+                    "item_name" TEXT PRIMARY KEY NOT NULL UNIQUE,
+                    "item_rule" TEXT NOT NULL,
+                    "item_classes" TEXT
+                );
+                    CREATE TABLE IF NOT EXISTS Normal_Rules (
+                    "item_name" TEXT PRIMARY KEY NOT NULL UNIQUE,
+                    "item_rule" TEXT NOT NULL,
+                    "item_classes" TEXT
+                );
+            ]])
+        db:close()
+    else -- DB needs to be updated
+        local db = SQLite3.open(ItemsDB)
+        db:exec([[
+                CREATE TABLE IF NOT EXISTS my_table_copy(
+                    "item_name" TEXT PRIMARY KEY NOT NULL UNIQUE,
+                    "item_rule" TEXT NOT NULL,
+                    "item_classes" TEXT
+                );
+                INSERT INTO my_table_copy (item_name,item_rule,item_classes)
+                    SELECT item_name, item_rule, item_classes FROM Global_Rules;
+                DROP TABLE Global_Rules;
+                ALTER TABLE my_table_copy RENAME TO Global_Rules;
+
+                CREATE TABLE IF NOT EXISTS my_table_copy(
+                    "item_name" TEXT PRIMARY KEY NOT NULL UNIQUE,
+                    "item_rule" TEXT NOT NULL,
+                    "item_classes" TEXT
+                );
+                INSERT INTO my_table_copy (item_name,item_rule,item_classes)
+                    SELECT item_name, item_rule, item_classes FROM Global_Rules;
+                DROP TABLE Global_Rules;
+                ALTER TABLE my_table_copy RENAME TO Global_Rules;
+                );
+            ]])
+        db:close()
+        mq.pickle(lootDBUpdateFile, { ['version'] = version, })
+
+        loot.Settings.logger.Info(string.format("DB Version less than %s, Updating it now.", version))
+        needDBUpdate = false
+    end
 
     local db = SQLite3.open(ItemsDB)
     local stmt = db:prepare("SELECT * FROM Global_Rules")
@@ -2022,6 +2067,7 @@ function loot.guiExport()
 end
 
 local function processArgs(args)
+    loot.Settings.Terminate = true
     if #args == 1 then
         if args[1] == 'sellstuff' then
             loot.processItems('Sell')
