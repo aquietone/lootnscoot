@@ -1723,7 +1723,7 @@ function loot.RegisterActors()
         if itemName == 'NULL' then
             itemName = loot.ALLITEMS[itemID] and loot.ALLITEMS[itemID].Name or 'NULL'
         end
-        Logger.Info("loot.RegisterActors: \agReceived\ax message:\atSub \ay%s\aw, \atItem \ag%s\aw, \atRule \ag%s", action, itemID, rule)
+        -- Logger.Info("loot.RegisterActors: \agReceived\ax message:\atSub \ay%s\aw, \atItem \ag%s\aw, \atRule \ag%s", action, itemID, rule)
 
         -- Reload loot settings
         if action == 'lootreload' then
@@ -1752,7 +1752,7 @@ function loot.RegisterActors()
 
                 loot.NewItems[itemID] = nil
                 loot.NewItemsCount = loot.NewItemsCount - 1
-                Logger.Info("loot.RegisterActors: \atNew Item Rule Item \ax\agUpdated:\ax [\ay%s\ax] NewItemCount Remaining \ag%s\ax", lootMessage.entered, loot.NewItemsCount)
+                Logger.Info("loot.RegisterActors: \atNew Item Rule \ax\agUpdated:\ax [\ay%s\ax] NewItemCount Remaining \ag%s\ax", lootMessage.entered, loot.NewItemsCount)
             end
 
             local db = loot.OpenItemsSQL()
@@ -3097,7 +3097,7 @@ function loot.drawNewItemsTable()
         tmpRules[itemID]         = nil
         tmpLinks[itemID]         = nil
         loot.tempLootAll[itemID] = nil
-        loot.NewItemsCount       = loot.NewItemsCount - 1
+        -- loot.NewItemsCount       = loot.NewItemsCount - 1
     end
 
     -- Update New Items Count
@@ -3114,9 +3114,13 @@ function loot.SafeText(write_value)
         ImGui.TextColored(ImVec4(0.0, 1.0, 0.0, 1.0), "True")
     elseif tostring(write_value) == 'false' or tostring(write_value) == '0' or tostring(write_value) == 'None' then
     elseif tmpValue == "N/A" then
+        ImGui.Indent()
         ImGui.TextColored(ImVec4(1.0, 0.0, 0.0, 1.0), tmpValue)
+        ImGui.Unindent()
     else
+        ImGui.Indent()
         ImGui.Text(tmpValue)
+        ImGui.Unindent()
     end
 end
 
@@ -3244,7 +3248,7 @@ function loot.drawTable(label)
                     local itemName = loot.ItemNames[itemID] or item.Name
                     if loot.SearchLootTable(loot.TempSettings['Search' .. varSub], item, setting) then
                         ImGui.TableNextColumn()
-
+                        ImGui.Indent(2)
                         local btnColor, btnText = ImVec4(0.0, 0.6, 0.0, 0.4), Icons.FA_PENCIL
                         if loot.ALLITEMS[itemID] == nil then
                             btnColor, btnText = ImVec4(0.6, 0.0, 0.0, 0.4), Icons.MD_CLOSE
@@ -3278,18 +3282,21 @@ function loot.drawTable(label)
                                 mq.cmdf('/executelink %s', itemLink)
                             end
                         end
-
+                        ImGui.Unindent(2)
                         ImGui.TableNextColumn()
+                        ImGui.Indent(2)
                         loot.drawSettingIcon(setting)
                         if ImGui.IsItemHovered() then loot.DrawRuleToolTip(itemName, setting, classes:upper()) end
-
+                        ImGui.Unindent(2)
                         ImGui.TableNextColumn()
+                        ImGui.Indent(2)
                         if classes ~= 'All' then
                             ImGui.TextColored(ImVec4(0, 1, 1, 0.8), classes:upper())
                         else
                             ImGui.TextDisabled(classes:upper())
                         end
                         if ImGui.IsItemHovered() then loot.DrawRuleToolTip(itemName, setting, classes:upper()) end
+                        ImGui.Unindent(2)
                     end
                     ImGui.PopID()
                 end
@@ -3555,6 +3562,7 @@ function loot.drawItemsTables()
 
                             -- Render each column for the item
                             ImGui.TableNextColumn()
+                            ImGui.Indent(2)
                             loot.drawIcon(item.Icon, iconSize * fontScale)
                             ImGui.SameLine()
                             if ImGui.Selectable(item.Name, false) then
@@ -3567,6 +3575,7 @@ function loot.drawItemsTables()
                             if ImGui.IsItemHovered() and ImGui.IsMouseClicked(1) then
                                 mq.cmdf('/executelink %s', item.Link)
                             end
+                            ImGui.Unindent(2)
                             ImGui.TableNextColumn()
                             -- sell_value
                             if item.Value ~= '0 pp 0 gp 0 sp 0 cp' then
@@ -3633,9 +3642,26 @@ function loot.drawItemsTables()
                             -- class_list
                             local tmpClassList = item.ClassList ~= nil and item.ClassList or "All"
                             if tmpClassList:lower() ~= 'all' then
+                                ImGui.Indent(2)
                                 ImGui.TextColored(ImVec4(0, 1, 1, 0.8), tmpClassList)
+                                ImGui.Unindent(2)
                             else
+                                ImGui.Indent(2)
                                 ImGui.TextDisabled(tmpClassList)
+                                ImGui.Unindent(2)
+                            end
+                            if ImGui.IsItemHovered() then
+                                ImGui.BeginTooltip()
+                                ImGui.Text(item.Name)
+                                ImGui.PushTextWrapPos(200)
+                                ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0, 1, 1, 0.8))
+                                ImGui.TextWrapped("Classes: %s", tmpClassList)
+                                ImGui.PopStyleColor()
+                                ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.852, 0.589, 0.259, 1.000))
+                                ImGui.TextWrapped("Races: %s", item.RaceList)
+                                ImGui.PopStyleColor()
+                                ImGui.PopTextWrapPos()
+                                ImGui.EndTooltip()
                             end
                             ImGui.TableNextColumn()
                             loot.SafeText(item.svFire)          -- svfire
@@ -3663,9 +3689,26 @@ function loot.drawItemsTables()
                             -- race_list
                             if item.RaceList ~= nil then
                                 if item.RaceList:lower() ~= 'all' then
+                                    ImGui.Indent(2)
                                     ImGui.TextColored(ImVec4(0.852, 0.589, 0.259, 1.000), item.RaceList)
+                                    ImGui.Unindent(2)
                                 else
+                                    ImGui.Indent(2)
                                     ImGui.TextDisabled(item.RaceList)
+                                    ImGui.Unindent(2)
+                                end
+                                if ImGui.IsItemHovered() then
+                                    ImGui.BeginTooltip()
+                                    ImGui.Text(item.Name)
+                                    ImGui.PushTextWrapPos(200)
+                                    ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0, 1, 1, 0.8))
+                                    ImGui.TextWrapped("Classes: %s", tmpClassList)
+                                    ImGui.PopStyleColor()
+                                    ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.852, 0.589, 0.259, 1.000))
+                                    ImGui.TextWrapped("Races: %s", item.RaceList)
+                                    ImGui.PopStyleColor()
+                                    ImGui.PopTextWrapPos()
+                                    ImGui.EndTooltip()
                                 end
                             end
                             ImGui.TableNextColumn()
@@ -3803,7 +3846,6 @@ function loot.renderSettingsSection()
         if ImGui.SmallButton("Save Settings##LootnScoot") then
             loot.writeSettings()
         end
-
         if ImGui.BeginTable("Settings##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
             ImGui.TableSetupScrollFreeze(colCount, 1)
             for i = 1, colCount / 2 do
@@ -3815,8 +3857,11 @@ function loot.renderSettingsSection()
             for i, settingName in ipairs(loot.TempSettings.SortedSettingsKeys) do
                 if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
                     ImGui.TableNextColumn()
+                    ImGui.Indent(2)
                     ImGui.Text(settingName)
+                    ImGui.Unindent(2)
                     ImGui.TableNextColumn()
+                    ImGui.Indent(2)
                     if type(loot.Settings[settingName]) == "boolean" then
                         loot.drawSwitch(settingName)
                     elseif type(loot.Settings[settingName]) == "number" then
@@ -3826,6 +3871,7 @@ function loot.renderSettingsSection()
                         ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
                         loot.Settings[settingName] = ImGui.InputText("##" .. settingName, loot.Settings[settingName])
                     end
+                    ImGui.Unindent(2)
                 end
             end
             ImGui.EndTable()
