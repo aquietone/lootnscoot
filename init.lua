@@ -3156,9 +3156,32 @@ function loot.drawTable(label)
         if loot.TempSettings[varSub .. 'Classes'] == nil then
             loot.TempSettings[varSub .. 'Classes'] = {}
         end
+        local sizeX, _ = ImGui.GetContentRegionAvail()
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, ImVec4(0.0, 0.6, 0.0, 0.1))
+        if ImGui.BeginChild("Add Rule Drop Area", ImVec2(sizeX, 40), ImGuiChildFlags.Border) then
+            ImGui.TextDisabled("Drop Item Here to Add to a %s Rule", label)
+            if ImGui.IsWindowHovered() and ImGui.IsMouseClicked(0) then
+                if mq.TLO.Cursor() ~= nil then
+                    local itemCursor = mq.TLO.Cursor
+                    loot.addToItemDB(mq.TLO.Cursor)
+                    loot.TempSettings.ModifyItemRule = true
+                    loot.TempSettings.ModifyItemName = itemCursor.Name()
+                    loot.TempSettings.ModifyItemLink = itemCursor.ItemLink('CLICKABLE')() or "NULL"
+                    loot.TempSettings.ModifyItemID = itemCursor.ID()
+                    loot.TempSettings.ModifyItemTable = label .. "_Items"
+                    loot.TempSettings.ModifyClasses = loot.ALLITEMS[itemCursor.ID()].ClassList or "All"
+                    loot.TempSettings.ModifyItemSetting = "Ask"
+                    tempValues = {}
+                    mq.cmdf("/autoinv")
+                end
+            end
+        end
+        ImGui.EndChild()
+        ImGui.PopStyleColor()
+
         ImGui.BeginGroup()
         ImGui.SetNextItemWidth(180)
-        loot.TempSettings['Search' .. varSub] = ImGui.InputText("Search",
+        loot.TempSettings['Search' .. varSub] = ImGui.InputTextWithHint("Search", "Search by Name or Rule",
             loot.TempSettings['Search' .. varSub]) or nil
         ImGui.EndGroup()
         if ImGui.IsItemHovered() and mq.TLO.Cursor() then
@@ -3491,8 +3514,10 @@ function loot.drawItemsTables()
                     ImGui.EndChild()
                     ImGui.PopStyleColor()
 
+                    -- search field
+
                     ImGui.SetNextItemWidth(180)
-                    loot.TempSettings.SearchItems = ImGui.InputText("Search Items##AllItems",
+                    loot.TempSettings.SearchItems = ImGui.InputTextWithHint("Search Items##AllItems", "Lookup Name or Filter Class",
                         loot.TempSettings.SearchItems) or nil
                     if ImGui.IsItemHovered() and mq.TLO.Cursor() then
                         if ImGui.IsMouseClicked(0) then
@@ -3516,9 +3541,10 @@ function loot.drawItemsTables()
                     ImGui.PopStyleColor()
                     if ImGui.IsItemHovered() then ImGui.SetTooltip("Lookup Item in DB") end
 
+                    -- setup the filteredItems for sorting
                     local filteredItems = {}
                     for id, item in pairs(loot.ALLITEMS) do
-                        if loot.SearchLootTable(loot.TempSettings.SearchItems, item.Name, item.Name) then
+                        if loot.SearchLootTable(loot.TempSettings.SearchItems, item.Name, item.ClassList) then
                             table.insert(filteredItems, { id = id, data = item, })
                         end
                     end
