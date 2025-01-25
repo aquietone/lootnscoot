@@ -1286,6 +1286,7 @@ function loot.addRule(itemID, section, rule, classes, link)
         loot.modifyItemRule(itemID, rule, 'Normal_Rules', classes, link)
     end
 
+
     -- Refresh the loot settings to apply the changes
     return true
 end
@@ -1784,11 +1785,11 @@ end
 function loot.RegisterActors()
     loot.lootActor = Actors.register('lootnscoot', function(message)
         local lootMessage = message()
-        local who         = lootMessage.who
-        local action      = lootMessage.action
-        local itemID      = lootMessage.itemID
-        local rule        = lootMessage.rule
-        local section     = lootMessage.section
+        local who         = lootMessage.who or ''
+        local action      = lootMessage.action or ''
+        local itemID      = lootMessage.itemID or 0
+        local rule        = lootMessage.rule or 'NULL'
+        local section     = lootMessage.section or 'NormalItems'
         local itemName    = lootMessage.item or 'NULL'
         local itemLink    = lootMessage.link or 'NULL'
         local itemClasses = lootMessage.classes or 'All'
@@ -1822,6 +1823,10 @@ function loot.RegisterActors()
                 if lootedCorpses[lootMessage.corpse] then
                     lootedCorpses[lootMessage.corpse] = nil
                 end
+
+                loot.NewItems[itemID] = nil
+                loot.NewItemsCount = loot.NewItemsCount - 1
+                Logger.Info("loot.RegisterActors: \atNew Item Rule Item \ax\agUpdated:\ax [\ay%s\ax] NewItemCount Remaining \ag%s\ax", lootMessage.entered, loot.NewItemsCount)
             end
 
             local db = loot.OpenItemsSQL()
@@ -3140,6 +3145,14 @@ function loot.drawNewItemsTable()
                     local classes = loot.tempLootAll[itemID] and "All" or tmpClasses[itemID]
 
                     loot.addRule(itemID, "NormalItems", tmpRules[itemID], classes, item.Link)
+                    loot.enterNewItemRuleInfo({
+                        ID = itemID,
+                        ItemName = item.Name,
+                        Rule = tmpRules[itemID],
+                        Classes = classes,
+                        Link = item.Link,
+                        CorpseID = item.CorpseID,
+                    })
                     table.insert(itemsToRemove, itemID)
                     Logger.Debug("\agSaving\ax --\ayNEW ITEM RULE\ax-- Item: \at%s \ax(ID:\ag %s\ax) with rule: \at%s\ax, classes: \at%s\ax, link: \at%s\ax",
                         item.Name, itemID, tmpRules[itemID], tmpClasses[itemID], item.Link)
@@ -4140,6 +4153,12 @@ while not loot.Terminate do
         loot.TempSettings.LookUpItem = false
     end
 
+    loot.NewItemsCount = loot.NewItemsCount < 0 and 0 or loot.NewItemsCount
+
+    if loot.NewItemsCount == 0 then
+        showNewItem = false
+    end
+
     if loot.TempSettings.NeedsDestroy ~= nil then
         local item = loot.TempSettings.NeedsDestroy.item
         local bag = loot.TempSettings.NeedsDestroy.bag
@@ -4148,6 +4167,6 @@ while not loot.Terminate do
         loot.TempSettings.NeedsDestroy = nil
     end
 
-    mq.delay(500)
+    mq.delay(1)
 end
 return loot
