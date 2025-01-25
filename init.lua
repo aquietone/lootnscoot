@@ -487,6 +487,19 @@ function loot.loadSettings()
         if tmpSettings[k] == nil then
             tmpSettings[k] = loot.Settings[k]
             needSave       = true
+            if type(tmpSettings[k]) ~= 'table' then
+                Logger.Info("\agAdded\ax \ayNEW\ax \aySetting\ax: \at%s \aoDefault\ax: \at(\ay%s\ax)", k, v)
+            else
+                Logger.Info("\agAdded\ax \ayNEW\ax \aySetting\ax: \at%s \aoTable\ax", k)
+            end
+        end
+    end
+    -- check for deprecated settings and remove them
+    for k, v in pairs(tmpSettings) do
+        if loot.Settings[k] == nil and settingsNoDraw[k] == nil then
+            tmpSettings[k] = nil
+            needSave       = true
+            Logger.Warn("\arRemoved\ax \atdeprecated setting\ax: \ao%s", k)
         end
     end
 
@@ -1040,6 +1053,7 @@ function loot.addNewItem(corpseItem, itemRule, itemLink, corpseID)
         Link       = itemLink,
         Rule       = itemRule,
         NoDrop     = corpseItem.NoDrop(),
+        Icon       = corpseItem.Icon(),
         Lore       = corpseItem.Lore(),
         Tradeskill = corpseItem.Tradeskills(),
         Aug        = corpseItem.AugType() > 0,
@@ -1072,6 +1086,7 @@ function loot.addNewItem(corpseItem, itemRule, itemLink, corpseID)
             races      = loot.retrieveRaceList(corpseItem),
             link       = itemLink,
             lore       = corpseItem.Lore(),
+            icon       = corpseItem.Icon(),
             aug        = corpseItem.AugType() > 0 and true or false,
             noDrop     = corpseItem.NoDrop(),
             tradeskill = corpseItem.Tradeskills(),
@@ -1567,6 +1582,7 @@ end
 ---@return string Rule The Loot Rule or decision of no Rule
 ---@return integer Count The number of items to keep if Quest Item
 ---@return boolean newRule True if Item does not exist in the Rules Tables
+---@return boolean|nil cantWear True if the item is not wearable by the character
 function loot.getRule(item, from)
     if item == nil then return 'NULL', 0, false end
     local itemID = item.ID() or 0
@@ -1673,6 +1689,7 @@ function loot.getRule(item, from)
         return "Ignore", tonumber(qKeep), newRule
     end
 
+    local cantWear = false
     -- Handle Optionally Loot Only items you can use.
     if loot.Settings.CanWear and lootDecision == 'Keep' then
         -- if (lootClasses:lower() == 'all' or (string.find(loot.resolveClassList(item):lower(), loot.MyClass))) and
@@ -1683,6 +1700,7 @@ function loot.getRule(item, from)
         -- end
         if not item.CanUse() then
             lootDecision = 'Ignore'
+            cantWear = true
         end
     end
 
@@ -1703,7 +1721,7 @@ function loot.getRule(item, from)
         lootDecision = "Ask"
     end
 
-    return lootDecision, 0, newRule
+    return lootDecision, 0, newRule, cantWear
 end
 
 -- EVENTS
@@ -1784,6 +1802,7 @@ function loot.RegisterActors()
                 NoDrop     = lootMessage.noDrop,
                 SellPrice  = lootMessage.sellPrice,
                 Tradeskill = lootMessage.tradeskill,
+                Icon       = lootMessage.icon or 0,
                 MaxStacks  = lootMessage.maxStacks,
                 Aug        = lootMessage.aug,
                 Classes    = itemClasses,
@@ -2020,7 +2039,8 @@ end
 ---@param button string @The mouse button to use to loot the item. Only "leftmouseup" is currently implemented.
 ---@param qKeep number @The count to keep for quest items.
 ---@param allItems table @A table of all items seen on the corpse, left or looted.
-function loot.lootItem(index, doWhat, button, qKeep, allItems)
+---@param cantWear boolean|nil @ Whether the character canwear the item
+function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
     Logger.Debug('Enter lootItem')
 
     local corpseItem = mq.TLO.Corpse.Item(index)
@@ -2028,7 +2048,7 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems)
         if (doWhat == 'Ignore' and not (loot.Settings.DoDestroy and loot.Settings.AlwaysDestroy)) or
             (doWhat == 'Destroy' and not loot.Settings.DoDestroy) then
             table.insert(allItems,
-                { Name = corpseItem.Name(), Action = 'Left', Link = corpseItem.ItemLink('CLICKABLE')(), Eval = doWhat, })
+                { Name = corpseItem.Name(), Action = 'Left', Link = corpseItem.ItemLink('CLICKABLE')(), Eval = doWhat, cantWear = cantWear, })
             return
         end
     end
@@ -2067,7 +2087,7 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems)
         eval = isGlobalItem and 'Global Destroy' or 'Destroy'
         mq.cmdf('/destroy')
         table.insert(allItems,
-            { Name = itemName, Action = 'Destroyed', Link = itemLink, Eval = eval, })
+            { Name = itemName, Action = 'Destroyed', Link = itemLink, Eval = eval, cantWear = cantWear, })
     end
 
     loot.checkCursor()
@@ -2088,7 +2108,7 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems)
             eval = isGlobalItem and 'Global ' .. doWhat or doWhat
         end
         table.insert(allItems,
-            { Name = itemName, Action = 'Looted', Link = itemLink, Eval = eval, })
+            { Name = itemName, Action = 'Looted', Link = itemLink, Eval = eval, cantWear = cantWear, })
     end
 
     loot.CheckBags()
@@ -2166,7 +2186,7 @@ function loot.lootCorpse(corpseID)
                 if loot.ALLITEMS[corpseItemID] == nil then
                     loot.addToItemDB(corpseItem)
                 end
-                local itemRule, qKeep, newRule = loot.getRule(corpseItem, 'loot')
+                local itemRule, qKeep, newRule, cantWear = loot.getRule(corpseItem, 'loot')
 
                 Logger.Debug("LootCorpse(): itemID=\ao%s\ax, rule=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s", corpseItemID, itemRule, qKeep, newRule)
 
@@ -2508,7 +2528,7 @@ function loot.eventForage()
     while mq.TLO.Cursor() do
         local cursorItem        = mq.TLO.Cursor
         local foragedItem       = cursorItem.Name()
-        local forageRule        = loot.split(loot.getRule(cursorItem))
+        local forageRule        = loot.split(loot.getRule(cursorItem, 'forage'))
         local ruleAction        = forageRule[1] -- what to do with the item
         local ruleAmount        = forageRule[2] -- how many of the item should be kept
         local currentItemAmount = mq.TLO.FindItemCount('=' .. foragedItem)()
@@ -3017,12 +3037,15 @@ function loot.drawNewItemsTable()
 
                 -- Item Name and Link
                 ImGui.TableNextColumn()
-                if ImGui.SmallButton(Icons.FA_EYE .. "##" .. itemID) then
+                ImGui.Indent(2)
+                loot.drawIcon(item.Icon, 20)
+                if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+                    -- if ImGui.SmallButton(Icons.FA_EYE .. "##" .. itemID) then
                     mq.cmdf('/executelink %s', item.Link)
                 end
                 ImGui.SameLine()
                 ImGui.Text(item.Name or "Unknown")
-
+                ImGui.Unindent(2)
                 -- Rule Dropdown
                 ImGui.TableNextColumn()
                 item.selectedIndex = item.selectedIndex or loot.getRuleIndex(item.Rule, settingList)
@@ -3271,6 +3294,9 @@ function loot.drawTable(label)
                             loot.drawIcon(iconID, iconSize * fontScale) -- icon
                         else
                             loot.drawIcon(4493, iconSize * fontScale)   -- icon
+                        end
+                        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+                            mq.cmdf('/executelink %s', itemLink)
                         end
                         ImGui.SameLine(0, 0)
 
@@ -3564,6 +3590,9 @@ function loot.drawItemsTables()
                             ImGui.TableNextColumn()
                             ImGui.Indent(2)
                             loot.drawIcon(item.Icon, iconSize * fontScale)
+                            if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+                                mq.cmdf('/executelink %s', item.Link)
+                            end
                             ImGui.SameLine()
                             if ImGui.Selectable(item.Name, false) then
                                 loot.TempSettings.ModifyItemRule = true

@@ -814,6 +814,8 @@ function guiLoot.RegisterActor()
 			local what = item.Name
 			local eval = item.Eval
 			local who = lootEntry.LootedBy
+			local cantWear = item.cantWear or false
+
 			if guiLoot.hideNames then
 				if who ~= mq.TLO.Me() then who = mq.TLO.Spawn(string.format("%s", who)).Class.ShortName() else who = MyClass end
 			end
@@ -825,14 +827,18 @@ function guiLoot.RegisterActor()
 				link = link .. ' *Destroyed*'
 				addRule(who, what, link, eval)
 			end
-			local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s CorpseID (\at%s\ax)', lootEntry.LootedAt, who, item.Action, link, lootEntry.ID)
+			local actionLabel = item.Action
+			if cantWear then
+				actionLabel = actionLabel .. ' \ax(\arCant Wear\ax)'
+			end
+			local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s CorpseID (\at%s\ax)', lootEntry.LootedAt, who, actionLabel, link, lootEntry.ID)
 			if item.Action == 'Destroyed' then
 				text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpseID (\at%s\ax)', lootEntry.LootedAt, who, string.upper(item.Action), link, lootEntry.ID)
 			elseif item.Action == 'Looted' then
-				text = string.format('\ao[\at%s\ax] \at%s \ag%s \ax%s \axCorpseID (\at%s\ax)', lootEntry.LootedAt, who, item.Action, link, lootEntry.ID)
+				text = string.format('\ao[\at%s\ax] \at%s \ag%s \ax%s \axCorpseID (\at%s\ax)', lootEntry.LootedAt, who, actionLabel, link, lootEntry.ID)
 			end
 			guiLoot.console:AppendText(text)
-			local line = string.format('\ao[\at%s\ax] %s %s %s CorpseID (\at%s\ax)', lootEntry.LootedAt, who, item.Action, what, lootEntry.ID)
+			local line = string.format('\ao[\at%s\ax] %s %s %s CorpseID (\at%s\ax)', lootEntry.LootedAt, who, actionLabel, what, lootEntry.ID)
 			local i = getNextID(txtBuffer)
 			-- ZOOM Console hack
 			if i > 1 then
