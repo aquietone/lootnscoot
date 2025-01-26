@@ -3095,6 +3095,9 @@ function loot.RenderModifyItemWindow()
             loot.TempSettings.ModifyItemName = nil
             loot.TempSettings.ModifyItemLink = nil
             loot.TempModClass = false
+            if colCount > 0 then ImGui.PopStyleColor(colCount) end
+            if styCount > 0 then ImGui.PopStyleVar(styCount) end
+
             ImGui.End()
             return
         end
@@ -3113,6 +3116,9 @@ function loot.RenderModifyItemWindow()
             loot.TempSettings.ModifyItemTable = nil
             loot.TempSettings.ModifyItemClasses = 'All'
             ImGui.PopStyleColor()
+            if colCount > 0 then ImGui.PopStyleColor(colCount) end
+            if styCount > 0 then ImGui.PopStyleVar(styCount) end
+
             ImGui.End()
             return
         end
@@ -3143,7 +3149,11 @@ end
 
 function loot.drawNewItemsTable()
     local itemsToRemove = {}
-
+    if loot.NewItems == nil then showNewItem = false end
+    if #loot.NewItems < 0 then
+        showNewItem = false
+        loot.NewItemsCount = 0
+    end
     if loot.NewItemsCount > 0 then
         if ImGui.BeginTable('##newItemTable', 10, bit32.bor(
                 ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollX,
@@ -4014,6 +4024,8 @@ function loot.drawSettingIcon(setting)
         ImGui.TextColored(0.976, 0.218, 0.244, 1.000, Icons.MD_NOT_INTERESTED)
     elseif string.find(setting, 'Bank') then
         ImGui.TextColored(0.162, 0.785, 0.877, 1.000, Icons.MD_ACCOUNT_BALANCE)
+    elseif string.find(setting, 'CanUse') then
+        ImGui.TextColored(0.411, 0.462, 0.678, 1.000, Icons.FA_USER_O)
     else
         ImGui.Text(setting)
     end

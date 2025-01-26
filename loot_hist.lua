@@ -468,6 +468,20 @@ local function evalRule(item)
 			ImGui.Text("Not Set")
 			ImGui.EndTooltip()
 		end
+	elseif string.find(item, 'Ask') then
+		ImGui.TextColored(0.5, 0.5, 0.9, 1.000, Icons.FA_QUESTION)
+		if ImGui.IsItemHovered() then
+			ImGui.BeginTooltip()
+			ImGui.Text("Not Set")
+			ImGui.EndTooltip()
+		end
+	elseif string.find(item, 'CanUse') then
+		ImGui.TextColored(0.4, 0.7, 0.2, 1.000, Icons.FA_USER_O)
+		if ImGui.IsItemHovered() then
+			ImGui.BeginTooltip()
+			ImGui.Text("Can Use Item")
+			ImGui.EndTooltip()
+		end
 	else
 		ImGui.Text(item)
 	end
@@ -521,6 +535,14 @@ function guiLoot.lootedReport_GUI()
 			ImGui.TextColored(0.5, 0.5, 0.5, 1.000, Icons.FA_QUESTION)
 			ImGui.SameLine()
 			ImGui.Text("Unknown")
+			ImGui.SameLine()
+			ImGui.TextColored(0.5, 0.9, 0.5, 1.000, Icons.FA_QUESTION)
+			ImGui.SameLine()
+			ImGui.Text("Ask")
+			ImGui.SameLine()
+			ImGui.TextColored(0.4, 0.7, 0.2, 1.000, Icons.FA_USER_O)
+			ImGui.SameLine()
+			ImGui.Text("CanUse")
 			ImGui.EndPopup()
 		end
 		ImGui.SetWindowFontScale(ZoomLvl)
