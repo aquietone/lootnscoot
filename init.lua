@@ -236,6 +236,7 @@ loot.doImportInventory                  = false
 loot.TempModClass                       = false
 loot.ShowUI                             = false
 loot.Terminate                          = true
+loot.Boxes                              = {}
 -- FORWARD DECLARATIONS
 loot.AllItemColumnListIndex             = {
     [1]  = 'name',
@@ -1576,6 +1577,36 @@ function loot.resolveItemIDbyName(itemName, allowDuplicates)
     end
 end
 
+function loot.sendMySettings()
+    local tmpTable = {}
+    for k, v in pairs(loot.Settings) do
+        if type(v) == 'table' then
+            tmpTable[k] = {}
+            for kk, vv in pairs(v) do
+                tmpTable[k][kk] = vv
+            end
+        else
+            tmpTable[k] = v
+        end
+    end
+    loot.lootActor:send({ mailbox = 'lootnscoot', }, {
+        who      = MyName,
+        action   = 'sendsettings',
+        settings = tmpTable,
+    })
+    loot.Boxes[MyName] = {}
+    for k, v in pairs(loot.Settings) do
+        if type(v) == 'table' then
+            loot.Boxes[MyName][k] = {}
+            for kk, vv in pairs(v) do
+                loot.Boxes[MyName][k][kk] = vv
+            end
+        else
+            loot.Boxes[MyName][k] = v
+        end
+    end
+end
+
 --- Evaluate and return the rule for an item.
 ---@param item MQItem Item object
 ---@param from string Source of the of the callback (loot, bank, etc.)
@@ -1738,10 +1769,44 @@ function loot.RegisterActors()
         local itemLink    = lootMessage.link or 'NULL'
         local itemClasses = lootMessage.classes or 'All'
         local itemRaces   = lootMessage.races or 'All'
+        local boxSettings = lootMessage.settings or {}
         if itemName == 'NULL' then
             itemName = loot.ALLITEMS[itemID] and loot.ALLITEMS[itemID].Name or 'NULL'
         end
+
+        if action == 'Hello' and who ~= MyName then
+            loot.sendMySettings()
+            return
+        end
         -- Logger.Info("loot.RegisterActors: \agReceived\ax message:\atSub \ay%s\aw, \atItem \ag%s\aw, \atRule \ag%s", action, itemID, rule)
+        if action == 'sendsettings' and who ~= MyName then
+            loot.Boxes[who] = {}
+            for k, v in pairs(boxSettings) do
+                if type(k) ~= 'table' then
+                    loot.Boxes[who][k] = v
+                else
+                    loot.Boxes[who][k] = {}
+                    for i, j in pairs(v) do
+                        loot.Boxes[who][k][i] = j
+                    end
+                end
+            end
+        end
+
+        if action == 'updatesettings' and who == MyName then
+            for k, v in pairs(boxSettings) do
+                if type(k) ~= 'table' then
+                    loot.Settings[k] = v
+                else
+                    for i, j in pairs(v) do
+                        loot.Settings[k][i] = j
+                    end
+                end
+            end
+            mq.pickle(SettingsFile, loot.Settings)
+            loot.loadSettings()
+            loot.sendMySettings()
+        end
 
         -- Reload loot settings
         if action == 'lootreload' then
@@ -2432,7 +2497,7 @@ function loot.RestockItems()
     local rowNum = 0
     for itemName, qty in pairs(loot.BuyItemsTable) do
         local tmpVal = tonumber(qty) or 0
-        rowNum       = mq.TLO.Window("MerchantWnd/MW_ItemList").List(itemName, 2)() or 0
+        rowNum       = mq.TLO.Window("MerchantWnd/MW_ItemList").List(string.format("=%s", itemName), 2)() or 0
         mq.delay(20)
         local tmpQty = tmpVal - mq.TLO.FindItemCount(itemName)()
         if rowNum ~= 0 and tmpQty > 0 then
@@ -2727,58 +2792,58 @@ function loot.guiExport()
             if ImGui.BeginMenu('Group Commands##') then
                 -- Add menu items here
                 if ImGui.MenuItem("Sell Stuff##group") then
-                    mq.cmdf(string.format('/%s /rgl sell', tmpCmd))
+                    mq.cmdf(string.format('/%s /lootutils sellstuff', tmpCmd))
                 end
 
                 if ImGui.MenuItem('Restock Items##group') then
-                    mq.cmdf(string.format('/%s /rgl buy', tmpCmd))
+                    mq.cmdf(string.format('/%s /lootutils restock', tmpCmd))
                 end
 
                 if ImGui.MenuItem("Tribute Stuff##group") then
-                    mq.cmdf(string.format('/%s /rgl tribute', tmpCmd))
+                    mq.cmdf(string.format('/%s /lootutils tributestuff', tmpCmd))
                 end
 
                 if ImGui.MenuItem("Bank##group") then
-                    mq.cmdf(string.format('/%s /rgl bank', tmpCmd))
+                    mq.cmdf(string.format('/%s /lootutils bank', tmpCmd))
                 end
 
                 if ImGui.MenuItem("Cleanup##group") then
-                    mq.cmdf(string.format('/%s /rgl cleanbags', tmpCmd))
+                    mq.cmdf(string.format('/%s /lootutils cleanup', tmpCmd))
                 end
 
                 ImGui.Separator()
 
                 if ImGui.MenuItem("Reload##group") then
-                    mq.cmdf(string.format('/%s /rgl lootreload', tmpCmd))
+                    mq.cmdf(string.format('/%s /lootutils reload', tmpCmd))
                 end
 
                 ImGui.EndMenu()
             end
 
             if ImGui.MenuItem('Sell Stuff##') then
-                mq.cmdf('/rgl sell')
+                mq.cmdf('/lootutils sellstuff')
             end
 
             if ImGui.MenuItem('Restock##') then
-                mq.cmdf('/rgl buy')
+                mq.cmdf('/lootutils restock')
             end
 
             if ImGui.MenuItem('Tribute Stuff##') then
-                mq.cmdf('/rgl tribute')
+                mq.cmdf('/lootutils tributestuff')
             end
 
             if ImGui.MenuItem('Bank##') then
-                mq.cmdf('/rgl bank')
+                mq.cmdf('/lootutils bank')
             end
 
             if ImGui.MenuItem('Cleanup##') then
-                mq.cmdf('/rgl cleanbags')
+                mq.cmdf('/lootutils cleanup')
             end
 
             ImGui.Separator()
 
             if ImGui.MenuItem('Reload##') then
-                mq.cmdf('/rgl lootreload')
+                mq.cmdf('/lootutils reload')
             end
 
             ImGui.EndMenu()
@@ -3869,68 +3934,169 @@ function loot.drawSettingIcon(setting)
     end
 end
 
-function loot.drawSwitch(settingName)
-    if loot.Settings[settingName] then
-        ImGui.TextColored(0.3, 1.0, 0.3, 0.9, Icons.FA_TOGGLE_ON)
+function loot.drawSwitch(settingName, who)
+    if who == MyName then
+        if loot.Settings[settingName] then
+            ImGui.TextColored(0.3, 1.0, 0.3, 0.9, Icons.FA_TOGGLE_ON)
+        else
+            ImGui.TextColored(1.0, 0.3, 0.3, 0.8, Icons.FA_TOGGLE_OFF)
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("%s %s", settingName, loot.Settings[settingName] and "Enabled" or "Disabled")
+        end
+        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+            loot.Settings[settingName] = not loot.Settings[settingName]
+            loot.TempSettings.NeedSave = true
+        end
     else
-        ImGui.TextColored(1.0, 0.3, 0.3, 0.8, Icons.FA_TOGGLE_OFF)
-    end
-    if ImGui.IsItemHovered() then
-        ImGui.SetTooltip("%s %s", settingName, loot.Settings[settingName] and "Enabled" or "Disabled")
-    end
-    if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
-        loot.Settings[settingName] = not loot.Settings[settingName]
-        loot.TempSettings.NeedSave = true
+        if loot.Boxes[who] ~= nil then
+            if loot.Boxes[who][settingName] then
+                ImGui.TextColored(0.3, 1.0, 0.3, 0.9, Icons.FA_TOGGLE_ON)
+            else
+                ImGui.TextColored(1.0, 0.3, 0.3, 0.8, Icons.FA_TOGGLE_OFF)
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("%s %s", settingName, loot.Boxes[who][settingName] and "Enabled" or "Disabled")
+            end
+            if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+                loot.Boxes[who][settingName] = not loot.Boxes[who][settingName]
+            end
+        end
     end
 end
 
 loot.TempSettings.Edit = {}
-function loot.renderSettingsSection()
-    ImGui.Text("EMU Loot")
-    if ImGui.CollapsingHeader("Loot N Scoot Settings") then
-        local col = 2
-        col = math.max(2, math.floor(ImGui.GetContentRegionAvail() / 140))
-        local colCount = col + (col % 2)
-        if colCount % 2 ~= 0 then
-            if (colCount - 1) % 2 == 0 then
-                colCount = colCount - 1
-            else
-                colCount = colCount - 2
-            end
+function loot.renderSettingsSection(who)
+    if who == nil then who = MyName end
+    local col = 2
+    col = math.max(2, math.floor(ImGui.GetContentRegionAvail() / 140))
+    local colCount = col + (col % 2)
+    if colCount % 2 ~= 0 then
+        if (colCount - 1) % 2 == 0 then
+            colCount = colCount - 1
+        else
+            colCount = colCount - 2
         end
-        if ImGui.SmallButton("Save Settings##LootnScoot") then
-            loot.writeSettings()
-        end
-        if ImGui.BeginTable("Settings##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
-            ImGui.TableSetupScrollFreeze(colCount, 1)
-            for i = 1, colCount / 2 do
-                ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
-                ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 80)
-            end
-            ImGui.TableHeadersRow()
-
-            for i, settingName in ipairs(loot.TempSettings.SortedSettingsKeys) do
-                if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
-                    ImGui.TableNextColumn()
-                    ImGui.Indent(2)
-                    ImGui.Text(settingName)
-                    ImGui.Unindent(2)
-                    ImGui.TableNextColumn()
-                    ImGui.Indent(2)
-                    if type(loot.Settings[settingName]) == "boolean" then
-                        loot.drawSwitch(settingName)
-                    elseif type(loot.Settings[settingName]) == "number" then
-                        ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                        loot.Settings[settingName] = ImGui.InputInt("##" .. settingName, loot.Settings[settingName])
-                    elseif type(loot.Settings[settingName]) == "string" then
-                        ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                        loot.Settings[settingName] = ImGui.InputText("##" .. settingName, loot.Settings[settingName])
+    end
+    ImGui.SameLine()
+    if ImGui.SmallButton("Save Settings##LootnScoot") then
+        if who == MyName then
+            for k, v in pairs(loot.Boxes[MyName]) do
+                if type(v) == 'table' then
+                    for k2, v2 in pairs(v) do
+                        loot.Settings[k][k2] = v2
                     end
-                    ImGui.Unindent(2)
+                else
+                    loot.Settings[k] = v
                 end
             end
-            ImGui.EndTable()
+            loot.writeSettings()
+            loot.sendMySettings()
+        else
+            local tmpSet = {}
+            for k, v in pairs(loot.Boxes[who]) do
+                if type(v) == 'table' then
+                    tmpSet[k] = {}
+                    for k2, v2 in pairs(v) do
+                        tmpSet[k][k2] = v2
+                    end
+                else
+                    tmpSet[k] = v
+                end
+            end
+            loot.lootActor:send({ mailbox = 'lootnscoot', }, {
+                action = 'updatesettings',
+                who = who,
+                settings = tmpSet,
+            })
         end
+    end
+    ImGui.SeparatorText("Clone Settings")
+    ImGui.SetNextItemWidth(120)
+    if ImGui.BeginCombo('Who to Clone', loot.TempSettings.CloneWho) then
+        for k, v in pairs(loot.Boxes) do
+            if k ~= MyName then
+                if ImGui.Selectable(k, loot.TempSettings.CloneWho == k) then
+                    loot.TempSettings.CloneWho = k
+                end
+            end
+        end
+        ImGui.EndCombo()
+    end
+    ImGui.SameLine()
+    ImGui.SetNextItemWidth(120)
+    if ImGui.BeginCombo('Clone To', loot.TempSettings.CloneTo) then
+        for k, v in pairs(loot.Boxes) do
+            if k ~= MyName then
+                if ImGui.Selectable(k, loot.TempSettings.CloneTo == k) then
+                    loot.TempSettings.CloneTo = k
+                end
+            end
+        end
+        ImGui.EndCombo()
+    end
+    ImGui.SameLine()
+    if ImGui.SmallButton("Clone Settings") then
+        loot.Boxes[loot.TempSettings.CloneTo] = {}
+        for k, v in pairs(loot.Boxes[loot.TempSettings.CloneWho]) do
+            if type(v) == 'table' then
+                loot.Boxes[loot.TempSettings.CloneTo][k] = {}
+                for k2, v2 in pairs(v) do
+                    loot.Boxes[loot.TempSettings.CloneTo][k][k2] = v2
+                end
+            else
+                loot.Boxes[loot.TempSettings.CloneTo][k] = v
+            end
+        end
+        local tmpSet = {}
+        for k, v in pairs(loot.Boxes[loot.TempSettings.CloneTo]) do
+            if type(v) == 'table' then
+                tmpSet[k] = {}
+                for k2, v2 in pairs(v) do
+                    tmpSet[k][k2] = v2
+                end
+            else
+                tmpSet[k] = v
+            end
+        end
+        loot.lootActor:send({ mailbox = 'lootnscoot', }, {
+            action = 'updatesettings',
+            who = loot.TempSettings.CloneTo,
+            settings = tmpSet,
+        })
+        loot.TempSettings.CloneWho = nil
+        loot.TempSettings.CloneTo = nil
+    end
+
+    if ImGui.BeginTable("Settings##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
+        ImGui.TableSetupScrollFreeze(colCount, 1)
+        for i = 1, colCount / 2 do
+            ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
+            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 80)
+        end
+        ImGui.TableHeadersRow()
+
+        for i, settingName in ipairs(loot.TempSettings.SortedSettingsKeys) do
+            if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
+                ImGui.TableNextColumn()
+                ImGui.Indent(2)
+                ImGui.Text(settingName)
+                ImGui.Unindent(2)
+                ImGui.TableNextColumn()
+                ImGui.Indent(2)
+                if type(loot.Boxes[who][settingName]) == "boolean" then
+                    loot.drawSwitch(settingName, who)
+                elseif type(loot.Boxes[who][settingName]) == "number" then
+                    ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
+                    loot.Boxes[who][settingName] = ImGui.InputInt("##" .. settingName, loot.Boxes[who][settingName])
+                elseif type(loot.Boxes[who][settingName]) == "string" then
+                    ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
+                    loot.Boxes[who][settingName] = ImGui.InputText("##" .. settingName, loot.Boxes[who][settingName])
+                end
+                ImGui.Unindent(2)
+            end
+        end
+        ImGui.EndTable()
     end
 end
 
@@ -4009,7 +4175,21 @@ function loot.renderMainUI()
             loot.ShowUI = false
         end
         if show then
-            loot.renderSettingsSection()
+            if ImGui.CollapsingHeader("Loot N Scoot Settings") then
+                if loot.TempSettings.SelectedActor == nil then
+                    loot.TempSettings.SelectedActor = MyName
+                end
+                ImGui.SetNextItemWidth(180)
+                if ImGui.BeginCombo("Select Actor", loot.TempSettings.SelectedActor) then
+                    for k, v in pairs(loot.Boxes) do
+                        if ImGui.Selectable(k, loot.TempSettings.SelectedActor == k) then
+                            loot.TempSettings.SelectedActor = k
+                        end
+                    end
+                    ImGui.EndCombo()
+                end
+                loot.renderSettingsSection(loot.TempSettings.SelectedActor)
+            end
             ImGui.Spacing()
             loot.drawItemsTables()
         end
@@ -4033,6 +4213,7 @@ function loot.processArgs(args)
                 loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot')
             end
             loot.Terminate = false
+            loot.lootActor:send({ mailbox = 'lootnscoot', }, { action = 'Hello', who = MyName, })
         end
     end
 end
@@ -4049,6 +4230,7 @@ function loot.init(args)
     zoneID = mq.TLO.Zone.ID()
     Logger.Debug("Loot::init() \aoSaveRequired: \at%s", needsSave and "TRUE" or "FALSE")
     loot.processArgs(args)
+    loot.sendMySettings()
     mq.imgui.init('LootnScoot', loot.RenderUIs)
     if needsSave then loot.writeSettings() end
     return needsSave
@@ -4108,5 +4290,10 @@ while not loot.Terminate do
     end
 
     mq.delay(1)
+end
+
+if loot.Terminate then
+    mq.unbind("/lootutils")
+    mq.unbind("/looted")
 end
 return loot

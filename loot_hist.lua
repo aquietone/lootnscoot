@@ -197,7 +197,7 @@ local function loadTheme()
 	if Files.File.Exists(themeFile) then
 		theme = dofile(themeFile)
 	else
-		theme = require('lib.lootnscoot.themes')
+		theme = require('themes')
 	end
 	ThemeName = theme.LoadTheme or 'notheme'
 end
