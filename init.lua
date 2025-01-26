@@ -446,19 +446,25 @@ function loot.LoadRuleDB()
     db:close()
 end
 
-function loot.loadSettings()
-    loot.NormalItemsRules   = {}
-    loot.GlobalItemsRules   = {}
-    loot.NormalItemsClasses = {}
-    loot.GlobalItemsClasses = {}
-    loot.NormalItemsLink    = {}
-    loot.GlobalItemsLink    = {}
-    loot.BuyItemsTable      = {}
-    loot.ItemNames          = {}
-    loot.ALLITEMS           = {}
-    local needDBUpdate      = false
-    local needSave          = false
-    local tmpSettings       = {}
+---comment
+---@param firstRun boolean|nil if passed true then we will load the DB's again
+---@return boolean
+function loot.loadSettings(firstRun)
+    if firstRun == nil then firstRun = false end
+    if firstRun then
+        loot.NormalItemsRules   = {}
+        loot.GlobalItemsRules   = {}
+        loot.NormalItemsClasses = {}
+        loot.GlobalItemsClasses = {}
+        loot.NormalItemsLink    = {}
+        loot.GlobalItemsLink    = {}
+        loot.BuyItemsTable      = {}
+        loot.ItemNames          = {}
+        loot.ALLITEMS           = {}
+    end
+    local needDBUpdate = false
+    local needSave     = false
+    local tmpSettings  = {}
 
     if not Files.File.Exists(SettingsFile) then
         Logger.Warn("Settings file not found, creating it now.")
@@ -482,6 +488,10 @@ function loot.loadSettings()
         end
     end
 
+    if not Files.File.Exists(RulesDB) then
+        -- touch path to create the directory
+        mq.pickle(RulesDB .. "touch", {})
+    end
     -- process settings file
 
     for k, v in pairs(loot.Settings) do
@@ -515,20 +525,21 @@ function loot.loadSettings()
     shouldLootActions.Tribute = loot.Settings.TributeKeep
     loot.BuyItemsTable        = loot.Settings.BuyItemsTable
 
-    -- SQL setup
-    if not Files.File.Exists(RulesDB) then
-        Logger.Warn("\ayLoot Rules Database \arNOT found\ax, \atCreating it now\ax. Please run \at/rgl lootimport\ax to Import your \atloot.ini \axfile.")
-        Logger.Warn("\arOnly run this one One Character\ax. use \at/rgl lootreload\ax to update the data on the other characters.")
-    else
-        Logger.Info("Loot Rules Database found, loading it now.")
-    end
+    if firstRun then
+        -- SQL setup
+        if not Files.File.Exists(RulesDB) then
+            Logger.Warn("\ayLoot Rules Database \arNOT found\ax, \atCreating it now\ax. Please run \at/rgl lootimport\ax to Import your \atloot.ini \axfile.")
+            Logger.Warn("\arOnly run this one One Character\ax. use \at/rgl lootreload\ax to update the data on the other characters.")
+        else
+            Logger.Info("Loot Rules Database found, loading it now.")
+        end
 
-    -- load the rules database
-    loot.LoadRuleDB()
+        -- load the rules database
+        loot.LoadRuleDB()
 
-    -- check if the DB structure needs updating
-    local db = loot.OpenItemsSQL()
-    db:exec([[
+        -- check if the DB structure needs updating
+        local db = loot.OpenItemsSQL()
+        db:exec([[
         CREATE TABLE IF NOT EXISTS Items (
         item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
         name TEXT NOT NULL,
@@ -594,20 +605,20 @@ function loot.loadSettings()
         link TEXT
         );
         ]])
-    db:close()
+        db:close()
 
-    -- load the items database
-    db = loot.OpenItemsSQL()
-    -- Set up the Items DB
-    db:exec("BEGIN TRANSACTION")
+        -- load the items database
+        db = loot.OpenItemsSQL()
+        -- Set up the Items DB
+        db:exec("BEGIN TRANSACTION")
 
-    for id, name in pairs(loot.ItemNames) do
-        loot.GetItemFromDB(name, id, true, db)
+        for id, name in pairs(loot.ItemNames) do
+            loot.GetItemFromDB(name, id, true, db)
+        end
+
+        db:exec("COMMIT")
+        db:close()
     end
-
-    db:exec("COMMIT")
-    db:close()
-
     loot.Settings = tmpSettings
     -- Modules:ExecModule("Loot", "ModifyLootSettings")
     return needSave
@@ -3979,7 +3990,7 @@ function loot.renderSettingsSection(who)
         end
     end
     ImGui.SameLine()
-    if ImGui.SmallButton("Save Settings##LootnScoot") then
+    if ImGui.SmallButton("Send Settings##LootnScoot") then
         if who == MyName then
             for k, v in pairs(loot.Boxes[MyName]) do
                 if type(v) == 'table' then
@@ -4015,10 +4026,8 @@ function loot.renderSettingsSection(who)
     ImGui.SetNextItemWidth(120)
     if ImGui.BeginCombo('Who to Clone', loot.TempSettings.CloneWho) then
         for k, v in pairs(loot.Boxes) do
-            if k ~= MyName then
-                if ImGui.Selectable(k, loot.TempSettings.CloneWho == k) then
-                    loot.TempSettings.CloneWho = k
-                end
+            if ImGui.Selectable(k, loot.TempSettings.CloneWho == k) then
+                loot.TempSettings.CloneWho = k
             end
         end
         ImGui.EndCombo()
@@ -4027,10 +4036,8 @@ function loot.renderSettingsSection(who)
     ImGui.SetNextItemWidth(120)
     if ImGui.BeginCombo('Clone To', loot.TempSettings.CloneTo) then
         for k, v in pairs(loot.Boxes) do
-            if k ~= MyName then
-                if ImGui.Selectable(k, loot.TempSettings.CloneTo == k) then
-                    loot.TempSettings.CloneTo = k
-                end
+            if ImGui.Selectable(k, loot.TempSettings.CloneTo == k) then
+                loot.TempSettings.CloneTo = k
             end
         end
         ImGui.EndCombo()
@@ -4064,7 +4071,6 @@ function loot.renderSettingsSection(who)
             who = loot.TempSettings.CloneTo,
             settings = tmpSet,
         })
-        loot.TempSettings.CloneWho = nil
         loot.TempSettings.CloneTo = nil
     end
 
@@ -4080,11 +4086,21 @@ function loot.renderSettingsSection(who)
             if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
                 ImGui.TableNextColumn()
                 ImGui.Indent(2)
-                ImGui.Text(settingName)
+                if ImGui.Selectable(settingName) then
+                    if type(loot.Boxes[who][settingName]) == "boolean" then
+                        loot.Boxes[who][settingName] = not loot.Boxes[who][settingName]
+                        if who == MyName then
+                            loot.Settings[settingName] = loot.Boxes[who][settingName]
+                            loot.TempSettings.NeedSave = true
+                        end
+                    end
+                end
                 ImGui.Unindent(2)
                 ImGui.TableNextColumn()
-                ImGui.Indent(2)
+
                 if type(loot.Boxes[who][settingName]) == "boolean" then
+                    local posX, posY = ImGui.GetCursorPos()
+                    ImGui.SetCursorPosX(posX + (ImGui.GetColumnWidth(-1) / 2) - 5)
                     loot.drawSwitch(settingName, who)
                 elseif type(loot.Boxes[who][settingName]) == "number" then
                     ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
@@ -4093,7 +4109,6 @@ function loot.renderSettingsSection(who)
                     ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
                     loot.Boxes[who][settingName] = ImGui.InputText("##" .. settingName, loot.Boxes[who][settingName])
                 end
-                ImGui.Unindent(2)
             end
         end
         ImGui.EndTable()
@@ -4221,7 +4236,7 @@ end
 function loot.init(args)
     local needsSave = false
 
-    needsSave = loot.loadSettings()
+    needsSave = loot.loadSettings(true)
     loot.SortItemTables()
     loot.RegisterActors()
     loot.CheckBags()
@@ -4265,6 +4280,8 @@ while not loot.Terminate do
     if loot.TempSettings.NeedSave then
         loot.writeSettings()
         loot.TempSettings.NeedSave = false
+        loot.loadSettings()
+        loot.sendMySettings()
         loot.SortItemTables()
     end
 
