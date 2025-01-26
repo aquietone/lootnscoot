@@ -161,7 +161,7 @@ loot.Settings                        = {
     AlwaysDestroy   = false,  -- Always Destroy items to clean corpese Will Destroy Non-Quest items marked 'Ignore' items REQUIRES DoDestroy set to true
     QuestKeep       = 10,     -- Default number to keep if item not set using Quest|# format.
     LootChannel     = "dgt",  -- Channel we report loot to.
-    GroupChannel    = "dgae", -- Channel we use for Group Commands
+    GroupChannel    = "dgze", -- Channel we use for Group Commands Default(dgze)
     ReportLoot      = true,   -- Report loot items to group or not.
     SpamLootInfo    = false,  -- Echo Spam for Looting
     LootForageSpam  = false,  -- Echo spam for Foraged Items
@@ -207,8 +207,19 @@ local cantLootID                        = 0
 local spawnSearch                       = '%s radius %d zradius 50'
 -- If you want destroy to actually loot and destroy items, change DoDestroy=false to DoDestroy=true in the Settings Ini.
 -- Otherwise, destroy behaves the same as ignore.
-local shouldLootActions                 = { Ask = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, }
-local validActions                      = { ask = "Ask", keep = 'Keep', bank = 'Bank', sell = 'Sell', ignore = 'Ignore', destroy = 'Destroy', quest = 'Quest', tribute = 'Tribute', }
+local shouldLootActions                 = { CanUse = false, Ask = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, }
+local validActions                      = {
+    canuse = "CanUse",
+    ask = "Ask",
+    keep = 'Keep',
+    bank = 'Bank',
+    sell = 'Sell',
+    ignore = 'Ignore',
+    destroy = 'Destroy',
+    quest = 'Quest',
+    tribute =
+    'Tribute',
+}
 local saveOptionTypes                   = { string = 1, number = 1, boolean = 1, }
 local NEVER_SELL                        = { ['Diamond Coin'] = true, ['Celestial Crest'] = true, ['Gold Coin'] = true, ['Taelosian Symbols'] = true, ['Planar Symbols'] = true, }
 local tmpCmd                            = loot.GroupChannel or 'dgae'
@@ -301,7 +312,7 @@ loot.AllItemColumnListIndex             = {
 }
 local doSell, doBuy, doTribute, areFull = false, false, false, false
 local settingList                       = {
-    "",
+    "CanUse",
     "Keep",
     "Ignore",
     "Destroy",
@@ -319,6 +330,55 @@ local ITEMS_PER_PAGE                    = 25
 loot.CurrentPage                        = loot.CurrentPage or 1
 
 -- UTILITIES
+
+
+
+---
+---This will keep your table sorted by columns instead of rows.
+---@param input_table table|nil  the table to sort (optional) You can send a set of sorted keys if you have already custom sorted it.
+---@param sorted_keys table|nil  the sorted keys table (optional) if you have already sorted the keys
+---@param num_columns integer  the number of column groups to sort the keys into
+---@return table
+function loot.SortTableColums(input_table, sorted_keys, num_columns)
+    if input_table == nil and sorted_keys == nil then return {} end
+
+    -- If sorted_keys is provided, use it, otherwise extract the keys from the input_table
+    local keys = sorted_keys or {}
+    if #keys == 0 then
+        for k, _ in pairs(input_table) do
+            table.insert(keys, k)
+        end
+        table.sort(keys, function(a, b)
+            return a < b
+        end)
+    end
+
+    local total_items = #keys
+    local num_rows = math.ceil(total_items / num_columns)
+    local column_sorted = {}
+
+    -- Reorganize the keys to fill vertically by columns
+    for row = 1, num_rows do
+        for col = 1, num_columns do
+            local index = (col - 1) * num_rows + row
+            if index <= total_items then
+                table.insert(column_sorted, keys[index])
+            end
+        end
+    end
+
+    return column_sorted
+end
+
+function loot.SortKeys(input_table)
+    local keys = {}
+    for k, _ in pairs(input_table) do
+        table.insert(keys, k)
+    end
+
+    table.sort(keys) -- Sort the keys
+    return keys
+end
 
 ---comment: Returns a table containing all the data from the INI file.
 ---@param fileName string The name of the INI file to parse. [string]
@@ -1652,6 +1712,7 @@ function loot.getRule(item, from)
 
     -- Update link if missing and rule exists
     if lootRule ~= "NULL" and lootLink == "NULL" then
+        if item.NoDrop() then lootRule = "CanUse" end
         loot.addRule(itemID, 'NormalItems', lootRule, lootClasses, item.ItemLink('CLICKABLE')())
     end
 
@@ -1733,7 +1794,7 @@ function loot.getRule(item, from)
 
     local cantWear = false
     -- Handle Optionally Loot Only items you can use.
-    if loot.Settings.CanWear and lootDecision == 'Keep' then
+    if (loot.Settings.CanWear and lootDecision == 'Keep') or lootDecision == 'CanUse' then
         -- if (lootClasses:lower() == 'all' or (string.find(loot.resolveClassList(item):lower(), loot.MyClass))) and
         --     (loot.resolveRaceList(item):lower() == 'all' or (string.find(loot.resolveRaceList(item):lower(), loot.MyRace:lower()))) then
         --     lootDecision = 'Keep'
@@ -2279,7 +2340,7 @@ function loot.lootCorpse(corpseID)
                         loot.lootItem(i, 'Ignore', 'leftmouseup', 0, allItems)
                     elseif isNoDrop then
                         if loot.Settings.LootNoDrop then
-                            if not newRule or (newRule and loot.Settings.LootNoDropNew) then
+                            if not newRule or (newRule and loot.Settings.LootNoDropNew) or itemRule == 'CanUse' then
                                 loot.lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
                             end
                         else
@@ -2291,7 +2352,7 @@ function loot.lootCorpse(corpseID)
                     end
                 elseif isNoDrop then
                     if loot.Settings.LootNoDrop then
-                        if not newRule or (newRule and loot.Settings.LootNoDropNew) then
+                        if not newRule or (newRule and loot.Settings.LootNoDropNew) or itemRule == 'CanUse' then
                             loot.lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
                         end
                     else
@@ -2303,6 +2364,7 @@ function loot.lootCorpse(corpseID)
                 end
 
                 if newRule then
+                    if isNoDrop then itemRule = 'CanUse' end
                     loot.addNewItem(corpseItem, itemRule, itemLink, corpseID)
                 end
             end
@@ -2922,7 +2984,9 @@ function loot.SortItemTables()
     table.sort(loot.TempSettings.SortedNormalItemKeys, function(a, b) return a < b end)
 
     for k in pairs(loot.Settings) do
-        table.insert(loot.TempSettings.SortedSettingsKeys, k)
+        if settingsNoDraw[k] == nil then
+            table.insert(loot.TempSettings.SortedSettingsKeys, k)
+        end
     end
     table.sort(loot.TempSettings.SortedSettingsKeys, function(a, b) return a < b end)
 end
@@ -2938,17 +3002,15 @@ function loot.RenderModifyItemWindow()
 
     local classes = loot.TempSettings.ModifyClasses
     local rule = loot.TempSettings.ModifyItemSetting
+    local colCount, styCount = loot.guiLoot.DrawTheme()
 
     ImGui.SetNextWindowSizeConstraints(ImVec2(300, 200), ImVec2(-1, -1))
     local open, show = ImGui.Begin("Modify Item", nil, ImGuiWindowFlags.AlwaysAutoResize)
     if show then
-        local settingList = {
-            "Ask", "Keep", "Sell", "Ignore", "Quest", "Tribute", "Bank", "Destroy",
-        }
-        local tableList   = {
+        local tableList = {
             "Global_Items", "Normal_Items",
         }
-        local item        = loot.ALLITEMS[loot.TempSettings.ModifyItemID]
+        local item      = loot.ALLITEMS[loot.TempSettings.ModifyItemID]
         if not item then
             item = {
                 Name = loot.TempSettings.ModifyItemName,
@@ -3074,13 +3136,12 @@ function loot.RenderModifyItemWindow()
         loot.TempSettings.ModifyItemName = nil
         loot.TempSettings.ModifyItemLink = nil
     end
+    if colCount > 0 then ImGui.PopStyleColor(colCount) end
+    if styCount > 0 then ImGui.PopStyleVar(styCount) end
     ImGui.End()
 end
 
 function loot.drawNewItemsTable()
-    local settingList   = {
-        "Ask", "Keep", "Sell", "Ignore", "Quest", "Tribute", "Bank", "Destroy",
-    }
     local itemsToRemove = {}
 
     if loot.NewItemsCount > 0 then
@@ -3286,6 +3347,7 @@ function loot.drawTable(label)
         end
 
         local filteredItems = {}
+        local filteredItemKeys = {}
         for id, rule in pairs(loot[varSub .. 'Rules']) do
             if loot.SearchLootTable(loot.TempSettings['Search' .. varSub], loot.ItemNames[id], rule) then
                 local iconID = 0
@@ -3294,7 +3356,7 @@ function loot.drawTable(label)
                     iconID = loot.ALLITEMS[id].Icon or 0
                     itemLink = loot.ALLITEMS[id].Link or ''
                 end
-                if loot.NormalItemsLink[id] then
+                if loot[varSub .. 'Link'][id] then
                     itemLink = loot[varSub .. 'Link'][id]
                 end
                 table.insert(filteredItems, {
@@ -3304,6 +3366,7 @@ function loot.drawTable(label)
                     icon = iconID,
                     link = itemLink,
                 })
+                table.insert(filteredItemKeys, loot.ItemNames[id])
             end
         end
         table.sort(filteredItems, function(a, b) return a.data < b.data end)
@@ -3357,7 +3420,7 @@ function loot.drawTable(label)
             end
             ImGui.TableHeadersRow()
 
-            if loot.NormalItemsRules ~= nil then
+            if loot[label .. 'ItemsRules'] ~= nil then
                 for i = startIndex, endIndex do
                     local itemID = filteredItems[i].id
                     local item = filteredItems[i].data
@@ -3411,7 +3474,13 @@ function loot.drawTable(label)
                         ImGui.TableNextColumn()
                         ImGui.Indent(2)
                         loot.drawSettingIcon(setting)
-                        if ImGui.IsItemHovered() then loot.DrawRuleToolTip(itemName, setting, classes:upper()) end
+
+                        if ImGui.IsItemHovered() then
+                            loot.DrawRuleToolTip(itemName, setting, classes:upper())
+                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
+                                mq.cmdf('/executelink %s', itemLink)
+                            end
+                        end
                         ImGui.Unindent(2)
                         ImGui.TableNextColumn()
                         ImGui.Indent(2)
@@ -3420,7 +3489,13 @@ function loot.drawTable(label)
                         else
                             ImGui.TextDisabled(classes:upper())
                         end
-                        if ImGui.IsItemHovered() then loot.DrawRuleToolTip(itemName, setting, classes:upper()) end
+
+                        if ImGui.IsItemHovered() then
+                            loot.DrawRuleToolTip(itemName, setting, classes:upper())
+                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
+                                mq.cmdf('/executelink %s', itemLink)
+                            end
+                        end
                         ImGui.Unindent(2)
                     end
                     ImGui.PopID()
@@ -3444,7 +3519,7 @@ function loot.drawItemsTables()
             col = col + (col % 2)
 
             -- Buy Items
-            if ImGui.BeginTabItem("Buy Items##LootModule") then
+            if ImGui.BeginTabItem("Buy Items") then
                 if loot.TempSettings.BuyItems == nil then
                     loot.TempSettings.BuyItems = {}
                 end
@@ -3625,7 +3700,6 @@ function loot.drawItemsTables()
                         end
                     end
                     table.sort(filteredItems, function(a, b) return a.data.Name < b.data.Name end)
-
                     -- Calculate total pages
                     local totalItems = #filteredItems
                     local totalPages = math.ceil(totalItems / ITEMS_PER_PAGE)
@@ -4074,6 +4148,8 @@ function loot.renderSettingsSection(who)
         loot.TempSettings.CloneTo = nil
     end
 
+    local sorted_names = loot.SortTableColums(loot.Boxes[who], loot.TempSettings.SortedSettingsKeys, colCount / 2)
+
     if ImGui.BeginTable("Settings##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
         ImGui.TableSetupScrollFreeze(colCount, 1)
         for i = 1, colCount / 2 do
@@ -4082,7 +4158,7 @@ function loot.renderSettingsSection(who)
         end
         ImGui.TableHeadersRow()
 
-        for i, settingName in ipairs(loot.TempSettings.SortedSettingsKeys) do
+        for i, settingName in ipairs(sorted_names) do
             if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
                 ImGui.TableNextColumn()
                 ImGui.Indent(2)
@@ -4117,6 +4193,8 @@ end
 
 function loot.renderNewItem()
     if (loot.Settings.AutoShowNewItem and loot.NewItemsCount > 0) and showNewItem then
+        local colCount, styCount = loot.guiLoot.DrawTheme()
+
         ImGui.SetNextWindowSize(600, 400, ImGuiCond.FirstUseEver)
         local open, show = ImGui.Begin('New Items', true)
         if not open then
@@ -4126,6 +4204,8 @@ function loot.renderNewItem()
         if show then
             loot.drawNewItemsTable()
         end
+        if colCount > 0 then ImGui.PopStyleColor(colCount) end
+        if styCount > 0 then ImGui.PopStyleVar(styCount) end
         ImGui.End()
     end
 end
@@ -4183,6 +4263,7 @@ end
 
 function loot.renderMainUI()
     if loot.ShowUI then
+        local colCount, styCount = loot.guiLoot.DrawTheme()
         ImGui.SetNextWindowSize(800, 600, ImGuiCond.FirstUseEver)
         local open, show = ImGui.Begin('LootnScoot', true)
         if not open then
@@ -4190,10 +4271,22 @@ function loot.renderMainUI()
             loot.ShowUI = false
         end
         if show then
+            ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
+            if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
+                loot.guiLoot.ReportLoot()
+            end
+            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Report Window") end
+            ImGui.SameLine()
+            if ImGui.SmallButton(string.format("%s Console", Icons.FA_TERMINAL)) then
+                loot.guiLoot.openGUI = not loot.guiLoot.openGUI
+            end
+            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Console Window") end
+
             if ImGui.CollapsingHeader("Loot N Scoot Settings") then
                 if loot.TempSettings.SelectedActor == nil then
                     loot.TempSettings.SelectedActor = MyName
                 end
+
                 ImGui.SetNextItemWidth(180)
                 if ImGui.BeginCombo("Select Actor", loot.TempSettings.SelectedActor) then
                     for k, v in pairs(loot.Boxes) do
@@ -4207,6 +4300,13 @@ function loot.renderMainUI()
             end
             ImGui.Spacing()
             loot.drawItemsTables()
+            ImGui.PopStyleColor()
+        end
+        if colCount > 0 then
+            ImGui.PopStyleColor(colCount)
+        end
+        if styCount > 0 then
+            ImGui.PopStyleVar(styCount)
         end
         ImGui.End()
     end
@@ -4214,13 +4314,21 @@ end
 
 function loot.processArgs(args)
     loot.Terminate = true
+    local mercsRunnig = mq.TLO.Lua.Script('rgmercs').Status() == 'RUNNING' or false
+
     if #args == 1 then
         if args[1] == 'sellstuff' then
+            if mercsRunnig then mq.cmd('/rgl pause') end
             loot.processItems('Sell')
+            if mercsRunnig then mq.cmd('/rgl unpause') end
         elseif args[1] == 'tributestuff' then
+            if mercsRunnig then mq.cmd('/rgl pause') end
             loot.processItems('Tribute')
+            if mercsRunnig then mq.cmd('/rgl unpause') end
         elseif args[1] == 'cleanup' then
+            if mercsRunnig then mq.cmd('/rgl pause') end
             loot.processItems('Cleanup')
+            if mercsRunnig then mq.cmd('/rgl unpause') end
         elseif args[1] == 'once' then
             loot.lootMobs()
         elseif args[1] == 'standalone' then

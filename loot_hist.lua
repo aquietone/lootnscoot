@@ -239,9 +239,12 @@ local function loadSettings()
 	temp = settings[script]
 end
 ---comment
----@param themeName string -- name of the theme to load form table
+---@param themeName string|nil -- name of the theme to load form table
 ---@return integer, integer -- returns the new counter values
-local function DrawTheme(themeName)
+function guiLoot.DrawTheme(themeName)
+	if themeName == nil then
+		themeName = ThemeName
+	end
 	local StyleCounter = 0
 	local ColorCounter = 0
 	if themeName == nil or themeName == 'None' or themeName == 'Default' then return 0, 0 end
@@ -274,8 +277,8 @@ function guiLoot.GUI()
 		local windowName = 'Looted Items##' .. MyName
 		ImGui.SetNextWindowSize(260, 300, ImGuiCond.FirstUseEver)
 		--imgui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(1, 0));
-		ColorCount, StyleCount = DrawTheme(ThemeName)
-		if guiLoot.imported then windowName = 'Looted Items Local##Imported_' .. MyName end
+		ColorCount, StyleCount = guiLoot.DrawTheme(ThemeName)
+		if guiLoot.imported then windowName = 'Loot Console##' .. MyName end
 		local openGui, show = ImGui.Begin(windowName, true, guiLoot.winFlags)
 		if not openGui then
 			guiLoot.openGUI = false
@@ -472,7 +475,7 @@ end
 
 function guiLoot.lootedReport_GUI()
 	--- Report Window
-	ColorCountRep, StyleCountRep = DrawTheme(ThemeName)
+	ColorCountRep, StyleCountRep = guiLoot.DrawTheme(ThemeName)
 	ImGui.SetNextWindowSize(300, 200, ImGuiCond.Appearing)
 	if changed and mq.TLO.Plugin('mq2dannet').IsLoaded() and guiLoot.caller == 'lootnscoot' then
 		mq.cmdf('/dgae /lootutils reload')
@@ -719,7 +722,7 @@ end
 function guiLoot.lootedConf_GUI()
 	ColorCountConf = 0
 	StyleCountConf = 0
-	ColorCountConf, StyleCountConf = DrawTheme(ThemeName)
+	ColorCountConf, StyleCountConf = guiLoot.DrawTheme(ThemeName)
 
 	local openWin, showConfigGUI = ImGui.Begin("Looted Conf##" .. script, true, bit32.bor(ImGuiWindowFlags.None, ImGuiWindowFlags.AlwaysAutoResize, ImGuiWindowFlags.NoCollapse))
 	ImGui.SetWindowFontScale(ZoomLvl)
