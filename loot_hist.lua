@@ -104,24 +104,24 @@ local defaults                                               = {
 }
 
 local guiLoot                                                = {
-	SHOW = false,
-	openGUI = false,
-	shouldDrawGUI = false,
-	imported = true,
-	hideNames = false,
-	showLinks = false,
-	linkdb = false,
+	SHOW              = false,
+	openGUI           = false,
+	shouldDrawGUI     = false,
+	imported          = true,
+	hideNames         = false,
+	showReport        = false,
+	showLinks         = false,
+	linkdb            = false,
 	importGUIElements = {},
 
 	---@type ConsoleWidget
-	console = nil,
-	localEcho = false,
-	resetPosition = false,
-	recordData = true,
-	UseActors = true,
-	winFlags = bit32.bor(ImGuiWindowFlags.MenuBar, ImGuiWindowFlags.NoFocusOnAppearing),
+	console           = nil,
+	localEcho         = false,
+	resetPosition     = false,
+	recordData        = true,
+	UseActors         = true,
+	winFlags          = bit32.bor(ImGuiWindowFlags.MenuBar, ImGuiWindowFlags.NoFocusOnAppearing),
 }
-guiLoot.showReport                                           = false
 
 local lootTable                                              = {}
 
@@ -141,13 +141,16 @@ end
 ---@param imported boolean
 ---@param useactors boolean
 ---@param caller string
-function guiLoot.GetSettings(names, links, record, imported, useactors, caller)
+---@param report boolean|nil
+function guiLoot.GetSettings(names, links, record, imported, useactors, caller, report)
+	local repVal = report and not guiLoot.showReport
 	guiLoot.imported = imported
 	guiLoot.hideNames = names
 	guiLoot.showLinks = links
 	guiLoot.recordData = record
 	guiLoot.UseActors = useactors
 	guiLoot.caller = caller
+	guiLoot.showReport = repVal
 end
 
 function guiLoot.loadLDB()
