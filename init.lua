@@ -926,6 +926,7 @@ function loot.addToItemDB(item)
             return
         end
     end
+    if loot.ItemNames[item.ID()] ~= nil then return end
 
     -- insert the item into the database
 
@@ -1486,18 +1487,18 @@ function loot.lookupLootRule(itemID, tablename)
     -- check lua tables first
 
     if tablename == 'Global_Rules' then
-        if loot.GlobalItemsRules[itemID] then
+        if loot.GlobalItemsRules[itemID] ~= nil then
             return loot.GlobalItemsRules[itemID], loot.GlobalItemsClasses[itemID], loot.GlobalItemsLink[itemID]
         end
     elseif tablename == 'Normal_Rules' then
-        if loot.NormalItemsRules[itemID] then
+        if loot.NormalItemsRules[itemID] ~= nil then
             return loot.NormalItemsRules[itemID], loot.NormalItemsClasses[itemID], loot.NormalItemsLink[itemID]
         end
     elseif tablename == nil then
-        if loot.GlobalItemsRules[itemID] then
+        if loot.GlobalItemsRules[itemID] ~= nil then
             return loot.GlobalItemsRules[itemID], loot.GlobalItemsClasses[itemID], loot.GlobalItemsLink[itemID]
         end
-        if loot.NormalItemsRules[itemID] then
+        if loot.NormalItemsRules[itemID] ~= nil then
             return loot.NormalItemsRules[itemID], loot.NormalItemsClasses[itemID], loot.NormalItemsLink[itemID]
         end
     end
@@ -1820,7 +1821,7 @@ function loot.getRule(item, from)
 
     -- Lookup existing rule in the databases
     local lootRule, lootClasses, lootLink = loot.lookupLootRule(itemID)
-
+    Logger.Info("Item: %s, Rule: %s, Classes: %s, Link: %s", itemName, lootRule, lootClasses, lootLink)
     if lootRule == 'NULL' and item.NoDrop() then
         lootRule = "CanUse"
         loot.addRule(itemID, 'NormalItems', lootRule, lootClasses, item.ItemLink('CLICKABLE')())
@@ -1891,7 +1892,6 @@ function loot.getRule(item, from)
     -- Handle augments
     if loot.Settings.LootAugments and augment > 0 then
         lootDecision = "Keep"
-        newRule      = true
     end
 
     -- Handle Quest items
@@ -2483,7 +2483,7 @@ function loot.lootCorpse(corpseID)
                 local itemLink     = corpseItem.ItemLink('CLICKABLE')()
                 local isNoDrop     = corpseItem.NoDrop()
                 local newNoDrop    = false
-                if loot.ALLITEMS[corpseItemID] == nil then
+                if loot.ItemNames[corpseItemID] == nil then
                     loot.addToItemDB(corpseItem)
                     if isNoDrop then
                         loot.addRule(corpseItemID, 'NormalItems', 'CanUse', 'All', itemLink)
