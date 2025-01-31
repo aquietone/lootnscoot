@@ -224,7 +224,6 @@ local saveOptionTypes                   = { string = 1, number = 1, boolean = 1,
 local NEVER_SELL                        = { ['Diamond Coin'] = true, ['Celestial Crest'] = true, ['Gold Coin'] = true, ['Taelosian Symbols'] = true, ['Planar Symbols'] = true, }
 local tmpCmd                            = loot.GroupChannel or 'dgae'
 local showNewItem                       = false
-local myName                            = mq.TLO.Me.Name()
 
 local Actors                            = require('actors')
 loot.BuyItemsTable                      = {}
@@ -251,6 +250,7 @@ loot.TempModClass                       = false
 loot.ShowUI                             = false
 loot.Terminate                          = true
 loot.Boxes                              = {}
+loot.PersonalTableName                  = string.format("%s_Rules", MyName)
 -- FORWARD DECLARATIONS
 loot.AllItemColumnListIndex             = {
     [1]  = 'name',
@@ -578,7 +578,15 @@ function loot.LoadRuleDB()
         loot.NormalItemsLink[row.item_id]    = row.item_link ~= nil and row.item_link or 'NULL'
         loot.ItemNames[row.item_id]          = row.item_name
     end
-
+    stmt:finalize()
+    local persQuery = string.format("SELECT * FROM %s", charTableName)
+    stmt = db:prepare(persQuery)
+    for row in stmt:nrows() do
+        loot.PersonalItemsRules[row.item_id]   = row.item_rule
+        loot.PersonalItemsClasses[row.item_id] = row.item_rule_classes ~= nil and row.item_rule_classes or 'All'
+        loot.PersonalItemsLink[row.item_id]    = row.item_link ~= nil and row.item_link or 'NULL'
+        loot.ItemNames[row.item_id]            = row.item_name
+    end
     stmt:finalize()
     db:close()
 end
@@ -589,15 +597,18 @@ end
 function loot.loadSettings(firstRun)
     if firstRun == nil then firstRun = false end
     if firstRun then
-        loot.NormalItemsRules   = {}
-        loot.GlobalItemsRules   = {}
-        loot.NormalItemsClasses = {}
-        loot.GlobalItemsClasses = {}
-        loot.NormalItemsLink    = {}
-        loot.GlobalItemsLink    = {}
-        loot.BuyItemsTable      = {}
-        loot.ItemNames          = {}
-        loot.ALLITEMS           = {}
+        loot.NormalItemsRules     = {}
+        loot.GlobalItemsRules     = {}
+        loot.NormalItemsClasses   = {}
+        loot.GlobalItemsClasses   = {}
+        loot.NormalItemsLink      = {}
+        loot.GlobalItemsLink      = {}
+        loot.BuyItemsTable        = {}
+        loot.PersonalItemsRules   = {}
+        loot.PersonalItemsClasses = {}
+        loot.PersonalItemsLink    = {}
+        loot.ItemNames            = {}
+        loot.ALLITEMS             = {}
     end
     local needDBUpdate = false
     local needSave     = false
@@ -911,10 +922,10 @@ function loot.addMyInventoryToDB()
             end
         end
     end
-    Logger.Info("\at%s \axImported \ag%d\ax items from \aoInventory\ax, and \ag%d\ax items from the \ayBank\ax, into the DB", myName, counter, counterBank)
-    loot.report(string.format("%s Imported %d items from Inventory, and %d items from the Bank, into the DB", myName, counter, counterBank))
+    Logger.Info("\at%s \axImported \ag%d\ax items from \aoInventory\ax, and \ag%d\ax items from the \ayBank\ax, into the DB", MyName, counter, counterBank)
+    loot.report(string.format("%s Imported %d items from Inventory, and %d items from the Bank, into the DB", MyName, counter, counterBank))
     loot.lootActor:send({ mailbox = 'lootnscoot', },
-        { who = myName, Server = eqServer, action = 'ItemsDB_UPDATE', })
+        { who = MyName, Server = eqServer, action = 'ItemsDB_UPDATE', })
 end
 
 function loot.addToItemDB(item)
@@ -1102,6 +1113,7 @@ function loot.addToItemDB(item)
     -- insert the item into the lua table for easier lookups
 
     local itemID                             = item.ID()
+    loot.ItemNames[itemID]                   = item.Name()
     loot.ALLITEMS[itemID]                    = {}
     loot.ALLITEMS[itemID].Name               = item.Name()
     loot.ALLITEMS[itemID].NoDrop             = item.NoDrop()
@@ -1297,7 +1309,7 @@ function loot.modifyItemRule(itemID, action, tableName, classes, link)
     end
 
     local section = tableName == "Normal_Rules" and "NormalItems" or "GlobalItems"
-
+    section = tableName == loot.PersonalTableName and 'PersonalItems' or section
     -- Validate RulesDB
     if not RulesDB or type(RulesDB) ~= "string" then
         Logger.Warn("Invalid RulesDB path: %s", tostring(RulesDB))
@@ -1343,9 +1355,9 @@ function loot.modifyItemRule(itemID, action, tableName, classes, link)
         end
     else
         -- UPSERT operation
-        if tableName == "Normal_Rules" then
-            sql  = [[
-                INSERT INTO Normal_Rules
+        -- if tableName == "Normal_Rules" then
+        sql  = string.format([[
+                INSERT INTO %s
                 (item_id, item_name, item_rule, item_rule_classes, item_link)
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(item_id) DO UPDATE SET
@@ -1353,27 +1365,27 @@ function loot.modifyItemRule(itemID, action, tableName, classes, link)
                 item_rule                                    = excluded.item_rule,
                 item_rule_classes                                    = excluded.item_rule_classes,
                 item_link                                    = excluded.item_link
-                ]]
-            stmt = db:prepare(sql)
-            if stmt then
-                stmt:bind_values(itemID, itemName, action, classes, link)
-            end
-        else
-            sql  = [[
-                INSERT INTO Global_Rules
-                (item_id, item_name, item_rule, item_rule_classes, item_link)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(item_id) DO UPDATE SET
-                item_name                                    = excluded.item_name,
-                item_rule                                    = excluded.item_rule,
-                item_rule_classes                                    = excluded.item_rule_classes,
-                item_link                                    = excluded.item_link
-                ]]
-            stmt = db:prepare(sql)
-            if stmt then
-                stmt:bind_values(itemID, itemName, action, classes, link)
-            end
+                ]], tableName)
+        stmt = db:prepare(sql)
+        if stmt then
+            stmt:bind_values(itemID, itemName, action, classes, link)
         end
+        -- elseif tableName == "Global_Rules" then
+        --     sql  = [[
+        --         INSERT INTO Global_Rules
+        --         (item_id, item_name, item_rule, item_rule_classes, item_link)
+        --         VALUES (?, ?, ?, ?, ?)
+        --         ON CONFLICT(item_id) DO UPDATE SET
+        --         item_name                                    = excluded.item_name,
+        --         item_rule                                    = excluded.item_rule,
+        --         item_rule_classes                                    = excluded.item_rule_classes,
+        --         item_link                                    = excluded.item_link
+        --         ]]
+        --     stmt = db:prepare(sql)
+        --     if stmt then
+        --         stmt:bind_values(itemID, itemName, action, classes, link)
+        --     end
+        -- end
     end
 
     if not stmt then
@@ -1432,27 +1444,24 @@ function loot.addRule(itemID, section, rule, classes, link)
     end
 
     -- Set default values for optional parameters
-    classes                = classes or 'All'
-    link                   = link or 'NULL'
+    classes                            = classes or 'All'
+    link                               = link or 'NULL'
 
     -- Log the action
     -- Logger.Info("\agAdding\ax rule for item \at%s\ax\ao (\ayID\ax:\ag %s\ax\ao)\ax in [section] \at%s \axwith [rule] \at%s\ax and [classes] \at%s",
     -- itemName, itemID, section, rule, classes)
 
     -- Update the in-memory data structure
-    loot.ItemNames[itemID] = itemName
+    loot.ItemNames[itemID]             = itemName
 
-    if section == 'GlobalItems' then
-        loot.GlobalItemsRules[itemID]   = rule
-        loot.GlobalItemsClasses[itemID] = classes
-        loot.GlobalItemsLink[itemID]    = link
-        loot.modifyItemRule(itemID, rule, 'Global_Rules', classes, link)
-    else
-        loot.NormalItemsRules[itemID]   = rule
-        loot.NormalItemsLink[itemID]    = link
-        loot.NormalItemsClasses[itemID] = classes
-        loot.modifyItemRule(itemID, rule, 'Normal_Rules', classes, link)
+    loot[section .. "Rules"][itemID]   = rule
+    loot[section .. "Classes"][itemID] = classes
+    loot[section .. "Link"][itemID]    = link
+    local tblName                      = section == 'GlobalItems' and 'Global_Rules' or 'Normal_Rules'
+    if section == 'PersonalItems' then
+        tblName = loot.PersonalTableName
     end
+    loot.modifyItemRule(itemID, rule, tblName, classes, link)
 
 
     -- Refresh the loot settings to apply the changes
@@ -1460,19 +1469,29 @@ function loot.addRule(itemID, section, rule, classes, link)
 end
 
 function loot.actorAddRule(itemID, itemName, tableName, rule, classes, link)
-    loot.ItemNames[itemID] = itemName
+    loot.ItemNames[itemID]               = itemName
 
-    if tableName == 'GlobalItems' then
-        loot.GlobalItemsRules[itemID]   = rule
-        loot.GlobalItemsClasses[itemID] = classes
-        loot.GlobalItemsLink[itemID]    = link
-        loot.modifyItemRule(itemID, rule, 'Global_Rules', classes, link)
-    else
-        loot.NormalItemsRules[itemID]   = rule
-        loot.NormalItemsLink[itemID]    = link
-        loot.NormalItemsClasses[itemID] = classes
-        loot.modifyItemRule(itemID, rule, 'Normal_Rules', classes, link)
+    loot[tableName .. "Rules"][itemID]   = rule
+    loot[tableName .. "Classes"][itemID] = classes
+    loot[tableName .. "Link"][itemID]    = link
+    local tblName                        = tableName == 'GlobalItems' and 'Global_Rules' or 'Normal_Rules'
+    if tableName == 'PersonalItems' then
+        tblName = loot.PersonalTableName
     end
+    loot.modifyItemRule(itemID, rule, tblName, classes, link)
+
+
+    -- if tableName == 'GlobalItems' then
+    --     loot.GlobalItemsRules[itemID]   = rule
+    --     loot.GlobalItemsClasses[itemID] = classes
+    --     loot.GlobalItemsLink[itemID]    = link
+    --     loot.modifyItemRule(itemID, rule, 'Global_Rules', classes, link)
+    -- else
+    --     loot.NormalItemsRules[itemID]   = rule
+    --     loot.NormalItemsLink[itemID]    = link
+    --     loot.NormalItemsClasses[itemID] = classes
+    --     loot.modifyItemRule(itemID, rule, 'Normal_Rules', classes, link)
+    -- end
 end
 
 ---@param itemID any
@@ -1494,7 +1513,14 @@ function loot.lookupLootRule(itemID, tablename)
         if loot.NormalItemsRules[itemID] ~= nil then
             return loot.NormalItemsRules[itemID], loot.NormalItemsClasses[itemID], loot.NormalItemsLink[itemID]
         end
+    elseif tablename == loot.PersonalTableName then
+        if loot.PersonalItemsRules[itemID] ~= nil then
+            return loot.PersonalItemsRules[itemID], loot.PersonalItemsClasses[itemID], loot.PersonalItemsLink[itemID]
+        end
     elseif tablename == nil then
+        if loot.PersonalItemsRules[itemID] ~= nil then
+            return loot.PersonalItemsRules[itemID], loot.PersonalItemsClasses[itemID], loot.PersonalItemsLink[itemID]
+        end
         if loot.GlobalItemsRules[itemID] ~= nil then
             return loot.GlobalItemsRules[itemID], loot.GlobalItemsClasses[itemID], loot.GlobalItemsLink[itemID]
         end
@@ -1550,7 +1576,10 @@ function loot.lookupLootRule(itemID, tablename)
     if tablename == nil then
         -- check global rules
         local found = false
-        found, rule, classes, link = checkDB(itemID, 'Global_Rules')
+        found, rule, classes, link = checkDB(itemID, loot.PersonalTableName)
+        if not found then
+            found, rule, classes, link = checkDB(itemID, 'Global_Rules')
+        end
         if not found then
             found, rule, classes, link = checkDB(itemID, 'Normal_Rules')
         end
@@ -1567,17 +1596,13 @@ function loot.lookupLootRule(itemID, tablename)
     -- if SQL has the item add the rules to the lua table for next time
 
     if rule ~= 'NULL' then
-        if tablename == 'Normal_Rules' then
-            loot.NormalItemsRules[itemID]   = rule
-            loot.NormalItemsClasses[itemID] = classes
-            loot.NormalItemsLink[itemID]    = link
-            loot.ItemNames[itemID]          = loot.ALLITEMS[itemID].Name
-        else
-            loot.GlobalItemsRules[itemID]   = rule
-            loot.GlobalItemsClasses[itemID] = classes
-            loot.GlobalItemsLink[itemID]    = link
-            loot.ItemNames[itemID]          = loot.ALLITEMS[itemID].Name
-        end
+        local localTblName                      = tablename == 'Global_Rules' and 'GlobalItems' or 'NormalItems'
+        localTblName                            = tablename == loot.PersonalTableName and 'PersonalItems' or localTblName
+
+        loot[localTblName .. 'Rules'][itemID]   = rule
+        loot[localTblName .. 'Classes'][itemID] = classes
+        loot[localTblName .. 'Link'][itemID]    = link
+        loot.ItemNames[itemID]                  = loot.ALLITEMS[itemID].Name
     end
     return rule, classes, link
 end
@@ -2019,7 +2044,12 @@ function loot.RegisterActors()
         end
 
         if action == 'addrule' or action == 'modifyitem' then
-            if section == 'GlobalItems' then
+            if section == 'PersonalItems' then
+                loot.PersonalItemsRules[itemID]   = rule
+                loot.PersonalItemsClasses[itemID] = itemClasses
+                loot.PersonalItemsLink[itemID]    = itemLink
+                loot.ItemNames[itemID]            = itemName
+            elseif section == 'GlobalItems' then
                 loot.GlobalItemsRules[itemID]   = rule
                 loot.GlobalItemsClasses[itemID] = itemClasses
                 loot.GlobalItemsLink[itemID]    = itemLink
@@ -2052,7 +2082,11 @@ function loot.RegisterActors()
                 loot.cleanupBags()
             end
         elseif action == 'deleteitem' and who ~= MyName then
-            if section == 'GlobalItems' then
+            if section == 'PersonalItems' then
+                loot.PersonalItemsRules[itemID]   = nil
+                loot.PersonalItemsClasses[itemID] = nil
+                loot.PersonalItemsLink[itemID]    = nil
+            elseif section == 'GlobalItems' then
                 loot.GlobalItemsRules[itemID]   = nil
                 loot.GlobalItemsClasses[itemID] = nil
                 loot.GlobalItemsLink[itemID]    = nil
@@ -2120,6 +2154,9 @@ function loot.ChangeClasses(itemID, classes, tableName)
     elseif tableName == 'NormalItems' then
         loot.NormalItemsClasses[itemID] = classes
         loot.modifyItemRule(itemID, loot.NormalItemsRules[itemID], 'Normal_Rules', classes)
+    elseif tableName == 'PersonalItems' then
+        loot.PersonalItemsClasses[itemID] = classes
+        loot.modifyItemRule(itemID, loot.PersonalItemsRules[itemID], loot.PersonalTableName, classes)
     end
 end
 
@@ -2156,6 +2193,22 @@ function loot.setNormalItem(itemID, val, classes, link)
         loot.NormalItemsLink[itemID]    = nil
     end
     loot.modifyItemRule(itemID, val, 'Normal_Rules', classes, link)
+end
+
+function loot.setPersonalItem(itemID, val, classes, link)
+    if itemID == nil then
+        Logger.Warn("Invalid itemID for setPersonalItem.")
+        return
+    end
+    loot.PersonalItemsRules[itemID] = val ~= 'delete' and val or nil
+    if val ~= 'delete' then
+        loot.PersonalItemsClasses[itemID] = classes or 'All'
+        loot.PersonalItemsLink[itemID]    = link or 'NULL'
+    else
+        loot.PersonalItemsClasses[itemID] = nil
+        loot.PersonalItemsLink[itemID]    = nil
+    end
+    loot.modifyItemRule(itemID, val, loot.PersonalTableName, classes, link)
 end
 
 -- Sets a Global Item rule for the item currently on the cursor
@@ -2253,6 +2306,8 @@ function loot.commandHandler(...)
             Logger.Info(confReport)
         elseif command == 'tributestuff' then
             loot.processItems('Tribute')
+        elseif command == 'shownew' or command == 'newitems' then
+            showNewItem = not showNewItem
         elseif command == 'loot' then
             loot.lootMobs()
         elseif command == 'show' then
@@ -3178,7 +3233,7 @@ function loot.RenderModifyItemWindow()
     local open, show = ImGui.Begin("Modify Item", nil, ImGuiWindowFlags.AlwaysAutoResize)
     if show then
         local tableList = {
-            "Global_Items", "Normal_Items",
+            "Global_Items", "Normal_Items", loot.PersonalTableName,
         }
         local item      = loot.ALLITEMS[loot.TempSettings.ModifyItemID]
         if not item then
@@ -3250,7 +3305,10 @@ function loot.RenderModifyItemWindow()
                 tempValues.Classes = "All"
             end
             -- loot.modifyItemRule(loot.TempSettings.ModifyItemID, newRule, loot.TempSettings.ModifyItemTable, tempValues.Classes, item.Link)
-            if loot.TempSettings.ModifyItemTable == "Global_Items" then
+            if loot.TempSettings.ModifyItemTable == loot.PersonalTableName then
+                loot.PersonalItemsRules[loot.TempSettings.ModifyItemID] = newRule
+                loot.setPersonalItem(loot.TempSettings.ModifyItemID, newRule, tempValues.Classes, item.Link)
+            elseif loot.TempSettings.ModifyItemTable == "Global_Items" then
                 loot.GlobalItemsRules[loot.TempSettings.ModifyItemID] = newRule
                 loot.setGlobalItem(loot.TempSettings.ModifyItemID, newRule, tempValues.Classes, item.Link)
             else
@@ -3275,7 +3333,10 @@ function loot.RenderModifyItemWindow()
 
         ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
         if ImGui.Button(Icons.FA_TRASH) then
-            if loot.TempSettings.ModifyItemTable == "Global_Items" then
+            if loot.TempSettings.ModifyItemTable == loot.PersonalTableName then
+                loot.PersonalItemsRules[loot.TempSettings.ModifyItemID] = nil
+                loot.setPersonalItem(loot.TempSettings.ModifyItemID, 'delete', 'All', 'NULL')
+            elseif loot.TempSettings.ModifyItemTable == "Global_Items" then
                 -- loot.GlobalItemsRules[loot.TempSettings.ModifyItemID] = nil
                 loot.setGlobalItem(loot.TempSettings.ModifyItemID, 'delete', 'All', 'NULL')
             else
@@ -3651,7 +3712,7 @@ function loot.drawTable(label)
                     local itemLink = filteredItems[i].link
 
                     ImGui.PushID(itemID)
-                    local classes = loot.NormalItemsClasses[itemID] or "All"
+                    local classes = loot[label .. 'ItemsClasses'][itemID] or "All"
                     local itemName = loot.ItemNames[itemID] or item.Name
                     if loot.SearchLootTable(loot.TempSettings['Search' .. varSub], item, setting) then
                         ImGui.TableNextColumn()
@@ -3873,6 +3934,11 @@ function loot.drawItemsTables()
 
             -- Normal Items
             loot.drawTable("Normal")
+
+            -- Personal Items
+            loot.drawTable("Personal")
+
+            -- Lookup Items
 
             if loot.ALLITEMS ~= nil then
                 if ImGui.BeginTabItem("Item Lookup") then
@@ -4264,19 +4330,17 @@ function loot.drawSwitch(settingName, who)
             loot.Settings[settingName] = not loot.Settings[settingName]
             loot.TempSettings.NeedSave = true
         end
-    else
-        if loot.Boxes[who] ~= nil then
-            if loot.Boxes[who][settingName] then
-                ImGui.TextColored(0.3, 1.0, 0.3, 0.9, Icons.FA_TOGGLE_ON)
-            else
-                ImGui.TextColored(1.0, 0.3, 0.3, 0.8, Icons.FA_TOGGLE_OFF)
-            end
-            if ImGui.IsItemHovered() then
-                ImGui.SetTooltip("%s %s", settingName, loot.Boxes[who][settingName] and "Enabled" or "Disabled")
-            end
-            if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
-                loot.Boxes[who][settingName] = not loot.Boxes[who][settingName]
-            end
+    elseif loot.Boxes[who] ~= nil then
+        if loot.Boxes[who][settingName] then
+            ImGui.TextColored(0.3, 1.0, 0.3, 0.9, Icons.FA_TOGGLE_ON)
+        else
+            ImGui.TextColored(1.0, 0.3, 0.3, 0.8, Icons.FA_TOGGLE_OFF)
+        end
+        if ImGui.IsItemHovered() then
+            ImGui.SetTooltip("%s %s", settingName, loot.Boxes[who][settingName] and "Enabled" or "Disabled")
+        end
+        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+            loot.Boxes[who][settingName] = not loot.Boxes[who][settingName]
         end
     end
 end
@@ -4391,6 +4455,7 @@ function loot.renderSettingsSection(who)
 
         for i, settingName in ipairs(sorted_names) do
             if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
+                ImGui.PushID(i .. settingName)
                 ImGui.TableNextColumn()
                 ImGui.Indent(2)
                 if ImGui.Selectable(settingName) then
@@ -4416,6 +4481,7 @@ function loot.renderSettingsSection(who)
                     ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
                     loot.Boxes[who][settingName] = ImGui.InputText("##" .. settingName, loot.Boxes[who][settingName])
                 end
+                ImGui.PopID()
             end
         end
         ImGui.EndTable()
@@ -4423,7 +4489,7 @@ function loot.renderSettingsSection(who)
 end
 
 function loot.renderNewItem()
-    if (loot.Settings.AutoShowNewItem and loot.NewItemsCount > 0) and showNewItem then
+    if ((loot.Settings.AutoShowNewItem and loot.NewItemsCount > 0) and showNewItem) or showNewItem then
         local colCount, styCount = loot.guiLoot.DrawTheme()
 
         ImGui.SetNextWindowSize(600, 400, ImGuiCond.FirstUseEver)
@@ -4457,16 +4523,26 @@ local function renderBtn()
     end
 
     if showBtn then
-        animMini:SetTextureCell(644 - EQ_ICON_OFFSET)
+        if loot.NewItemsCount > 0 then
+            animMini:SetTextureCell(645 - EQ_ICON_OFFSET)
+        else
+            animMini:SetTextureCell(644 - EQ_ICON_OFFSET)
+        end
         ImGui.DrawTextureAnimation(animMini, 34, 34, true)
-
-        if ImGui.IsItemHovered() then
-            ImGui.SetTooltip("Toggle LNS Window")
-            if ImGui.IsMouseReleased(0) then
-                loot.ShowUI = not loot.ShowUI
-            end
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.BeginTooltip()
+        ImGui.Text("LootnScoot")
+        ImGui.Text("Click to Show/Hide")
+        ImGui.Text("Right Click to Show New Items")
+        ImGui.EndTooltip()
+        if ImGui.IsMouseReleased(0) then
+            loot.ShowUI = not loot.ShowUI
+        elseif ImGui.IsMouseReleased(1) and loot.NewItemsCount > 0 then
+            showNewItem = not showNewItem
         end
     end
+
     ImGui.PopStyleVar()
     if colCount > 0 then ImGui.PopStyleColor(colCount) end
     if styCount > 0 then ImGui.PopStyleVar(styCount) end
