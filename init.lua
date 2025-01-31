@@ -1342,12 +1342,7 @@ function loot.modifyItemRule(itemID, action, tableName, classes, link)
     if action == 'delete' then
         -- DELETE operation
         Logger.Info("\aoloot.modifyItemRule\ax \arDeleting rule\ax for item \at%s\ax in table \at%s", itemName, tableName)
-        if tableName == "Normal_Rules" then
-            sql = string.format("DELETE FROM Normal_Rules WHERE item_id = ?")
-        else
-            sql = string.format("DELETE FROM Global_Rules WHERE item_id = ?")
-        end
-
+        sql = string.format("DELETE FROM %s WHERE item_id = ?", tableName)
         stmt = db:prepare(sql)
 
         if stmt then
@@ -3224,7 +3219,9 @@ function loot.RenderModifyItemWindow()
         tempValues = {}
         return
     end
-
+    if loot.TempSettings.ModifyItemTable == 'Personal_Items' then
+        loot.TempSettings.ModifyItemTable = loot.PersonalTableName
+    end
     local classes = loot.TempSettings.ModifyClasses
     local rule = loot.TempSettings.ModifyItemSetting
     local colCount, styCount = loot.guiLoot.DrawTheme()
