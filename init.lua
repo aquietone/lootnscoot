@@ -2039,7 +2039,7 @@ function loot.RegisterActors()
         end
 
         if action == 'addrule' or action == 'modifyitem' then
-            if section == 'PersonalItems' then
+            if section == 'PersonalItems' and who == MyName then
                 loot.PersonalItemsRules[itemID]   = rule
                 loot.PersonalItemsClasses[itemID] = itemClasses
                 loot.PersonalItemsLink[itemID]    = itemLink
@@ -2077,20 +2077,10 @@ function loot.RegisterActors()
                 loot.cleanupBags()
             end
         elseif action == 'deleteitem' and who ~= MyName then
-            if section == 'PersonalItems' then
-                loot.PersonalItemsRules[itemID]   = nil
-                loot.PersonalItemsClasses[itemID] = nil
-                loot.PersonalItemsLink[itemID]    = nil
-            elseif section == 'GlobalItems' then
-                loot.GlobalItemsRules[itemID]   = nil
-                loot.GlobalItemsClasses[itemID] = nil
-                loot.GlobalItemsLink[itemID]    = nil
-            else
-                loot.NormalItemsRules[itemID]   = nil
-                loot.NormalItemsClasses[itemID] = nil
-                loot.NormalItemsLink[itemID]    = nil
-                Logger.Info("loot.RegisterActors: \atAction:\ax [\ay%s\ax] \ag%s\ax rule for item \at%s\ax", action, rule, lootMessage.item)
-            end
+            loot[action .. 'Rules'][itemID] = nil
+            loot[action .. 'Classes'][itemID] = nil
+            loot[action .. 'Link'][itemID]  = nil
+            Logger.Info("loot.RegisterActors: \atAction:\ax [\ay%s\ax] \ag%s\ax rule for item \at%s\ax", action, rule, lootMessage.item)
         elseif action == 'new' and who ~= MyName and loot.NewItems[itemID] == nil then
             loot.NewItems[itemID] = {
                 Name       = lootMessage.item,
