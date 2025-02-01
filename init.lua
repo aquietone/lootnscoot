@@ -110,6 +110,7 @@ There is also no flag for combat looting. It will only loot if no mobs are withi
 
 ]]
 
+---@diagnostic disable: undefined-global
 local mq              = require 'mq'
 local PackageMan      = require('mq.PackageMan')
 local SQLite3         = PackageMan.Require('lsqlite3')
@@ -125,7 +126,7 @@ local eqServer                       = string.gsub(mq.TLO.EverQuest.Server(), ' 
 
 local version                        = 5
 local MyName                         = mq.TLO.Me.CleanName()
-
+local Mode                           = 'once'
 local Files                          = require('mq.Utils')
 local SettingsFile                   = string.format('%s/LootNScoot/%s/%s.lua', mq.configDir, eqServer, MyName)
 local imported                       = true
@@ -196,7 +197,7 @@ local newItem                        = nil
 loot.guiLoot                         = require('loot_hist')
 if loot.guiLoot ~= nil then
     loot.UseActors = true
-    loot.guiLoot.GetSettings(loot.HideNames, loot.LookupLinks, loot.RecordData, true, loot.UseActors, 'lootnscoot', false)
+    loot.guiLoot.GetSettings(loot.HideNames, loot.LookupLinks, loot.RecordData, true, loot.UseActors, 'lootnscoot')
 end
 
 local iconAnimation                     = mq.FindTextureAnimation('A_DragItem')
@@ -250,6 +251,7 @@ loot.TempModClass                       = false
 loot.ShowUI                             = false
 loot.Terminate                          = true
 loot.Boxes                              = {}
+loot.LootNow                            = false
 loot.PersonalTableName                  = string.format("%s_Rules", MyName)
 -- FORWARD DECLARATIONS
 loot.AllItemColumnListIndex             = {
@@ -1983,6 +1985,11 @@ function loot.RegisterActors()
         local itemClasses = lootMessage.classes or 'All'
         local itemRaces   = lootMessage.races or 'All'
         local boxSettings = lootMessage.settings or {}
+        local directions  = lootMessage.directions or 'NULL'
+        if directions == 'doloot' then
+            loot.LootNow = true
+            return
+        end
         if itemName == 'NULL' then
             itemName = loot.ALLITEMS[itemID] and loot.ALLITEMS[itemID].Name or 'NULL'
         end
@@ -2077,9 +2084,9 @@ function loot.RegisterActors()
                 loot.cleanupBags()
             end
         elseif action == 'deleteitem' and who ~= MyName then
-            loot[action .. 'Rules'][itemID] = nil
+            loot[action .. 'Rules'][itemID]   = nil
             loot[action .. 'Classes'][itemID] = nil
-            loot[action .. 'Link'][itemID]  = nil
+            loot[action .. 'Link'][itemID]    = nil
             Logger.Info("loot.RegisterActors: \atAction:\ax [\ay%s\ax] \ag%s\ax rule for item \at%s\ax", action, rule, lootMessage.item)
         elseif action == 'new' and who ~= MyName and loot.NewItems[itemID] == nil then
             loot.NewItems[itemID] = {
@@ -2252,7 +2259,7 @@ function loot.commandHandler(...)
                     loot.Settings.RecordData,
                     true,
                     loot.Settings.UseActors,
-                    'lootnscoot', false
+                    'lootnscoot'
                 )
             end
             Logger.Info("\ayReloaded Settings \axand \atLoot Files")
@@ -2264,7 +2271,7 @@ function loot.commandHandler(...)
                     loot.Settings.RecordData,
                     true,
                     loot.Settings.UseActors,
-                    'lootnscoot', false
+                    'lootnscoot'
                 )
             end
             loot.UpdateDB()
@@ -2275,7 +2282,7 @@ function loot.commandHandler(...)
             loot.processItems('Bank')
         elseif command == 'cleanup' then
             loot.processItems('Destroy')
-        elseif command == 'gui' and loot.guiLoot then
+        elseif command == 'gui' or command == 'console' and loot.guiLoot then
             loot.guiLoot.openGUI = not loot.guiLoot.openGUI
         elseif command == 'report' and loot.guiLoot then
             loot.guiLoot.ReportLoot()
@@ -4611,7 +4618,7 @@ function loot.renderMainUI()
         if show then
             ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
             if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
-                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', true)
+                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot')
             end
             if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Report Window") end
 
@@ -4673,9 +4680,17 @@ end
 function loot.processArgs(args)
     loot.Terminate = true
     local mercsRunnig = mq.TLO.Lua.Script('rgmercs').Status() == 'RUNNING' or false
-
+    if args == nil then return end
     if #args == 1 then
-        if args[1] == 'sellstuff' then
+        if args[1] == 'directed' then
+            if loot.guiLoot ~= nil then
+                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot')
+            end
+
+            Mode = 'directed'
+            loot.Terminate = false
+            loot.lootActor:send({ mailbox = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
+        elseif args[1] == 'sellstuff' then
             if mercsRunnig then mq.cmd('/rgl pause') end
             loot.processItems('Sell')
             if mercsRunnig then mq.cmd('/rgl unpause') end
@@ -4691,8 +4706,9 @@ function loot.processArgs(args)
             loot.lootMobs()
         elseif args[1] == 'standalone' then
             if loot.guiLoot ~= nil then
-                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
+                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot')
             end
+            Mode = 'standalone'
             loot.Terminate = false
             loot.lootActor:send({ mailbox = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
         end
@@ -4701,7 +4717,9 @@ end
 
 function loot.init(args)
     local needsSave = false
-
+    if Mode ~= 'once' then
+        loot.Terminate = false
+    end
     needsSave = loot.loadSettings(true)
     loot.SortItemTables()
     loot.RegisterActors()
@@ -4718,7 +4736,7 @@ function loot.init(args)
 end
 
 if loot.guiLoot ~= nil then
-    loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
+    loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot')
     loot.guiLoot.init(true, true, 'lootnscoot')
     loot.guiExport()
 end
@@ -4726,8 +4744,16 @@ end
 loot.init({ ..., })
 
 while not loot.Terminate do
+    local mercsRunnig = mq.TLO.Lua.Script('rgmercs').Status() == 'RUNNING' or false
+    if not mercsRunnig then
+        loot.Terminate = true
+    end
     if mq.TLO.MacroQuest.GameState() ~= "INGAME" then loot.Terminate = true end -- exit sctipt if at char select.
-    if loot.Settings.DoLoot then loot.lootMobs() end
+    if loot.Settings.DoLoot and Mode ~= 'directed' then loot.lootMobs() end
+    if loot.LootNow then
+        loot.LootNow = false
+        loot.lootMobs()
+    end
     if doSell then
         loot.processItems('Sell')
         doSell = false
