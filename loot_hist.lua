@@ -135,6 +135,8 @@ for i = 10, 40 do
 	end
 end
 
+--
+
 ---@param names boolean
 ---@param links boolean
 ---@param record boolean
@@ -299,26 +301,10 @@ function guiLoot.GUI()
 					_, guiLoot.console.autoScroll = ImGui.MenuItem('Auto-scroll', nil, guiLoot.console.autoScroll)
 					_, openConfigGUI = ImGui.MenuItem('Config', nil, openConfigGUI)
 					_, guiLoot.hideNames = ImGui.MenuItem('Hide Names', nil, guiLoot.hideNames)
-					-- if activated then
-					-- 	if guiLoot.hideNames then
-					-- 		guiLoot.console:AppendText("\ay[Looted]\ax Hiding Names\ax")
-					-- 	else
-					-- 		guiLoot.console:AppendText("\ay[Looted]\ax Showing Names\ax")
-					-- 	end
-					-- end
 					_, zoom = ImGui.MenuItem('Zoom', nil, zoom)
 
 					if not guiLoot.UseActors then
 						_, guiLoot.showLinks = ImGui.MenuItem('Show Links', nil, guiLoot.showLinks)
-						-- if activated then
-						-- 	guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
-						-- 	if guiLoot.showLinks then
-						-- 		if not guiLoot.linkdb then guiLoot.loadLDB() end
-						-- 		guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Enabled\ax")
-						-- 	else
-						-- 		guiLoot.console:AppendText("\ay[Looted]\ax Link Lookup Disabled\ax")
-						-- 	end
-						-- end
 					end
 					if ImGui.MenuItem('Record Data', nil, guiLoot.recordData) then
 						if guiLoot.recordData then
