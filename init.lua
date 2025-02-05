@@ -4752,7 +4752,7 @@ local function renderBtn()
             showNewItem = not showNewItem
         end
     end
-    if ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows) and (ImGui.IsKeyDown(ImGuiMod.Ctrl) and ImGui.IsMouseClicked(2)) then
+    if (ImGui.IsKeyDown(ImGuiMod.Ctrl) and ImGui.IsMouseClicked(2)) then
         loot.ShowUI = not loot.ShowUI
     end
     ImGui.PopStyleVar()
