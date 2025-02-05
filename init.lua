@@ -110,6 +110,7 @@ There is also no flag for combat looting. It will only loot if no mobs are withi
 
 ]]
 ---@diagnostic disable: undefined-global
+---@diagnostic disable: undefined-field
 
 local mq              = require 'mq'
 local PackageMan      = require('mq.PackageMan')
@@ -393,7 +394,7 @@ loot.CurrentPage                        = loot.CurrentPage or 1
 
 ---
 ---This will keep your table sorted by columns instead of rows.
----@param input_table table|nil  the table to sort (optional) You can send a set of sorted keys if you have already custom sorted it.
+---@param input_table table|nil the table to sort (optional) You can send a set of sorted keys if you have already custom sorted it.
 ---@param sorted_keys table|nil  the sorted keys table (optional) if you have already sorted the keys
 ---@param num_columns integer  the number of column groups to sort the keys into
 ---@return table
@@ -557,8 +558,10 @@ function loot.LoadRuleDB()
     local function processRules(stmt, ruleTable, classTable, linkTable)
         for row in stmt:nrows() do
             local id = row.item_id
+            local classes = row.item_rule_classes or 'All'
+            if classes == 'None' or classes:gsub(' ', '') then classes = 'All' end
             ruleTable[id] = row.item_rule
-            classTable[id] = row.item_rule_classes or "All"
+            classTable[id] = classes
             linkTable[id] = row.item_link or "NULL"
             loot.ItemNames[id] = loot.ItemNames[id] or row.item_name
         end
@@ -820,7 +823,7 @@ function loot.GetItemFromDB(itemName, itemID, rules, db)
                 ManaRegen = row.regen_mana,
                 Haste = row.haste,
                 Classes = row.classes,
-                ClassList = row.class_list or 'All',
+                ClassList = row.class_list:gsub(" ", '') ~= '' and row.class_list or 'All',
                 svFire = row.svfire,
                 svCold = row.svcold,
                 svDisease = row.svdisease,
@@ -1484,7 +1487,6 @@ function loot.lookupLootRule(itemID, tablename)
         return 'NULL', 'All', 'NULL'
     end
     -- check lua tables first
-
     if tablename == 'Global_Rules' then
         if loot.GlobalItemsRules[itemID] ~= nil then
             return loot.GlobalItemsRules[itemID], loot.GlobalItemsClasses[itemID], loot.GlobalItemsLink[itemID]
@@ -1542,7 +1544,9 @@ function loot.lookupLootRule(itemID, tablename)
             link      = row.item_link or 'NULL'
             found     = true
         end
-
+        if classes == 'None' or classes:gsub(" ", '') == '' then
+            classes = 'All'
+        end
         -- Finalize the statement and close the database
         stmt:finalize()
         db:close()
@@ -1603,7 +1607,6 @@ function loot.AreBagsOpen()
         local slot = mq.TLO.Me.Inventory(i)
         if slot and slot.Container() and slot.Container() > 0 then
             total.bags = total.bags + 1
-            ---@diagnostic disable-next-line: undefined-field
             if slot.Open() then
                 total.open = total.open + 1
             end
@@ -1685,6 +1688,7 @@ end
 function loot.retrieveClassList(item)
     local classList = ""
     local numClasses = item.Classes()
+    if numClasses == 0 then return 'None' end
     if numClasses < 16 then
         for i = 1, numClasses do
             classList = string.format("%s %s", classList, item.Class(i).ShortName())
@@ -1715,7 +1719,7 @@ function loot.retrieveRaceList(item)
         ['Drakkin'] = 'DRK',
     }
     local raceList = ""
-    local numRaces = item.Races()
+    local numRaces = item.Races() or 16
     if numRaces < 16 then
         for i = 1, numRaces do
             local raceName = racesShort[item.Race(i).Name()] or ''
@@ -1918,13 +1922,13 @@ function loot.getRule(item, from)
             local _, position = string.find(lootDecision, "|")
             if position then qKeep = lootDecision:sub(position + 1) else qKeep = tostring(loot.Settings.QuestKeep) end
             if countHave < tonumber(qKeep) then
-                return "Keep", tonumber(qKeep), newRule
+                return "Keep", tonumber(qKeep), newRule, false
             end
             if loot.Settings.AlwaysDestroy then
-                return "Destroy", tonumber(qKeep), newRule
+                return "Destroy", tonumber(qKeep), newRule, false
             end
         end
-        return "Ignore", tonumber(qKeep), newRule
+        return "Ignore", tonumber(qKeep), newRule, false
     end
 
     local cantWear = false
@@ -2346,7 +2350,7 @@ function loot.commandHandler(...)
             loot.addRule(itemID, 'GlobalItems', 'Quest|' .. args[3], 'All', item.ItemLink('CLICKABLE')())
             Logger.Info(loot.guiLoot.console, "Setting \ay%s\ax to \agGlobal Item \ayQuest|%s\ax", item.Name(), args[3], item.ItemLink('CLICKABLE')())
         elseif args[1] == 'globalitem' and validActions[args[2]] and item() then
-            loot.addRule(item.ID(), 'GlobalItems', validActions[args[2]], args[3] ~= nil or 'All', item.ItemLink('CLICKABLE')())
+            loot.addRule(item.ID(), 'GlobalItems', validActions[args[2]], args[3] or 'All', item.ItemLink('CLICKABLE')())
             Logger.Info(loot.guiLoot.console, "Setting \ay%s\ax to \agGlobal Item \ay%s \ax(\at%s\ax)", item.Name(), item.ID(), validActions[args[2]])
         elseif args[1] == 'globalitem' and validActions[args[2]] and args[3] ~= nil then
             local itemName = args[3]
@@ -2773,7 +2777,7 @@ function loot.SellToVendor(itemID, bag, slot, name)
     if NEVER_SELL[itemName] then return end
     if mq.TLO.Window('MerchantWnd').Open() then
         Logger.Info(loot.guiLoot.console, 'Selling item: %s', itemName)
-        local notify = slot == nil or slot == -1
+        local notify = slot == (nil or -1)
             and ('/itemnotify %s leftmouseup'):format(bag)
             or ('/itemnotify in pack%s %s leftmouseup'):format(bag, slot)
         mq.cmdf(notify)
@@ -4614,6 +4618,7 @@ function loot.renderSettingsSection(who)
     end
     ImGui.SameLine()
     if ImGui.SmallButton("Clone Settings") then
+        if not loot.TempSettings.CloneWho or not loot.TempSettings.CloneTo then return end
         loot.Boxes[loot.TempSettings.CloneTo] = {}
         for k, v in pairs(loot.Boxes[loot.TempSettings.CloneWho]) do
             if type(v) == 'table' then
