@@ -4616,42 +4616,43 @@ function loot.renderSettingsSection(who)
         end
         ImGui.EndCombo()
     end
-    ImGui.SameLine()
-    if ImGui.SmallButton("Clone Settings") then
-        if not loot.TempSettings.CloneWho or not loot.TempSettings.CloneTo then return end
-        loot.Boxes[loot.TempSettings.CloneTo] = {}
-        for k, v in pairs(loot.Boxes[loot.TempSettings.CloneWho]) do
-            if type(v) == 'table' then
-                loot.Boxes[loot.TempSettings.CloneTo][k] = {}
-                for k2, v2 in pairs(v) do
-                    loot.Boxes[loot.TempSettings.CloneTo][k][k2] = v2
-                end
-            else
-                loot.Boxes[loot.TempSettings.CloneTo][k] = v
-            end
-        end
-        local tmpSet = {}
-        for k, v in pairs(loot.Boxes[loot.TempSettings.CloneTo]) do
-            if type(v) == 'table' then
-                tmpSet[k] = {}
-                for k2, v2 in pairs(v) do
-                    tmpSet[k][k2] = v2
-                end
-            else
-                tmpSet[k] = v
-            end
-        end
-        local message = {
-            action = 'updatesettings',
-            who = loot.TempSettings.CloneTo,
-            settings = tmpSet,
-        }
-        loot.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-        loot.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+    if loot.TempSettings.CloneWho and loot.TempSettings.CloneTo then
+        ImGui.SameLine()
 
-        loot.TempSettings.CloneTo = nil
+        if ImGui.SmallButton("Clone Settings") then
+            loot.Boxes[loot.TempSettings.CloneTo] = {}
+            for k, v in pairs(loot.Boxes[loot.TempSettings.CloneWho]) do
+                if type(v) == 'table' then
+                    loot.Boxes[loot.TempSettings.CloneTo][k] = {}
+                    for k2, v2 in pairs(v) do
+                        loot.Boxes[loot.TempSettings.CloneTo][k][k2] = v2
+                    end
+                else
+                    loot.Boxes[loot.TempSettings.CloneTo][k] = v
+                end
+            end
+            local tmpSet = {}
+            for k, v in pairs(loot.Boxes[loot.TempSettings.CloneTo]) do
+                if type(v) == 'table' then
+                    tmpSet[k] = {}
+                    for k2, v2 in pairs(v) do
+                        tmpSet[k][k2] = v2
+                    end
+                else
+                    tmpSet[k] = v
+                end
+            end
+            local message = {
+                action = 'updatesettings',
+                who = loot.TempSettings.CloneTo,
+                settings = tmpSet,
+            }
+            loot.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
+            loot.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+
+            loot.TempSettings.CloneTo = nil
+        end
     end
-
     local sorted_names = loot.SortTableColums(loot.Boxes[who], loot.TempSettings.SortedSettingsKeys, colCount / 2)
 
     if ImGui.BeginTable("Settings##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)) then
