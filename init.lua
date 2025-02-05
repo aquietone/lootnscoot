@@ -4752,7 +4752,9 @@ local function renderBtn()
             showNewItem = not showNewItem
         end
     end
-
+    if ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows) and (ImGui.IsKeyDown(ImGuiMod.Ctrl) and ImGui.IsMouseClicked(2)) then
+        loot.ShowUI = not loot.ShowUI
+    end
     ImGui.PopStyleVar()
     if colCount > 0 then ImGui.PopStyleColor(colCount) end
     if styCount > 0 then ImGui.PopStyleVar(styCount) end
@@ -4896,9 +4898,7 @@ function loot.renderMainUI()
         if styCount > 0 then
             ImGui.PopStyleVar(styCount)
         end
-        if ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows) and ImGui.IsMouseClicked(2) then
-            loot.ShowUI = not loot.ShowUI
-        end
+
         ImGui.End()
     end
 end
