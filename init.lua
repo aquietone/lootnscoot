@@ -637,24 +637,29 @@ function loot.loadSettings(firstRun)
     -- process settings file
 
     for k, v in pairs(loot.Settings) do
-        if tmpSettings[k] == nil then
-            tmpSettings[k] = loot.Settings[k]
-            needSave       = true
-            if type(tmpSettings[k]) ~= 'table' then
+        if type(v) ~= 'table' then
+            if tmpSettings[k] == nil then
+                tmpSettings[k] = loot.Settings[k]
+                needSave       = true
                 Logger.Info(loot.guiLoot.console, "\agAdded\ax \ayNEW\ax \aySetting\ax: \at%s \aoDefault\ax: \at(\ay%s\ax)", k, v)
-            else
-                Logger.Warn(loot.guiLoot.console, "\agAdded\ax \ayNEW\ax \aySetting\ax: \at%s \aoTable\ax", k)
             end
         end
     end
-    -- check for deprecated settings and remove them
-    for k, v in pairs(tmpSettings) do
-        if loot.Settings[k] == nil and settingsNoDraw[k] == nil then
-            tmpSettings[k] = nil
-            needSave       = true
-            Logger.Warn(loot.guiLoot.console, "\arRemoved\ax \atdeprecated setting\ax: \ao%s", k)
-        end
+    if tmpSettings.BuyItemsTable == nil then
+        tmpSettings.BuyItemsTable = loot.Settings.BuyItemsTable
+        needSave                  = true
+        Logger.Info(loot.guiLoot.console, "\agAdded\ax \ayNEW\ax \aySetting\ax: \atBuyItemsTable\ax")
     end
+    -- -- check for deprecated settings and remove them
+    -- for k, v in pairs(tmpSettings) do
+    --     if type(tmpSettings[k]) ~= 'table' then
+    --         if loot.Settings[k] == nil and settingsNoDraw[k] == nil then
+    --             tmpSettings[k] = nil
+    --             needSave       = true
+    --             Logger.Warn(loot.guiLoot.console, "\arRemoved\ax \atdeprecated setting\ax: \ao%s", k)
+    --         end
+    --     end
+    -- end
     Logger.loglevel = loot.Settings.ShowInfoMessages and 'info' or 'warn'
 
     tmpCmd = loot.Settings.GroupChannel or 'dgge'
@@ -666,7 +671,7 @@ function loot.loadSettings(firstRun)
 
     shouldLootActions.Destroy = loot.Settings.DoDestroy
     shouldLootActions.Tribute = loot.Settings.TributeKeep
-    loot.BuyItemsTable        = loot.Settings.BuyItemsTable
+    loot.BuyItemsTable        = tmpSettings.BuyItemsTable
 
     if firstRun then
         -- SQL setup
@@ -1276,7 +1281,7 @@ function loot.checkCursor()
         end
         currentItem = mq.TLO.Cursor()
         mq.cmdf('/autoinv')
-        mq.delay(100)
+        mq.delay(10000, function() return not mq.TLO.Cursor() end)
     end
 end
 
@@ -1904,7 +1909,7 @@ function loot.getRule(item, from)
     end
 
     -- Handle specific class-based rules
-    if lootClasses:lower() ~= "all" then
+    if lootClasses:lower() ~= "all" and lootDecision:lower() == 'keep' then
         if from == "loot" and not string.find(lootClasses:lower(), loot.MyClass) then
             lootDecision = "Ignore"
         end
@@ -2543,7 +2548,7 @@ function loot.lootCorpse(corpseID)
         return
     end
 
-    mq.delay(1000, function() return (mq.TLO.Corpse.Items() or 0) > 0 end)
+    mq.delay(1000, function() return mq.TLO.Corpse.Items() end)
     local items = mq.TLO.Corpse.Items() or 0
     Logger.Debug(loot.guiLoot.console, "lootCorpse(): Loot window open. Items: %s", items)
 
@@ -2631,7 +2636,7 @@ function loot.lootCorpse(corpseID)
 
     if mq.TLO.Cursor() then loot.checkCursor() end
     mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
-    mq.delay(3000, function() return not mq.TLO.Window('LootWnd').Open() end)
+    mq.delay(5000, function() return not mq.TLO.Window('LootWnd').Open() end)
 
     if mq.TLO.Spawn(('corpse id %s'):format(corpseID))() then
         cantLootList[corpseID] = os.time()
@@ -2767,7 +2772,7 @@ end
 function loot.openVendor()
     Logger.Debug(loot.guiLoot.console, 'Opening merchant window')
     mq.cmdf('/nomodkey /click right target')
-    mq.delay(1000, function() return mq.TLO.Window('MerchantWnd').Open() end)
+    mq.delay(5000, function() return mq.TLO.Window('MerchantWnd').Open() end)
     return mq.TLO.Window('MerchantWnd').Open()
 end
 
@@ -2781,9 +2786,9 @@ function loot.SellToVendor(itemID, bag, slot, name)
             and ('/itemnotify %s leftmouseup'):format(bag)
             or ('/itemnotify in pack%s %s leftmouseup'):format(bag, slot)
         mq.cmdf(notify)
-        mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemName end)
+        mq.delay(5000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemName end)
         mq.cmdf('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
-        mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
+        mq.delay(5000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
     end
 end
 
@@ -2834,7 +2839,7 @@ function loot.RestockItems()
             mq.delay(500, function() return mq.TLO.Window("QuantityWnd").Open() end)
             mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
             mq.delay(100, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
-            Logger.Info(loot.guiLoot.console, "\agBuying\ay " .. tmpQty .. "\at " .. itemName)
+            Logger.Info(loot.guiLoot.console, "\agBuying\ay " .. mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() .. "\at " .. itemName)
             mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
             mq.delay(100)
         end
