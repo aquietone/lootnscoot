@@ -3310,7 +3310,6 @@ function loot.RenderModifyItemWindow()
     end
     local classes = loot.TempSettings.ModifyClasses
     local rule = loot.TempSettings.ModifyItemSetting
-    local colCount, styCount = loot.guiLoot.DrawTheme()
 
     ImGui.SetNextWindowSizeConstraints(ImVec2(300, 200), ImVec2(-1, -1))
     local open, show = ImGui.Begin("Modify Item", nil, ImGuiWindowFlags.AlwaysAutoResize)
@@ -3453,8 +3452,6 @@ function loot.RenderModifyItemWindow()
         loot.TempSettings.ModifyItemName = nil
         loot.TempSettings.ModifyItemLink = nil
     end
-    if colCount > 0 then ImGui.PopStyleColor(colCount) end
-    if styCount > 0 then ImGui.PopStyleVar(styCount) end
     ImGui.End()
 end
 
@@ -4757,8 +4754,6 @@ end
 
 function loot.renderNewItem()
     if ((loot.Settings.AutoShowNewItem and loot.NewItemsCount > 0) and showNewItem) or showNewItem then
-        local colCount, styCount = loot.guiLoot.DrawTheme()
-
         ImGui.SetNextWindowSize(600, 400, ImGuiCond.FirstUseEver)
         local open, show = ImGui.Begin('New Items', true)
         if not open then
@@ -4768,8 +4763,6 @@ function loot.renderNewItem()
         if show then
             loot.drawNewItemsTable()
         end
-        if colCount > 0 then ImGui.PopStyleColor(colCount) end
-        if styCount > 0 then ImGui.PopStyleVar(styCount) end
         ImGui.End()
     end
 end
@@ -4780,7 +4773,6 @@ local EQ_ICON_OFFSET = 500
 
 local function renderBtn()
     -- apply_style()
-    local colCount, styCount = loot.guiLoot.DrawTheme()
 
     ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(9, 9))
     local openBtn, showBtn = ImGui.Begin(string.format("LootNScoot##Mini"), true,
@@ -4813,23 +4805,31 @@ local function renderBtn()
         loot.ShowUI = not loot.ShowUI
     end
     ImGui.PopStyleVar()
-    if colCount > 0 then ImGui.PopStyleColor(colCount) end
-    if styCount > 0 then ImGui.PopStyleVar(styCount) end
     ImGui.End()
 end
 
 function loot.RenderUIs()
+    local colCount, styCount = loot.guiLoot.DrawTheme()
+
     if loot.NewItemDecisions ~= nil then
         loot.enterNewItemRuleInfo(loot.NewItemDecisions)
         loot.NewItemDecisions = nil
     end
+
     if loot.TempSettings.ModifyItemRule then loot.RenderModifyItemWindow() end
+
     loot.renderNewItem()
+
     if loot.pendingItemData ~= nil then
         loot.processPendingItem()
     end
+
     loot.renderMainUI()
+
     renderBtn()
+
+    if colCount > 0 then ImGui.PopStyleColor(colCount) end
+    if styCount > 0 then ImGui.PopStyleVar(styCount) end
 end
 
 function loot.enterNewItemRuleInfo(data_table)
@@ -4884,7 +4884,6 @@ local showSettings = false
 
 function loot.renderMainUI()
     if loot.ShowUI then
-        local colCount, styCount = loot.guiLoot.DrawTheme()
         ImGui.SetNextWindowSize(800, 600, ImGuiCond.FirstUseEver)
         local open, show = ImGui.Begin('LootnScoot', true)
         if not open then
@@ -4961,12 +4960,6 @@ function loot.renderMainUI()
                 loot.drawItemsTables()
             end
             ImGui.PopStyleColor()
-        end
-        if colCount > 0 then
-            ImGui.PopStyleColor(colCount)
-        end
-        if styCount > 0 then
-            ImGui.PopStyleVar(styCount)
         end
 
         ImGui.End()

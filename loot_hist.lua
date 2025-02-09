@@ -124,6 +124,8 @@ local guiLoot                                                = {
 	UseActors         = true,
 	winFlags          = bit32.bor(ImGuiWindowFlags.MenuBar, ImGuiWindowFlags.NoFocusOnAppearing),
 }
+local oldStyle                                               = ImGui.GetStyle()
+local style                                                  = ImGui.GetStyle()
 guiLoot.PastHistory                                          = false
 guiLoot.pageSize                                             = 25
 local lootTable                                              = {}
@@ -270,7 +272,7 @@ function guiLoot.DrawTheme(themeName)
 	for tID, tData in pairs(theme.Theme) do
 		if tData.Name == themeName then
 			for pID, cData in pairs(theme.Theme[tID].Color) do
-				ImGui.PushStyleColor(pID, ImVec4(cData.Color[1], cData.Color[2], cData.Color[3], cData.Color[4]))
+				ImGui.PushStyleColor(ImGuiCol[cData.PropertyName], ImVec4(cData.Color[1], cData.Color[2], cData.Color[3], cData.Color[4]))
 				ColorCounter = ColorCounter + 1
 			end
 			if tData['Style'] ~= nil then
@@ -292,13 +294,15 @@ function guiLoot.DrawTheme(themeName)
 end
 
 function guiLoot.GUI()
+	ColorCount, StyleCount = guiLoot.DrawTheme(ThemeName)
+
 	if guiLoot.openGUI then
 		local windowName = 'Looted Items##' .. MyName
 		ImGui.SetNextWindowSize(260, 300, ImGuiCond.FirstUseEver)
-		--imgui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(1, 0));
-		ColorCount, StyleCount = guiLoot.DrawTheme(ThemeName)
+
 		if guiLoot.imported then windowName = 'Loot Console##' .. MyName end
 		local openGui, show = ImGui.Begin(windowName, true, guiLoot.winFlags)
+
 		if not openGui then
 			guiLoot.openGUI = false
 			show = false
@@ -414,8 +418,6 @@ function guiLoot.GUI()
 			ImGui.SetWindowFontScale(1)
 		end
 
-		if ColorCount > 0 then ImGui.PopStyleColor(ColorCount) end
-		if StyleCount > 0 then ImGui.PopStyleVar(StyleCount) end
 		ImGui.End()
 	end
 
@@ -430,6 +432,9 @@ function guiLoot.GUI()
 	if guiLoot.PastHistory then
 		guiLoot.drawRecord()
 	end
+
+	if ColorCount > 0 then ImGui.PopStyleColor(ColorCount) end
+	if StyleCount > 0 then ImGui.PopStyleVar(StyleCount) end
 end
 
 local function evalRule(item)
@@ -496,7 +501,6 @@ end
 
 function guiLoot.lootedReport_GUI()
 	--- Report Window
-	ColorCountRep, StyleCountRep = guiLoot.DrawTheme(ThemeName)
 	ImGui.SetNextWindowSize(300, 200, ImGuiCond.Appearing)
 	if changed and mq.TLO.Plugin('mq2dannet').IsLoaded() and guiLoot.caller == 'lootnscoot' then
 		mq.cmdf('/dgae /lootutils reload')
@@ -737,9 +741,6 @@ function guiLoot.lootedReport_GUI()
 		ImGui.EndTable()
 	end
 
-
-	if ColorCountRep > 0 then ImGui.PopStyleColor(ColorCountRep) end
-	if StyleCountRep > 0 then ImGui.PopStyleVar(StyleCountRep) end
 	ImGui.SetWindowFontScale(1)
 	ImGui.End()
 
@@ -750,7 +751,6 @@ end
 
 function guiLoot.drawRecord()
 	if not guiLoot.PastHistory then return end
-
 	local openWin, showRecord = ImGui.Begin("Loot PastHistory##" .. script, true)
 	ImGui.SetWindowFontScale(ZoomLvl)
 
@@ -885,10 +885,6 @@ function guiLoot.drawRecord()
 end
 
 function guiLoot.lootedConf_GUI()
-	ColorCountConf = 0
-	StyleCountConf = 0
-	ColorCountConf, StyleCountConf = guiLoot.DrawTheme(ThemeName)
-
 	local openWin, showConfigGUI = ImGui.Begin("Looted Conf##" .. script, true, bit32.bor(ImGuiWindowFlags.None, ImGuiWindowFlags.AlwaysAutoResize, ImGuiWindowFlags.NoCollapse))
 	ImGui.SetWindowFontScale(ZoomLvl)
 
@@ -940,8 +936,6 @@ function guiLoot.lootedConf_GUI()
 		end
 	end
 
-	if StyleCountConf > 0 then ImGui.PopStyleVar(StyleCountConf) end
-	if ColorCountConf > 0 then ImGui.PopStyleColor(ColorCountConf) end
 	ImGui.SetWindowFontScale(1)
 	ImGui.End()
 end
