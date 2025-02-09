@@ -2454,13 +2454,20 @@ end
 ---@param cantWear boolean|nil @ Whether the character canwear the item
 function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
     Logger.Debug(loot.guiLoot.console, 'Enter lootItem')
-
+    local corpseName = mq.TLO.Corpse.CleanName() or 'none'
     local corpseItem = mq.TLO.Corpse.Item(index)
     if corpseItem and not shouldLootActions[doWhat] then
         if (doWhat == 'Ignore' and not (loot.Settings.DoDestroy and loot.Settings.AlwaysDestroy)) or
             (doWhat == 'Destroy' and not loot.Settings.DoDestroy) then
             table.insert(allItems,
-                { Name = corpseItem.Name(), Action = 'Left', Link = corpseItem.ItemLink('CLICKABLE')(), Eval = doWhat, cantWear = cantWear, })
+                {
+                    Name = corpseItem.Name(),
+                    CorpseName = corpseName,
+                    Action = 'Left',
+                    Link = corpseItem.ItemLink('CLICKABLE')(),
+                    Eval = doWhat,
+                    cantWear = cantWear,
+                })
             return
         end
     end
@@ -2499,7 +2506,7 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
         eval = isGlobalItem and 'Global Destroy' or 'Destroy'
         mq.cmdf('/destroy')
         table.insert(allItems,
-            { Name = itemName, Action = 'Destroyed', Link = itemLink, Eval = eval, cantWear = cantWear, })
+            { Name = itemName, Action = 'Destroyed', CorpseName = corpseName, Link = itemLink, Eval = eval, cantWear = cantWear, })
     end
 
     loot.checkCursor()
@@ -2520,7 +2527,7 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
             eval = isGlobalItem and 'Global ' .. doWhat or doWhat
         end
         table.insert(allItems,
-            { Name = itemName, Action = 'Looted', Link = itemLink, Eval = eval, cantWear = cantWear, })
+            { Name = itemName, Action = 'Looted', Link = itemLink, Eval = eval, cantWear = cantWear, CorpseName = corpseName, })
     end
 
     loot.CheckBags()
@@ -2577,7 +2584,6 @@ function loot.lootCorpse(corpseID)
     local items = mq.TLO.Corpse.Items() or 0
     Logger.Debug(loot.guiLoot.console, "lootCorpse(): Loot window open. Items: %s", items)
 
-    local corpseName = mq.TLO.Corpse.Name()
     if mq.TLO.Window('LootWnd').Open() and items > 0 then
         if mq.TLO.Corpse.DisplayName() == mq.TLO.Me.DisplayName() then
             if loot.Settings.LootMyCorpse then
@@ -2669,7 +2675,15 @@ function loot.lootCorpse(corpseID)
 
     if #allItems > 0 then
         loot.lootActor:send({ mailbox = 'looted', },
-            { ID = corpseID, Items = allItems, Server = eqServer, LootedAt = mq.TLO.Time(), LootedBy = MyName, })
+            {
+                ID = corpseID,
+                Items = allItems,
+                Zone = mq.TLO.Zone.ShortName(),
+                Server = eqServer,
+                LootedAt = mq.TLO.Time(),
+                CorpseName = corpseName,
+                LootedBy = MyName,
+            })
     end
 end
 
@@ -4886,6 +4900,14 @@ function loot.renderMainUI()
 
             ImGui.SameLine()
 
+            if ImGui.SmallButton(Icons.MD_HISTORY .. " Historical") then
+                loot.guiLoot.PastHistory = not loot.guiLoot.PastHistory
+            end
+            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Historical Data") end
+
+            ImGui.SameLine()
+
+
             if ImGui.SmallButton(string.format("%s Console", Icons.FA_TERMINAL)) then
                 loot.guiLoot.openGUI = not loot.guiLoot.openGUI
             end
@@ -4906,6 +4928,8 @@ function loot.renderMainUI()
                     showSettings = not showSettings
                 end
             end
+
+
             ImGui.Spacing()
             ImGui.Separator()
             ImGui.Spacing()
