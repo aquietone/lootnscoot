@@ -4775,6 +4775,7 @@ local function renderBtn()
     -- apply_style()
 
     ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(9, 9))
+    ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0)
     local openBtn, showBtn = ImGui.Begin(string.format("LootNScoot##Mini"), true,
         bit32.bor(ImGuiWindowFlags.AlwaysAutoResize, ImGuiWindowFlags.NoTitleBar, ImGuiWindowFlags.NoCollapse))
     if not openBtn then
@@ -4804,7 +4805,7 @@ local function renderBtn()
     if (ImGui.IsKeyDown(ImGuiMod.Ctrl) and ImGui.IsMouseClicked(2)) then
         loot.ShowUI = not loot.ShowUI
     end
-    ImGui.PopStyleVar()
+    ImGui.PopStyleVar(2)
     ImGui.End()
 end
 

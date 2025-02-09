@@ -279,10 +279,22 @@ function guiLoot.DrawTheme(themeName)
 				if next(tData['Style']) ~= nil then
 					for sID, sData in pairs(theme.Theme[tID].Style) do
 						if sData.Size ~= nil then
-							ImGui.PushStyleVar(sID, sData.Size)
+							if sData.PropertyName == 'FrameRounding' then
+								ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 10)
+							elseif sData.PropertyName == 'ChildRounding' then
+								ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 10)
+							elseif sData.PropertyName == 'PopupRounding' then
+								ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, 10)
+							elseif sData.PropertyName == 'ScrollbarRounding' then
+								ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, 12)
+							elseif sData.PropertyName == 'WindowRounding' then
+								ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 12)
+							else
+								ImGui.PushStyleVar(ImGuiStyleVar[sData.PropertyName], sData.Size)
+							end
 							StyleCounter = StyleCounter + 1
 						elseif sData.X ~= nil then
-							ImGui.PushStyleVar(sID, sData.X, sData.Y)
+							ImGui.PushStyleVar(ImGuiStyleVar[sData.PropertyName], sData.X, sData.Y)
 							StyleCounter = StyleCounter + 1
 						end
 					end
@@ -751,9 +763,9 @@ end
 
 function guiLoot.drawRecord()
 	if not guiLoot.PastHistory then return end
+
 	local openWin, showRecord = ImGui.Begin("Loot PastHistory##" .. script, true)
 	ImGui.SetWindowFontScale(ZoomLvl)
-
 	if not openWin then
 		guiLoot.PastHistory = false
 	end
@@ -938,6 +950,7 @@ function guiLoot.lootedConf_GUI()
 
 	ImGui.SetWindowFontScale(1)
 	ImGui.End()
+	ImGui.PopStyleVar()
 end
 
 local function addRule(who, what, link, eval)
