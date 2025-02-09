@@ -784,15 +784,36 @@ function guiLoot.drawRecord()
 		end
 
 		-- Pagination Variables
+		local filteredTable = {}
+		for i = 1, #LootRecord do
+			local item = LootRecord[i]
+			if item then
+				if guiLoot.TempSettings.FilterHistory ~= '' then
+					local filterString = guiLoot.TempSettings.FilterHistory:lower()
+					filterString = filterString:gsub("%:", ""):gsub("%-", "")
+					local filterTS = item.TimeStamp:gsub("%:", ""):gsub("%-", "")
+					local filterDate = item.Date:gsub("%:", ""):gsub("%-", "")
+					if not (string.find(item.Item:lower(), filterString) or
+							string.find(filterDate, filterString) or
+							string.find(filterTS, filterString) or
+							string.find(item.Looter:lower(), filterString) or
+							string.find(item.Action:lower(), filterString) or
+							string.find(item.CorpseName:lower(), filterString) or
+							string.find(item.Zone:lower(), filterString)) then
+						goto continue
+					end
+				end
+				table.insert(filteredTable, item)
+			end
+			::continue::
+		end
+
 		ImGui.SeparatorText("Loot History")
 		guiLoot.pageSize = guiLoot.pageSize or 20 -- Items per page
 		guiLoot.currentPage = guiLoot.currentPage or 1
 		local totalItems = #LootRecord
-		local totalPages = math.max(1, math.ceil(totalItems / guiLoot.pageSize))
-
-		ImGui.Text("Total Items: ")
-		ImGui.SameLine()
-		ImGui.TextColored(ImVec4(1, 1, 0, 1), tostring(totalItems))
+		local totalFilteredItems = #filteredTable
+		local totalPages = math.max(1, math.ceil(totalFilteredItems / guiLoot.pageSize))
 
 		ImGui.SameLine()
 		-- Filter Input
@@ -802,6 +823,15 @@ function guiLoot.drawRecord()
 		if ImGui.SmallButton(Icons.MD_DELETE_SWEEP) then
 			guiLoot.TempSettings.FilterHistory = ''
 		end
+		ImGui.SameLine()
+		ImGui.Text("Found: ")
+		ImGui.SameLine()
+		ImGui.TextColored(ImVec4(0, 1, 1, 1), tostring(totalFilteredItems))
+		ImGui.SameLine()
+		ImGui.Text("Total: ")
+		ImGui.SameLine()
+		ImGui.TextColored(ImVec4(1, 1, 0, 1), tostring(totalItems))
+
 		-- Clamp the current page
 		guiLoot.currentPage = math.max(1, math.min(guiLoot.currentPage, totalPages))
 
@@ -832,6 +862,7 @@ function guiLoot.drawRecord()
 			ImGui.EndCombo()
 		end
 
+
 		-- Table
 
 		if ImGui.BeginTable("Items History", 7, bit32.bor(ImGuiTableFlags.ScrollX, ImGuiTableFlags.ScrollY,
@@ -847,10 +878,10 @@ function guiLoot.drawRecord()
 
 			-- Calculate start and end indices for pagination
 			local startIdx = (guiLoot.currentPage - 1) * guiLoot.pageSize + 1
-			local endIdx = math.min(startIdx + guiLoot.pageSize - 1, totalItems)
+			local endIdx = math.min(startIdx + guiLoot.pageSize - 1, totalFilteredItems)
 
 			for i = startIdx, endIdx do
-				local item = LootRecord[i]
+				local item = filteredTable[i]
 				if item then
 					if guiLoot.TempSettings.FilterHistory ~= '' then
 						local filterString = guiLoot.TempSettings.FilterHistory:lower()
