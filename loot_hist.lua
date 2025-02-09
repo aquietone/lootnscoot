@@ -950,7 +950,6 @@ function guiLoot.lootedConf_GUI()
 
 	ImGui.SetWindowFontScale(1)
 	ImGui.End()
-	ImGui.PopStyleVar()
 end
 
 local function addRule(who, what, link, eval)
