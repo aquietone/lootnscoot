@@ -1303,7 +1303,7 @@ end
 ---Upon completeion it will notify the loot actor to update the loot settings, for any other character that is using the loot actor.
 ---@param itemID integer The ID for the item we are modifying
 ---@param action string The action to perform (add, delete, modify)
----@param tableName string The table to modify (Normal_Rules, Global_Rules)
+---@param tableName string The table to modify
 ---@param classes string The classes to apply the rule to
 ---@param link string|nil The item link if available for the item
 function loot.modifyItemRule(itemID, action, tableName, classes, link)
@@ -1838,7 +1838,7 @@ function loot.getRule(item, from)
 
     -- Lookup existing rule in the databases
     local lootRule, lootClasses, lootLink = loot.lookupLootRule(itemID)
-    Logger.Info(loot.guiLoot.console, "\aoLookup Rule\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: %s, \atLink: %s", lootRule, lootClasses, itemName, lootLink)
+    Logger.Info(loot.guiLoot.console, "\aoLookup Rule\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", lootRule, lootClasses, itemName, lootLink)
     if lootRule == 'NULL' and item.NoDrop() then
         lootRule = "CanUse"
         loot.addRule(itemID, 'NormalItems', lootRule, lootClasses, item.ItemLink('CLICKABLE')())
@@ -1975,7 +1975,6 @@ function loot.getRule(item, from)
     -- Handle Spell Drops
     if loot.Settings.KeepSpells and loot.checkSpells(itemName) then
         lootDecision = "Keep"
-        newRule      = true
     end
 
     -- Handle AlwaysDestroy setting
@@ -2093,7 +2092,7 @@ function loot.RegisterActors()
                 loot.GlobalItemsLink[itemID]    = itemLink
                 loot.ItemNames[itemID]          = itemName
                 Logger.Info(loot.guiLoot.console, "loot.RegisterActors: \atAction:\ax [\ay%s\ax] \atGlobal Rule\ax: \ag%s\ax for item \at%s\ax", action, rule, lootMessage.item)
-            else
+            elseif section == 'NormalItems' then
                 loot.NormalItemsRules[itemID]   = rule
                 loot.NormalItemsClasses[itemID] = itemClasses
                 loot.NormalItemsLink[itemID]    = itemLink
@@ -2676,7 +2675,7 @@ end
 
 function loot.corpseLocked(corpseID)
     if not cantLootList[corpseID] then return false end
-    if os.difftime(os.time(), cantLootList[corpseID]) > 60 then
+    if os.difftime(os.time(), cantLootList[corpseID]) > 20 then
         cantLootList[corpseID] = nil
         return false
     end
@@ -2734,7 +2733,7 @@ function loot.lootMobs(limit)
             local corpseID = corpse.ID()
 
             if not corpseID or corpseID <= 0 or loot.corpseLocked(corpseID) or
-                (mq.TLO.Navigation.PathLength('spawn id ' .. corpseID)() or 100) >= 60 then
+                (mq.TLO.Navigation.PathLength('spawn id ' .. corpseID)() or 100) > loot.Settings.CorpseRadius then
                 Logger.Debug(loot.guiLoot.console, 'lootMobs(): Skipping corpse ID: %d.', corpseID)
                 goto continue
             end
@@ -2989,13 +2988,14 @@ function loot.processItems(action)
 
         if rule == action then
             if action == 'Sell' then
+                Logger.Warn(loot.guiLoot.console, 'Item \ay%s\ax is set to Sell but is a spell!', item.Name())
                 if not mq.TLO.Window('MerchantWnd').Open() then
                     if not loot.goToVendor() or not loot.openVendor() then return end
                 end
                 local sellPrice = item.Value() and item.Value() / 1000 or 0
                 if sellPrice == 0 then
                     Logger.Warn(loot.guiLoot.console, 'Item \ay%s\ax is set to Sell but has no sell value!', item.Name())
-                else
+                elseif not (loot.Settings.KeepSpells and loot.checkSpells(item.Name())) then
                     loot.SellToVendor(itemID, bag, slot, item.Name())
                     -- loot.SellToVendor(item.Name(), bag, slot, item.ItemLink('CLICKABLE')() or "NULL")
                     totalPlat = totalPlat + sellPrice
@@ -3667,7 +3667,8 @@ function loot.drawTable(label)
         end
         ImGui.EndChild()
         ImGui.PopStyleColor()
-
+        ImGui.Spacing()
+        ImGui.Spacing()
         ImGui.PushID(varSub .. 'Search')
         ImGui.SetNextItemWidth(180)
         loot.TempSettings['Search' .. varSub] = ImGui.InputTextWithHint("Search", "Search by Name or Rule",
@@ -4515,6 +4516,7 @@ function loot.bulkSet(item_table, setting, classes, which_table)
         loot.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
         loot.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
     end
+    loot.TempSettings.BulkSet = {}
 end
 
 function loot.drawSettingIcon(setting)
@@ -4627,19 +4629,31 @@ function loot.renderSettingsSection(who)
     end
     ImGui.SeparatorText("Clone Settings")
     ImGui.SetNextItemWidth(120)
-    if ImGui.BeginCombo('Who to Clone', loot.TempSettings.CloneWho) then
+    local source
+    if loot.TempSettings.CloneWho == nil then
+        source = "Select Source"
+    else
+        source = loot.TempSettings.CloneWho
+    end
+    if ImGui.BeginCombo('##Source', source) then
         for k, v in pairs(loot.Boxes) do
-            if ImGui.Selectable(k, loot.TempSettings.CloneWho == k) then
+            if ImGui.Selectable(k, source == k) then
                 loot.TempSettings.CloneWho = k
             end
         end
         ImGui.EndCombo()
     end
     ImGui.SameLine()
+    local dest
+    if loot.TempSettings.CloneTo == nil then
+        dest = "Select Destination"
+    else
+        dest = loot.TempSettings.CloneTo
+    end
     ImGui.SetNextItemWidth(120)
-    if ImGui.BeginCombo('Clone To', loot.TempSettings.CloneTo) then
+    if ImGui.BeginCombo('##Dest', dest) then
         for k, v in pairs(loot.Boxes) do
-            if ImGui.Selectable(k, loot.TempSettings.CloneTo == k) then
+            if ImGui.Selectable(k, dest == k) then
                 loot.TempSettings.CloneTo = k
             end
         end
@@ -5029,10 +5043,9 @@ while not loot.Terminate do
         doTribute = false
     end
 
-    if loot.TempSettings.BulkSet then
+    if loot.TempSettings.doBulkSet then
         loot.bulkSet(loot.TempSettings.BulkSet, loot.TempSettings.BulkRule, loot.TempSettings.BulkClasses, loot.TempSettings.BulkSetTable)
-        loot.TempSettings.BulkSet = false
-        loot.TempSettings.BulkSet = {}
+        loot.TempSettings.doBulkSet = false
     end
 
     mq.doevents()
