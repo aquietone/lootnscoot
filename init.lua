@@ -3023,7 +3023,7 @@ function loot.processItems(action)
                 mq.delay(1000, loot.AreBagsOpen)
                 loot.TributeToVendor(item, bag, slot)
             elseif action == 'Destroy' then
-                loot.TempSettings.NeedDestroy = { item = item, container = bag, slot = slot, }
+                loot.TempSettings.NeedsDestroy = { item = item, container = bag, slot = slot, }
                 -- loot.DestroyItem(item, bag, slot)
             elseif action == 'Bank' then
                 if not mq.TLO.Window('BigBankWnd').Open() then
