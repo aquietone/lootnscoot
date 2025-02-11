@@ -3169,7 +3169,7 @@ function loot.processItems(action)
         if not item or not item.ID() then return end
         local itemID = item.ID()
         local rule   = loot.GlobalItemsRules[itemID] and loot.GlobalItemsRules[itemID] or loot.NormalItemsRules[itemID]
-
+        rule         = loot.PersonalItemsRules[itemID] and loot.PersonalItemsRules[itemID] or rule
         if rule == action then
             if action == 'Sell' then
                 if not mq.TLO.Window('MerchantWnd').Open() then
