@@ -2662,8 +2662,8 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
         -- table.insert(allItems,
         --     { Name = itemName, Action = 'Looted', Link = itemLink, Eval = doWhat, cantWear = cantWear, CorpseName = corpseName, })
 
-        loot.insertIntoHistory(itemName, corpseName, doWhat,
-            os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, curZone, allItems, cantWear)
+        -- loot.insertIntoHistory(itemName, corpseName, doWhat,
+        --     os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, curZone, allItems, cantWear)
         return
     end
 
