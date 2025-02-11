@@ -195,6 +195,7 @@ loot.MyRace                          = mq.TLO.Me.Race.Name()
 local resourceDir                    = mq.TLO.MacroQuest.Path('resources')() .. "/"
 local RulesDB                        = string.format('%s/LootNScoot/%s/AdvLootRules.db', resourceDir, eqServer)
 local lootDB                         = string.format('%s/LootNScoot/%s/Items.db', resourceDir, eqServer)
+local HistoryDB                      = string.format('%s/LootNScoot/%s/LootHistory.db', resourceDir, eqServer)
 local newItem                        = nil
 loot.guiLoot                         = require('loot_hist')
 if loot.guiLoot ~= nil then
@@ -521,6 +522,166 @@ function loot.OpenItemsSQL()
     return db
 end
 
+function loot.LoadHistoricalData()
+    History = {}
+    local db = SQLite3.open(HistoryDB)
+    db:exec("PRAGMA journal_mode=WAL;")
+    db:exec("BEGIN TRANSACTION")
+    db:exec([[
+        CREATE TABLE IF NOT EXISTS LootHistory (
+            "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+            "Item" TEXT NOT NULL,
+            "CorpseName" TEXT NOT NULL,
+            "Action" TEXT NOT NULL,
+            "Date" TEXT NOT NULL,
+            "TimeStamp" TEXT NOT NULL ,
+            "Link" TEXT NOT NULL,
+            "Looter" TEXT NOT NULL,
+            "Zone" TEXT NOT NULL
+        );
+    ]])
+    db:exec("COMMIT")
+
+    db:exec("BEGIN TRANSACTION")
+
+    local History = {}
+    local stmt = db:prepare("SELECT * FROM LootHistory")
+
+    for row in stmt:nrows() do
+        table.insert(History, row)
+    end
+
+    stmt:finalize()
+    db:exec("COMMIT")
+    db:close()
+    loot.guiLoot.LoadHistoricalData(History)
+end
+
+-- function loot.insertIntoHistory(itemName, corpseName, action, date, timestamp, link, looter, zone)
+--     if itemName == nil then return end
+--     local db = SQLite3.open(HistoryDB)
+--     if not db then
+--         print("Error: Failed to open database.")
+--         return
+--     end
+
+--     db:exec("PRAGMA journal_mode=WAL;")
+--     db:exec("BEGIN TRANSACTION")
+--     -- local qry = string.format([[INSERT INTO LootHistory (Item, CorpseName, Action, Date, TimeStamp, Link, Looter, Zone) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')]],
+--     --     itemName, corpseName, action, date, timestamp, link, looter, zone)
+--     local stmt = db:prepare([[
+--         INSERT INTO LootHistory (Item, CorpseName, Action, Date, TimeStamp, Link, Looter, Zone)
+--         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+--     ]])
+--     -- local stmt = db:prepare(qry)
+--     if stmt then
+--         stmt:bind_values(itemName, corpseName, action, date, timestamp, link, looter, zone)
+--         local res, err = stmt:step()
+--         if res ~= SQLite3.DONE then
+--             printf("Error inserting data: %s ", err)
+--         end
+--         stmt:finalize()
+--     else
+--         print("Error preparing statement")
+--     end
+
+--     db:exec("COMMIT")
+--     db:close()
+--     mq.delay(1)
+-- end
+
+-- Helper function to convert date + time (YYYY-MM-DD HH:MM:SS) to epoch seconds
+local function convertTimestamp(timeStr)
+    local h, mi, s = timeStr:match("(%d+):(%d+):(%d+)")
+    local hour = tonumber(h)
+    local min = tonumber(mi)
+    local sec = tonumber(s)
+    local timeSeconds = (hour * 3600) + (min * 60) + sec
+    return timeSeconds
+end
+
+---comment
+---@param itemName string the name of the item
+---@param corpseName string the name of the corpse
+---@param action string the action taken
+---@param date string the date the item was looted (YYYY-MM-DD)
+---@param timestamp string the time the item was looted (HH:MM:SS)
+---@param link string the item link
+---@param looter string the name of the looter
+---@param zone string the zone the item was looted in (ShortName)
+---@param allItems table items table sent to looted.
+---@param cantWear boolean|nil if the item can be worn
+function loot.insertIntoHistory(itemName, corpseName, action, date, timestamp, link, looter, zone, allItems, cantWear)
+    if itemName == nil then return end
+    local db = SQLite3.open(HistoryDB)
+    if not db then
+        print("Error: Failed to open database.")
+        return
+    end
+
+    db:exec("PRAGMA journal_mode=WAL;")
+
+    -- Convert current date+time to epoch
+    local currentTime = convertTimestamp(timestamp)
+
+    -- Skip if a duplicate "Ignore" or "Left" action exists within the last minute
+    if action == "Ignore" or action == "Left" then
+        local checkStmt = db:prepare([[
+                SELECT Date, TimeStamp FROM LootHistory
+                WHERE Item = ? AND CorpseName = ? AND Action = ? AND Date = ?
+                ORDER BY Date DESC, TimeStamp DESC LIMIT 1
+            ]])
+        if checkStmt then
+            checkStmt:bind_values(itemName, corpseName, action, date)
+            local res = checkStmt:step()
+            if res == SQLite3.ROW then
+                local lastTimestamp = checkStmt:get_value(1)
+                local recoredTime = convertTimestamp(lastTimestamp)
+                if (currentTime - recoredTime) <= 60 then
+                    checkStmt:finalize()
+                    db:close()
+                    return
+                end
+            end
+            checkStmt:finalize()
+        end
+    end
+
+    db:exec("BEGIN TRANSACTION")
+    local stmt = db:prepare([[
+            INSERT INTO LootHistory (Item, CorpseName, Action, Date, TimeStamp, Link, Looter, Zone)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ]])
+    if stmt then
+        stmt:bind_values(itemName, corpseName, action, date, timestamp, link, looter, zone)
+        local res, err = stmt:step()
+        if res ~= SQLite3.DONE then
+            printf("Error inserting data: %s ", err)
+        end
+        stmt:finalize()
+    else
+        print("Error preparing statement")
+    end
+
+    db:exec("COMMIT")
+    db:close()
+    mq.delay(1)
+    local eval = action == 'Ignore' and 'Left' or action
+    local actLabel = action == 'Destroy' and 'Destroyed' or action
+    if action ~= ('Destroy' or 'Ignore') then
+        actLabel = 'Looted'
+    end
+    table.insert(allItems,
+        {
+            Name = itemName,
+            CorpseName = corpseName,
+            Action = actLabel,
+            Link = link,
+            Eval = eval,
+            cantWear = cantWear,
+        })
+end
+
 function loot.LoadRuleDB()
     -- Open the database once
     local db = SQLite3.open(RulesDB)
@@ -769,9 +930,11 @@ function loot.loadSettings(firstRun)
 
         db:exec("COMMIT")
         db:close()
-    end
-    loot.Settings = tmpSettings
 
+        loot.LoadHistoricalData()
+    end
+    loot.Settings = {}
+    loot.Settings = tmpSettings
     -- Modules:ExecModule("Loot", "ModifyLootSettings")
     return needSave
 end
@@ -2456,26 +2619,24 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
     Logger.Debug(loot.guiLoot.console, 'Enter lootItem')
     local corpseName = mq.TLO.Corpse.CleanName() or 'none'
     local corpseItem = mq.TLO.Corpse.Item(index)
+    if not corpseItem then return end
+    local curZone      = mq.TLO.Zone.ShortName() or 'none'
+    local corpseItemID = corpseItem.ID() or 0
+    local itemName     = corpseItem.Name() or 'none'
+    local itemLink     = corpseItem.ItemLink('CLICKABLE')()
+    local isGlobalItem = loot.Settings.GlobalLootOn and (loot.GlobalItemsRules[corpseItemID] ~= nil or loot.BuyItemsTable[corpseItemID] ~= nil)
+    local tmpLabel     = corpseName:sub(1, corpseName:find("corpse") - 4)
+    corpseName         = tmpLabel
     if corpseItem and not shouldLootActions[doWhat] then
         if (doWhat == 'Ignore' and not (loot.Settings.DoDestroy and loot.Settings.AlwaysDestroy)) or
             (doWhat == 'Destroy' and not loot.Settings.DoDestroy) then
-            table.insert(allItems,
-                {
-                    Name = corpseItem.Name(),
-                    CorpseName = corpseName,
-                    Action = 'Left',
-                    Link = corpseItem.ItemLink('CLICKABLE')(),
-                    Eval = doWhat,
-                    cantWear = cantWear,
-                })
+            doWhat = doWhat == 'Ignore' and 'Left' or doWhat
+            loot.insertIntoHistory(itemName, corpseName, doWhat,
+                os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, curZone, allItems, cantWear)
             return
         end
     end
 
-    local corpseItemID = corpseItem.ID()
-    local itemName     = corpseItem.Name()
-    local itemLink     = corpseItem.ItemLink('CLICKABLE')()
-    local isGlobalItem = loot.Settings.GlobalLootOn and (loot.GlobalItemsRules[corpseItemID] ~= nil or loot.BuyItemsTable[corpseItemID] ~= nil)
 
     mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
     mq.delay(1) -- Small delay to ensure command execution.
@@ -2498,6 +2659,11 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
 
     -- If loot window closes unexpectedly, exit the function
     if not mq.TLO.Window('LootWnd').Open() then
+        -- table.insert(allItems,
+        --     { Name = itemName, Action = 'Looted', Link = itemLink, Eval = doWhat, cantWear = cantWear, CorpseName = corpseName, })
+
+        loot.insertIntoHistory(itemName, corpseName, doWhat,
+            os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, curZone, allItems, cantWear)
         return
     end
 
@@ -2505,8 +2671,8 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
     if doWhat == 'Destroy' and mq.TLO.Cursor.ID() == corpseItemID then
         eval = isGlobalItem and 'Global Destroy' or 'Destroy'
         mq.cmdf('/destroy')
-        table.insert(allItems,
-            { Name = itemName, Action = 'Destroyed', CorpseName = corpseName, Link = itemLink, Eval = eval, cantWear = cantWear, })
+        -- table.insert(allItems,
+        --     { Name = itemName, Action = 'Destroyed', CorpseName = corpseName, Link = itemLink, Eval = eval, cantWear = cantWear, })
     end
 
     loot.checkCursor()
@@ -2526,9 +2692,13 @@ function loot.lootItem(index, doWhat, button, qKeep, allItems, cantWear)
         if not string.find(eval, 'Quest') then
             eval = isGlobalItem and 'Global ' .. doWhat or doWhat
         end
-        table.insert(allItems,
-            { Name = itemName, Action = 'Looted', Link = itemLink, Eval = eval, cantWear = cantWear, CorpseName = corpseName, })
+        -- table.insert(allItems,
+        --     { Name = itemName, Action = 'Looted', Link = itemLink, Eval = eval, cantWear = cantWear, CorpseName = corpseName, })
     end
+
+    loot.insertIntoHistory(itemName, corpseName, doWhat,
+        os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, curZone, allItems, cantWear)
+
 
     loot.CheckBags()
 
@@ -3002,7 +3172,6 @@ function loot.processItems(action)
 
         if rule == action then
             if action == 'Sell' then
-                Logger.Warn(loot.guiLoot.console, 'Item \ay%s\ax is set to Sell but is a spell!', item.Name())
                 if not mq.TLO.Window('MerchantWnd').Open() then
                     if not loot.goToVendor() or not loot.openVendor() then return end
                 end
@@ -3267,7 +3436,7 @@ local fontScale = 1
 local iconSize = 16
 local tempValues = {}
 
-function loot.SortItemTables()
+function loot.SortTables()
     loot.TempSettings.SortedGlobalItemKeys = {}
     loot.TempSettings.SortedBuyItemKeys    = {}
     loot.TempSettings.SortedNormalItemKeys = {}
@@ -3402,8 +3571,6 @@ function loot.RenderModifyItemWindow()
             loot.TempSettings.ModifyItemName = nil
             loot.TempSettings.ModifyItemLink = nil
             loot.TempModClass = false
-            if colCount > 0 then ImGui.PopStyleColor(colCount) end
-            if styCount > 0 then ImGui.PopStyleVar(styCount) end
 
             ImGui.End()
             return
@@ -3426,8 +3593,6 @@ function loot.RenderModifyItemWindow()
             loot.TempSettings.ModifyItemTable = nil
             loot.TempSettings.ModifyItemClasses = 'All'
             ImGui.PopStyleColor()
-            if colCount > 0 then ImGui.PopStyleColor(colCount) end
-            if styCount > 0 then ImGui.PopStyleVar(styCount) end
 
             ImGui.End()
             return
@@ -4709,7 +4874,7 @@ function loot.renderSettingsSection(who)
     end
     local sorted_names = loot.SortTableColums(loot.Boxes[who], loot.TempSettings.SortedSettingsKeys, colCount / 2)
 
-    if ImGui.BeginTable("Settings##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)) then
+    if ImGui.BeginTable("##Settings", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.AutoResizeY, ImGuiTableFlags.Resizable)) then
         ImGui.TableSetupScrollFreeze(colCount, 1)
         for i = 1, colCount / 2 do
             ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
@@ -4719,33 +4884,56 @@ function loot.renderSettingsSection(who)
 
         for i, settingName in ipairs(sorted_names) do
             if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
-                ImGui.PushID(i .. settingName)
-                ImGui.TableNextColumn()
-                ImGui.Indent(2)
-                if ImGui.Selectable(settingName) then
-                    if type(loot.Boxes[who][settingName]) == "boolean" then
+                if type(loot.Boxes[who][settingName]) ~= "boolean" then
+                    ImGui.PushID(settingName)
+                    ImGui.TableNextColumn()
+                    ImGui.Indent(2)
+                    ImGui.Text(settingName)
+                    ImGui.Unindent(2)
+                    ImGui.TableNextColumn()
+                    if type(loot.Boxes[who][settingName]) == "number" then
+                        ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
+                        loot.Boxes[who][settingName] = ImGui.InputInt("##" .. settingName, loot.Boxes[who][settingName])
+                    elseif type(loot.Boxes[who][settingName]) == "string" then
+                        ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
+                        loot.Boxes[who][settingName] = ImGui.InputText("##" .. settingName, loot.Boxes[who][settingName])
+                    end
+                    ImGui.PopID()
+                end
+            end
+        end
+        ImGui.EndTable()
+    end
+    if ImGui.BeginTable("Toggles##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)) then
+        ImGui.TableSetupScrollFreeze(colCount, 1)
+        for i = 1, colCount / 2 do
+            ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
+            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 80)
+        end
+        ImGui.TableHeadersRow()
+
+        for i, settingName in ipairs(sorted_names) do
+            if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
+                if type(loot.Boxes[who][settingName]) == "boolean" then
+                    ImGui.PushID(settingName)
+                    ImGui.TableNextColumn()
+                    ImGui.Indent(2)
+                    -- ImGui.Text(settingName)
+                    if ImGui.Selectable(settingName) then
                         loot.Boxes[who][settingName] = not loot.Boxes[who][settingName]
                         if who == MyName then
                             loot.Settings[settingName] = loot.Boxes[who][settingName]
                             loot.TempSettings.NeedSave = true
                         end
                     end
-                end
-                ImGui.Unindent(2)
-                ImGui.TableNextColumn()
+                    ImGui.Unindent(2)
+                    ImGui.TableNextColumn()
 
-                if type(loot.Boxes[who][settingName]) == "boolean" then
                     local posX, posY = ImGui.GetCursorPos()
                     ImGui.SetCursorPosX(posX + (ImGui.GetColumnWidth(-1) / 2) - 5)
                     loot.drawSwitch(settingName, who)
-                elseif type(loot.Boxes[who][settingName]) == "number" then
-                    ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                    loot.Boxes[who][settingName] = ImGui.InputInt("##" .. settingName, loot.Boxes[who][settingName])
-                elseif type(loot.Boxes[who][settingName]) == "string" then
-                    ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                    loot.Boxes[who][settingName] = ImGui.InputText("##" .. settingName, loot.Boxes[who][settingName])
+                    ImGui.PopID()
                 end
-                ImGui.PopID()
             end
         end
         ImGui.EndTable()
@@ -5013,7 +5201,7 @@ function loot.init(args)
         loot.Terminate = false
     end
     needsSave = loot.loadSettings(true)
-    loot.SortItemTables()
+    loot.SortTables()
     loot.RegisterActors()
     loot.CheckBags()
     loot.setupEvents()
@@ -5066,14 +5254,19 @@ while not loot.Terminate do
         loot.TempSettings.doBulkSet = false
     end
 
+    if loot.guiLoot ~= nil then
+        if loot.guiLoot.SendHistory then
+            loot.LoadHistoricalData()
+            loot.guiLoot.SendHistory = false
+        end
+    end
+
     mq.doevents()
 
     if loot.TempSettings.NeedSave then
         loot.writeSettings()
         loot.TempSettings.NeedSave = false
-        loot.loadSettings()
         loot.sendMySettings()
-        loot.SortItemTables()
     end
 
     if loot.TempSettings.LookUpItem then

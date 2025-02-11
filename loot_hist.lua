@@ -213,6 +213,10 @@ local function loadTheme()
 	ThemeName = theme.LoadTheme or 'notheme'
 end
 
+function guiLoot.LoadHistoricalData(table)
+	LootRecord = table or {}
+end
+
 local function loadSettings()
 	local newSetting = false
 	local temp = {}
@@ -230,11 +234,11 @@ local function loadSettings()
 		temp = settings[script]
 	end
 
-	if not Files.File.Exists(recordFile) then
-		mq.pickle(recordFile, {})
-	else
-		LootRecord = dofile(recordFile)
-	end
+	-- if not Files.File.Exists(recordFile) then
+	-- 	mq.pickle(recordFile, {})
+	-- else
+	-- 	LootRecord = dofile(recordFile)
+	-- end
 	loadTheme()
 
 	for k, v in pairs(defaults) do
@@ -807,7 +811,9 @@ function guiLoot.drawRecord()
 			end
 			::continue::
 		end
-
+		table.sort(filteredTable, function(a, b)
+			return a.Date .. a.TimeStamp > b.Date .. b.TimeStamp
+		end)
 		ImGui.SeparatorText("Loot History")
 		guiLoot.pageSize = guiLoot.pageSize or 20 -- Items per page
 		guiLoot.currentPage = guiLoot.currentPage or 1
@@ -815,7 +821,6 @@ function guiLoot.drawRecord()
 		local totalFilteredItems = #filteredTable
 		local totalPages = math.max(1, math.ceil(totalFilteredItems / guiLoot.pageSize))
 
-		ImGui.SameLine()
 		-- Filter Input
 		ImGui.SetNextItemWidth(150)
 		guiLoot.TempSettings.FilterHistory = ImGui.InputTextWithHint("##FilterHistory", "Filter by Fields", guiLoot.TempSettings.FilterHistory)
@@ -836,14 +841,22 @@ function guiLoot.drawRecord()
 		guiLoot.currentPage = math.max(1, math.min(guiLoot.currentPage, totalPages))
 
 		-- Navigation Buttons
-		if ImGui.SmallButton(Icons.FA_BACKWARD) and guiLoot.currentPage > 1 then
+		if ImGui.Button(Icons.FA_BACKWARD) then
+			guiLoot.currentPage = 1
+		end
+		ImGui.SameLine()
+		if ImGui.ArrowButton("##Previous", ImGuiDir.Left) and guiLoot.currentPage > 1 then
 			guiLoot.currentPage = guiLoot.currentPage - 1
 		end
 		ImGui.SameLine()
 		ImGui.Text(string.format("Page %d of %d", guiLoot.currentPage, totalPages))
 		ImGui.SameLine()
-		if ImGui.SmallButton(Icons.FA_FORWARD) and guiLoot.currentPage < totalPages then
+		if ImGui.ArrowButton("##Next", ImGuiDir.Right) and guiLoot.currentPage < totalPages then
 			guiLoot.currentPage = guiLoot.currentPage + 1
+		end
+		ImGui.SameLine()
+		if ImGui.Button(Icons.FA_FORWARD) then
+			guiLoot.currentPage = totalPages
 		end
 
 		ImGui.SameLine()
@@ -869,7 +882,7 @@ function guiLoot.drawRecord()
 				ImGuiTableFlags.Hideable, ImGuiTableFlags.Reorderable, ImGuiTableFlags.Resizable, ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg)) then
 			ImGui.TableSetupColumn("Date", ImGuiTableColumnFlags.WidthFixed, 100)
 			ImGui.TableSetupColumn("TimeStamp", ImGuiTableColumnFlags.WidthFixed, 100)
-			ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch, 150)
+			ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthFixed, 150)
 			ImGui.TableSetupColumn("Looter", ImGuiTableColumnFlags.WidthFixed, 75)
 			ImGui.TableSetupColumn("Action", ImGuiTableColumnFlags.WidthFixed, 75)
 			ImGui.TableSetupColumn("Corpse", ImGuiTableColumnFlags.WidthFixed, 100)
@@ -911,7 +924,7 @@ function guiLoot.drawRecord()
 					ImGui.TableNextColumn()
 					ImGui.TextColored(ImVec4(1.000, 0.557, 0.000, 1.000), item.Looter)
 					ImGui.TableNextColumn()
-					ImGui.Text(item.Action)
+					ImGui.Text(item.Action == 'Looted' and 'Keep' or item.Action)
 					ImGui.TableNextColumn()
 					ImGui.TextColored(ImVec4(0.976, 0.518, 0.844, 1.000), item.CorpseName)
 					ImGui.TableNextColumn()
@@ -1011,6 +1024,10 @@ local function getNextID(table)
 	return maxChannelId + 1
 end
 
+local function trimCorpseName(corpseName)
+	return corpseName:gsub("'s corpse$", "") -- Replaces only at the end of the string
+end
+
 function guiLoot.RegisterActor()
 	guiLoot.actor = Actors.register('looted', function(message)
 		local lootEntry = message()
@@ -1018,7 +1035,7 @@ function guiLoot.RegisterActor()
 			local link = item.Link
 			local what = item.Name
 			local eval = item.Eval
-			local corpseName = item.CorpseName
+			local corpseName = trimCorpseName(item.CorpseName)
 			local who = lootEntry.LootedBy
 			local cantWear = item.cantWear or false
 
@@ -1078,8 +1095,6 @@ function guiLoot.RegisterActor()
 				Link = link,
 				Action = item.Action,
 			})
-			mq.pickle(recordFile, LootRecord)
-			-- do we want to record loot data?
 		end
 	end)
 end
