@@ -4053,9 +4053,9 @@ function loot.drawTable(label)
 
                             ImGui.SameLine()
                             if iconID then
-                                loot.drawIcon(iconID, iconSize * fontScale)     -- icon
+                                loot.drawIcon(iconID, iconSize * fontScale) -- icon
                             else
-                                loot.drawIcon(4493, iconSize * fontScale)       -- icon
+                                loot.drawIcon(4493, iconSize * fontScale)   -- icon
                             end
                             if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
                                 mq.cmdf('/executelink %s', itemLink)
@@ -5107,7 +5107,7 @@ function loot.renderMainUI()
         end
         if show then
             local sizeY = ImGui.GetWindowHeight() - 10
-            if ImGui.BeginChild('Main', 0.0, 400, ImGuiChildFlags.ResizeY) then
+            if ImGui.BeginChild('Main', 0.0, 400, bit32.bor(ImGuiChildFlags.ResizeY, ImGuiChildFlags.Border)) then
                 ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
                 if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
                     loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', true)
