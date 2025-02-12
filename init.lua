@@ -3441,6 +3441,7 @@ function loot.SortTables()
     loot.TempSettings.SortedBuyItemKeys    = {}
     loot.TempSettings.SortedNormalItemKeys = {}
     loot.TempSettings.SortedSettingsKeys   = {}
+    loot.TempSettings.SortedToggleKeys     = {}
 
     for k in pairs(loot.GlobalItemsRules) do
         table.insert(loot.TempSettings.SortedGlobalItemKeys, k)
@@ -3460,9 +3461,14 @@ function loot.SortTables()
 
     for k in pairs(loot.Settings) do
         if settingsNoDraw[k] == nil then
-            table.insert(loot.TempSettings.SortedSettingsKeys, k)
+            if type(loot.Settings[k]) == 'boolean' then
+                table.insert(loot.TempSettings.SortedToggleKeys, k)
+            else
+                table.insert(loot.TempSettings.SortedSettingsKeys, k)
+            end
         end
     end
+    table.sort(loot.TempSettings.SortedToggleKeys, function(a, b) return a < b end)
     table.sort(loot.TempSettings.SortedSettingsKeys, function(a, b) return a < b end)
 end
 
@@ -4872,8 +4878,10 @@ function loot.renderSettingsSection(who)
             loot.TempSettings.CloneTo = nil
         end
     end
-    local sorted_names = loot.SortTableColums(loot.Boxes[who], loot.TempSettings.SortedSettingsKeys, colCount / 2)
 
+
+    local sorted_settings = loot.SortTableColums(nil, loot.TempSettings.SortedSettingsKeys, colCount / 2)
+    local sorted_toggles = loot.SortTableColums(nil, loot.TempSettings.SortedToggleKeys, colCount / 2)
     if ImGui.BeginTable("##Settings", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.AutoResizeY, ImGuiTableFlags.Resizable)) then
         ImGui.TableSetupScrollFreeze(colCount, 1)
         for i = 1, colCount / 2 do
@@ -4882,7 +4890,7 @@ function loot.renderSettingsSection(who)
         end
         ImGui.TableHeadersRow()
 
-        for i, settingName in ipairs(sorted_names) do
+        for i, settingName in ipairs(sorted_settings) do
             if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
                 if type(loot.Boxes[who][settingName]) ~= "boolean" then
                     ImGui.PushID(settingName)
@@ -4912,7 +4920,7 @@ function loot.renderSettingsSection(who)
         end
         ImGui.TableHeadersRow()
 
-        for i, settingName in ipairs(sorted_names) do
+        for i, settingName in ipairs(sorted_toggles) do
             if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
                 if type(loot.Boxes[who][settingName]) == "boolean" then
                     ImGui.PushID(settingName)
@@ -5080,75 +5088,79 @@ function loot.renderMainUI()
             loot.ShowUI = false
         end
         if show then
-            ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
-            if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
-                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', true)
-            end
-            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Report Window") end
-
-            ImGui.SameLine()
-
-            if ImGui.SmallButton(Icons.MD_HISTORY .. " Historical") then
-                loot.guiLoot.PastHistory = not loot.guiLoot.PastHistory
-            end
-            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Historical Data") end
-
-            ImGui.SameLine()
-
-
-            if ImGui.SmallButton(string.format("%s Console", Icons.FA_TERMINAL)) then
-                loot.guiLoot.openGUI = not loot.guiLoot.openGUI
-            end
-            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Console Window") end
-
-            ImGui.SameLine()
-
-            local labelBtn = not showSettings and
-                string.format("%s Settings", Icons.FA_COG) or string.format("%s   Items  ", Icons.FA_SHOPPING_BASKET)
-            if showSettings and loot.NewItemsCount > 0 then
-                ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
-                if ImGui.SmallButton(labelBtn) then
-                    showSettings = not showSettings
+            local sizeY = ImGui.GetWindowHeight() - 10
+            if ImGui.BeginChild('Main', 0.0, 400, ImGuiChildFlags.ResizeY) then
+                ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
+                if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
+                    loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', true)
                 end
-                ImGui.PopStyleColor()
-            else
-                if ImGui.SmallButton(labelBtn) then
-                    showSettings = not showSettings
+                if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Report Window") end
+
+                ImGui.SameLine()
+
+                if ImGui.SmallButton(Icons.MD_HISTORY .. " Historical") then
+                    loot.guiLoot.PastHistory = not loot.guiLoot.PastHistory
                 end
-            end
+                if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Historical Data") end
+
+                ImGui.SameLine()
 
 
-            ImGui.Spacing()
-            ImGui.Separator()
-            ImGui.Spacing()
-            -- Settings Section
-            if showSettings then
-                if loot.TempSettings.SelectedActor == nil then
-                    loot.TempSettings.SelectedActor = MyName
+                if ImGui.SmallButton(string.format("%s Console", Icons.FA_TERMINAL)) then
+                    loot.guiLoot.openGUI = not loot.guiLoot.openGUI
                 end
-                ImGui.Indent(2)
-                ImGui.TextWrapped("You can change any setting by issuing `/lootutils set settingname value` use [on|off] for true false values.")
-                ImGui.TextWrapped("You can also change settings for other characters by selecting them from the dropdown.")
-                ImGui.Unindent(2)
+                if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Console Window") end
+
+                ImGui.SameLine()
+
+                local labelBtn = not showSettings and
+                    string.format("%s Settings", Icons.FA_COG) or string.format("%s   Items  ", Icons.FA_SHOPPING_BASKET)
+                if showSettings and loot.NewItemsCount > 0 then
+                    ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
+                    if ImGui.SmallButton(labelBtn) then
+                        showSettings = not showSettings
+                    end
+                    ImGui.PopStyleColor()
+                else
+                    if ImGui.SmallButton(labelBtn) then
+                        showSettings = not showSettings
+                    end
+                end
+
+
                 ImGui.Spacing()
-
                 ImGui.Separator()
                 ImGui.Spacing()
-                ImGui.SetNextItemWidth(180)
-                if ImGui.BeginCombo("Select Actor", loot.TempSettings.SelectedActor) then
-                    for k, v in pairs(loot.Boxes) do
-                        if ImGui.Selectable(k, loot.TempSettings.SelectedActor == k) then
-                            loot.TempSettings.SelectedActor = k
-                        end
+                -- Settings Section
+                if showSettings then
+                    if loot.TempSettings.SelectedActor == nil then
+                        loot.TempSettings.SelectedActor = MyName
                     end
-                    ImGui.EndCombo()
+                    ImGui.Indent(2)
+                    ImGui.TextWrapped("You can change any setting by issuing `/lootutils set settingname value` use [on|off] for true false values.")
+                    ImGui.TextWrapped("You can also change settings for other characters by selecting them from the dropdown.")
+                    ImGui.Unindent(2)
+                    ImGui.Spacing()
+
+                    ImGui.Separator()
+                    ImGui.Spacing()
+                    ImGui.SetNextItemWidth(180)
+                    if ImGui.BeginCombo("Select Actor", loot.TempSettings.SelectedActor) then
+                        for k, v in pairs(loot.Boxes) do
+                            if ImGui.Selectable(k, loot.TempSettings.SelectedActor == k) then
+                                loot.TempSettings.SelectedActor = k
+                            end
+                        end
+                        ImGui.EndCombo()
+                    end
+                    loot.renderSettingsSection(loot.TempSettings.SelectedActor)
+                else
+                    -- Items and Rules Section
+                    loot.drawItemsTables()
                 end
-                loot.renderSettingsSection(loot.TempSettings.SelectedActor)
-            else
-                -- Items and Rules Section
-                loot.drawItemsTables()
+                ImGui.PopStyleColor()
             end
-            ImGui.PopStyleColor()
+            ImGui.EndChild()
         end
 
         ImGui.End()
