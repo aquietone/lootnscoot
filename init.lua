@@ -3609,7 +3609,6 @@ function loot.drawNewItemsTable()
     if loot.NewItemsCount > 0 then
         if ImGui.BeginTable('##newItemTable', 3, bit32.bor(
                 ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollX,
-                -- ImGuiTableFlags.ScrollY, -- ImGuiTableFlags.Resizable,
                 ImGuiTableFlags.Reorderable,
                 ImGuiTableFlags.RowBg)) then
             -- Setup Table Columns
@@ -3619,8 +3618,8 @@ function loot.drawNewItemsTable()
             ImGui.TableHeadersRow()
 
             -- Iterate Over New Items
-            for _, itemID in ipairs(loot.TempSettings.NewItemIDs or {}) do
-                local item = loot.NewItems[ID]
+            for idx, itemID in ipairs(loot.TempSettings.NewItemIDs or {}) do
+                local item = loot.NewItems[itemID]
 
                 -- Ensure tmpRules has a default value
                 if itemID == nil or item == nil then
@@ -3745,6 +3744,7 @@ function loot.drawNewItemsTable()
                         Link = item.Link,
                         CorpseID = item.CorpseID,
                     })
+                    table.remove(loot.TempSettings.NewItemIDs, idx)
                     table.insert(itemsToRemove, itemID)
                     Logger.Debug(loot.guiLoot.console, "\agSaving\ax --\ayNEW ITEM RULE\ax-- Item: \at%s \ax(ID:\ag %s\ax) with rule: \at%s\ax, classes: \at%s\ax, link: \at%s\ax",
                         item.Name, itemID, tmpRules[itemID], tmpClasses[itemID], item.Link)
@@ -5281,7 +5281,7 @@ while not loot.Terminate do
         loot.Settings.DoDestroy = false
         Logger.Warn(loot.guiLoot.console, "\aoBard \aoDetected\ax, \arDisabling\ax [\atDoDestroy\ax].")
     end
-    mq.delay(1)
+    mq.delay(5)
 end
 
 if loot.Terminate then
