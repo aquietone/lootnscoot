@@ -2206,6 +2206,14 @@ function loot.RegisterActors()
             end
 
             loot.NewItems[itemID] = nil
+            if loot.TempSettings.NewItemIDs ~= nil then
+                for idx, id in ipairs(loot.TempSettings.NewItemIDs) do
+                    if id == itemID then
+                        table.remove(loot.TempSettings.NewItemIDs, idx)
+                        break
+                    end
+                end
+            end
             loot.NewItemsCount = loot.NewItemsCount - 1
             Logger.Info(loot.guiLoot.console, "loot.RegisterActors: \atNew Item Rule \ax\agConfirmed:\ax [\ay%s\ax] NewItemCount Remaining \ag%s\ax", itemLink, loot.NewItemsCount)
             return
@@ -2238,6 +2246,14 @@ function loot.RegisterActors()
                 end
 
                 loot.NewItems[itemID] = nil
+                if loot.TempSettings.NewItemIDs ~= nil then
+                    for idx, id in ipairs(loot.TempSettings.NewItemIDs) do
+                        if id == itemID then
+                            table.remove(loot.TempSettings.NewItemIDs, idx)
+                            break
+                        end
+                    end
+                end
                 loot.NewItemsCount = loot.NewItemsCount - 1
                 Logger.Info(loot.guiLoot.console, "loot.RegisterActors: \atNew Item Rule \ax\agUpdated:\ax [\ay%s\ax] NewItemCount Remaining \ag%s\ax", lootMessage.entered,
                     loot.NewItemsCount)
@@ -2253,9 +2269,9 @@ function loot.RegisterActors()
                 loot.cleanupBags()
             end
         elseif action == 'deleteitem' and who ~= MyName then
-            loot[action .. 'Rules'][itemID]   = nil
-            loot[action .. 'Classes'][itemID] = nil
-            loot[action .. 'Link'][itemID]    = nil
+            loot[section .. 'Rules'][itemID]   = nil
+            loot[section .. 'Classes'][itemID] = nil
+            loot[section .. 'Link'][itemID]    = nil
             Logger.Info(loot.guiLoot.console, "loot.RegisterActors: \atAction:\ax [\ay%s\ax] \ag%s\ax rule for item \at%s\ax", action, rule, lootMessage.item)
         elseif action == 'new' and who ~= MyName and loot.NewItems[itemID] == nil then
             loot.NewItems[itemID] = {
@@ -3618,7 +3634,7 @@ function loot.drawNewItemsTable()
             ImGui.TableHeadersRow()
 
             -- Iterate Over New Items
-            for idx, itemID in ipairs(loot.TempSettings.NewItemIDs or {}) do
+            for idx, itemID in ipairs(loot.TempSettings.NewItemIDs) do
                 local item = loot.NewItems[itemID]
 
                 -- Ensure tmpRules has a default value
