@@ -3877,31 +3877,12 @@ function loot.drawTable(label)
                 table.insert(filteredItemKeys, loot.ItemNames[id])
             end
         end
-        table.sort(filteredItemKeys, function(a, b) return a < b end)
         table.sort(filteredItems, function(a, b) return a.data < b.data end)
 
-        local totalItems = #filteredItemKeys
+        local totalItems = #filteredItems
         local totalPages = math.ceil(totalItems / ITEMS_PER_PAGE)
-        loot.CurrentPage = math.max(1, math.min(loot.CurrentPage, totalPages))
 
-        -- Determine the items that belong to the current page
-        local startIndex = (loot.CurrentPage - 1) * ITEMS_PER_PAGE + 1
-        local endIndex = math.min(startIndex + ITEMS_PER_PAGE - 1, totalItems)
-
-        local paginatedItems = {}
-        for i = startIndex, endIndex do
-            if filteredItemKeys[i] then
-                table.insert(paginatedItems, filteredItemKeys[i])
-            end
-        end
-
-        local table_sorted = loot.SortTableColums(nil, paginatedItems, colCount / 3)
-
-        local filteredItemLookup = {}
-        for _, item in ipairs(filteredItems) do
-            filteredItemLookup[item.data] = item
-        end
-
+        -- Clamp CurrentPage to valid range
         loot.CurrentPage = math.max(1, math.min(loot.CurrentPage, totalPages))
 
         -- Navigation buttons
@@ -3933,6 +3914,9 @@ function loot.drawTable(label)
             end
             ImGui.EndCombo()
         end
+        -- Calculate the range of items to display
+        local startIndex = (loot.CurrentPage - 1) * ITEMS_PER_PAGE + 1
+        local endIndex = math.min(startIndex + ITEMS_PER_PAGE - 1, totalItems)
 
         if ImGui.CollapsingHeader('BulkSet') then
             ImGui.Indent(2)
@@ -3993,87 +3977,86 @@ function loot.drawTable(label)
                 ImGui.TableSetupColumn('Classes', ImGuiTableColumnFlags.WidthFixed, 90)
             end
             ImGui.TableHeadersRow()
+
             if loot[label .. 'ItemsRules'] ~= nil then
-                for _, sortedKey in ipairs(table_sorted) do
-                    local item = filteredItemLookup[sortedKey]
-                    if item then
-                        local itemID = item.id
-                        local itemName = item.data
-                        local setting = item.setting
-                        local iconID = item.icon
-                        local itemLink = item.link
+                for i = startIndex, endIndex do
+                    local itemID = filteredItems[i].id
+                    local item = filteredItems[i].data
+                    local setting = filteredItems[i].setting
+                    local iconID = filteredItems[i].icon
+                    local itemLink = filteredItems[i].link
 
-                        ImGui.PushID(itemID)
-                        local classes = loot[label .. 'ItemsClasses'][itemID] or "All"
-                        if loot.SearchLootTable(loot.TempSettings['Search' .. varSub], item, setting) then
-                            ImGui.TableNextColumn()
-                            ImGui.Indent(2)
-                            local btnColor, btnText = ImVec4(0.0, 0.6, 0.0, 0.4), Icons.FA_PENCIL
-                            if loot.ALLITEMS[itemID] == nil then
-                                btnColor, btnText = ImVec4(0.6, 0.0, 0.0, 0.4), Icons.MD_CLOSE
-                            end
-                            ImGui.PushStyleColor(ImGuiCol.Button, btnColor)
-                            if ImGui.SmallButton(btnText) then
-                                loot.TempSettings.ModifyItemRule = true
-                                loot.TempSettings.ModifyItemName = itemName
-                                loot.TempSettings.ModifyItemLink = itemLink
-                                loot.TempSettings.ModifyItemID = itemID
-                                loot.TempSettings.ModifyItemTable = label .. "_Items"
-                                loot.TempSettings.ModifyClasses = classes
-                                loot.TempSettings.ModifyItemSetting = setting
-                                tempValues = {}
-                            end
-                            ImGui.PopStyleColor()
+                    ImGui.PushID(itemID)
+                    local classes = loot[label .. 'ItemsClasses'][itemID] or "All"
+                    local itemName = loot.ItemNames[itemID] or item.Name
+                    if loot.SearchLootTable(loot.TempSettings['Search' .. varSub], item, setting) then
+                        ImGui.TableNextColumn()
+                        ImGui.Indent(2)
+                        local btnColor, btnText = ImVec4(0.0, 0.6, 0.0, 0.4), Icons.FA_PENCIL
+                        if loot.ALLITEMS[itemID] == nil then
+                            btnColor, btnText = ImVec4(0.6, 0.0, 0.0, 0.4), Icons.MD_CLOSE
+                        end
+                        ImGui.PushStyleColor(ImGuiCol.Button, btnColor)
+                        if ImGui.SmallButton(btnText) then
+                            loot.TempSettings.ModifyItemRule = true
+                            loot.TempSettings.ModifyItemName = itemName
+                            loot.TempSettings.ModifyItemLink = itemLink
+                            loot.TempSettings.ModifyItemID = itemID
+                            loot.TempSettings.ModifyItemTable = label .. "_Items"
+                            loot.TempSettings.ModifyClasses = classes
+                            loot.TempSettings.ModifyItemSetting = setting
+                            tempValues = {}
+                        end
+                        ImGui.PopStyleColor()
 
-                            ImGui.SameLine()
-                            if iconID then
-                                loot.drawIcon(iconID, iconSize * fontScale) -- icon
-                            else
-                                loot.drawIcon(4493, iconSize * fontScale)   -- icon
-                            end
-                            if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+                        ImGui.SameLine()
+                        if iconID then
+                            loot.drawIcon(iconID, iconSize * fontScale) -- icon
+                        else
+                            loot.drawIcon(4493, iconSize * fontScale)   -- icon
+                        end
+                        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+                            mq.cmdf('/executelink %s', itemLink)
+                        end
+                        ImGui.SameLine(0, 0)
+
+                        ImGui.Text(itemName)
+                        if ImGui.IsItemHovered() then
+                            loot.DrawRuleToolTip(itemName, setting, classes:upper())
+
+                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
                                 mq.cmdf('/executelink %s', itemLink)
                             end
-                            ImGui.SameLine(0, 0)
-
-                            ImGui.Text(itemName)
-                            if ImGui.IsItemHovered() then
-                                loot.DrawRuleToolTip(itemName, setting, classes:upper())
-
-                                if ImGui.IsMouseClicked(1) and itemLink ~= nil then
-                                    mq.cmdf('/executelink %s', itemLink)
-                                end
-                            end
-                            ImGui.Unindent(2)
-                            ImGui.TableNextColumn()
-                            ImGui.Indent(2)
-                            loot.drawSettingIcon(setting)
-
-                            if ImGui.IsItemHovered() then
-                                loot.DrawRuleToolTip(itemName, setting, classes:upper())
-                                if ImGui.IsMouseClicked(1) and itemLink ~= nil then
-                                    mq.cmdf('/executelink %s', itemLink)
-                                end
-                            end
-                            ImGui.Unindent(2)
-                            ImGui.TableNextColumn()
-                            ImGui.Indent(2)
-                            if classes ~= 'All' then
-                                ImGui.TextColored(ImVec4(0, 1, 1, 0.8), classes:upper())
-                            else
-                                ImGui.TextDisabled(classes:upper())
-                            end
-
-                            if ImGui.IsItemHovered() then
-                                loot.DrawRuleToolTip(itemName, setting, classes:upper())
-                                if ImGui.IsMouseClicked(1) and itemLink ~= nil then
-                                    mq.cmdf('/executelink %s', itemLink)
-                                end
-                            end
-                            ImGui.Unindent(2)
                         end
-                        ImGui.PopID()
+                        ImGui.Unindent(2)
+                        ImGui.TableNextColumn()
+                        ImGui.Indent(2)
+                        loot.drawSettingIcon(setting)
+
+                        if ImGui.IsItemHovered() then
+                            loot.DrawRuleToolTip(itemName, setting, classes:upper())
+                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
+                                mq.cmdf('/executelink %s', itemLink)
+                            end
+                        end
+                        ImGui.Unindent(2)
+                        ImGui.TableNextColumn()
+                        ImGui.Indent(2)
+                        if classes ~= 'All' then
+                            ImGui.TextColored(ImVec4(0, 1, 1, 0.8), classes:upper())
+                        else
+                            ImGui.TextDisabled(classes:upper())
+                        end
+
+                        if ImGui.IsItemHovered() then
+                            loot.DrawRuleToolTip(itemName, setting, classes:upper())
+                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
+                                mq.cmdf('/executelink %s', itemLink)
+                            end
+                        end
+                        ImGui.Unindent(2)
                     end
+                    ImGui.PopID()
                 end
             end
 
@@ -5081,7 +5064,7 @@ function loot.renderMainUI()
         end
         if show then
             local sizeY = ImGui.GetWindowHeight() - 10
-            if ImGui.BeginChild('Main', 0.0, 400, bit32.bor(ImGuiChildFlags.Border, ImGuiChildFlags.ResizeY)) then
+            if ImGui.BeginChild('Main', 0.0, 400, bit32.bor(ImGuiChildFlags.ResizeY, ImGuiChildFlags.Border)) then
                 ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
                 if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
                     loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', true)
