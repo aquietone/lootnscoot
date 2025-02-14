@@ -233,6 +233,7 @@ local tmpCmd                            = loot.GroupChannel or 'dgae'
 local showNewItem                       = false
 local lookupDate                        = ''
 local Actors                            = require('actors')
+loot.DirectorScript                     = 'none'
 loot.BuyItemsTable                      = {}
 loot.ALLITEMS                           = {}
 loot.GlobalItemsRules                   = {}
@@ -2948,7 +2949,7 @@ end
 
 function loot.finishedLooting()
     if Mode == 'directed' then
-        loot.lootActor:send({ mailbox = 'loot_module', script = 'rgmercs', },
+        loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, },
             { Subject = 'done_looting', Who = MyName, })
     end
 end
@@ -3264,6 +3265,7 @@ function loot.processItems(action)
     local flag        = false
     local totalPlat   = 0
     ProcessItemsState = action
+    loot.informProcessing()
     -- Helper function to process individual items based on action
     local function processItem(item, action, bag, slot)
         if not item or not item.ID() then return end
@@ -3364,6 +3366,7 @@ function loot.processItems(action)
     -- Final check for bag status
     loot.CheckBags()
     ProcessItemsState = nil
+    loot.doneProcessing()
 end
 
 function loot.sellStuff()
@@ -5396,7 +5399,7 @@ function loot.enterNewItemRuleInfo(data_table)
         modMessage.noChange = true
 
         Logger.Debug(loot.guiLoot.console, "\ayNo Changes Made to Item: \at%s \ax(ID:\ag %s\ax) with rule: \at%s\ax, classes: \at%s\ax",
-            link, itemID, rule, classes)
+            ltem, itemID, rule, classes)
     else
         Logger.Debug(loot.guiLoot.console,
             "\aoloot.enterNewItemRuleInfo() \axSending \agENTERED ITEM\ax message \aoMailbox\ax \atlootnscoot actor\ax: item\at %s \ax, ID\at %s \ax, rule\at %s\ax, classes\at %s\ax, link\at %s\ax, corpseID\at %s\ax",
@@ -5501,43 +5504,43 @@ function loot.renderMainUI()
     end
 end
 
+function loot.informProcessing()
+    loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = "processing", Who = MyName, })
+end
+
+function loot.doneProcessing()
+    loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = "done_processing", Who = MyName, })
+end
+
 function loot.processArgs(args)
     loot.Terminate = true
-    local mercsRunnig = mq.TLO.Lua.Script('rgmercs').Status() == 'RUNNING' or false
+    local directorRunning = mq.TLO.Lua.Script(loot.DirectorScript).Status() == 'RUNNING' or false
     if args == nil then return end
-    if #args == 1 then
-        if args[1] == 'directed' then
-            if loot.guiLoot ~= nil then
-                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
-            end
-
-            Mode = 'directed'
-            loot.Terminate = false
-            loot.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
-            loot.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
-        elseif args[1] == 'sellstuff' then
-            if mercsRunnig then mq.cmd('/rgl pause') end
-            loot.processItems('Sell')
-            if mercsRunnig then mq.cmd('/rgl unpause') end
-        elseif args[1] == 'tributestuff' then
-            if mercsRunnig then mq.cmd('/rgl pause') end
-            loot.processItems('Tribute')
-            if mercsRunnig then mq.cmd('/rgl unpause') end
-        elseif args[1] == 'cleanup' then
-            if mercsRunnig then mq.cmd('/rgl pause') end
-            loot.processItems('Destroy')
-            if mercsRunnig then mq.cmd('/rgl unpause') end
-        elseif args[1] == 'once' then
-            loot.lootMobs()
-        elseif args[1] == 'standalone' then
-            if loot.guiLoot ~= nil then
-                loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
-            end
-            Mode = 'standalone'
-            loot.Terminate = false
-            loot.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
-            loot.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
+    if args[1] == 'directed' and args[2] ~= nil then
+        if loot.guiLoot ~= nil then
+            loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
         end
+        loot.DirectorScript = args[2]
+        Mode = 'directed'
+        loot.Terminate = false
+        loot.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
+        loot.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
+    elseif args[1] == 'sellstuff' then
+        loot.processItems('Sell')
+    elseif args[1] == 'tributestuff' then
+        loot.processItems('Tribute')
+    elseif args[1] == 'cleanup' then
+        loot.processItems('Destroy')
+    elseif args[1] == 'once' then
+        loot.lootMobs()
+    elseif args[1] == 'standalone' then
+        if loot.guiLoot ~= nil then
+            loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
+        end
+        Mode = 'standalone'
+        loot.Terminate = false
+        loot.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
+        loot.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
     end
 end
 
@@ -5572,8 +5575,8 @@ end
 loot.init({ ..., })
 
 while not loot.Terminate do
-    local mercsRunning = mq.TLO.Lua.Script('rgmercs').Status() == 'RUNNING' or false
-    if not mercsRunning and Mode == 'directed' then
+    local directorRunning = mq.TLO.Lua.Script(loot.DirectorScript).Status() == 'RUNNING' or false
+    if not directorRunning and Mode == 'directed' then
         loot.Terminate = true
     end
     if mq.TLO.MacroQuest.GameState() ~= "INGAME" then loot.Terminate = true end -- exit sctipt if at char select.
