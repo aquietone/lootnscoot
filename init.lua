@@ -172,7 +172,7 @@ loot.Settings                        = {
     GMLSelect        = true,   -- not implimented yet
     LootLagDelay     = 0,      -- not implimented yet
     HideNames        = false,  -- Hides names and uses class shortname in looted window
-    LookupLinks      = false,  -- Enables Looking up Links for items not on that character. *recommend only running on one charcter that is monitoring.
+    -- LookupLinks      = false,  -- Enables Looking up Links for items not on that character. *recommend only running on one charcter that is monitoring.
     RecordData       = false,  -- Enables recording data to report later.
     AutoTag          = false,  -- Automatically tag items to sell if they meet the MinSellPrice
     AutoRestock      = false,  -- Automatically restock items from the BuyItems list when selling
@@ -364,7 +364,7 @@ local settingsEnum                      = {
     gmlselect = 'GMLSelect',
     lootlagdelay = 'LootLagDelay',
     hidenames = 'HideNames',
-    lookuplinks = 'LookupLinks',
+    -- lookuplinks = 'LookupLinks',
     recorddata = 'RecordData',
     autotag = 'AutoTag',
     autorestock = 'AutoRestock',
@@ -2004,12 +2004,13 @@ function loot.getRule(item, from, index)
     local lootActionPreformed             = "Looted"
     local equpiable                       = (item.WornSlots() or 0) > 0
     local newNoDrop                       = false
+    local itemLink                        = item.ItemLink('CLICKABLE')() or 'NULL'
     -- Lookup existing rule in the databases
     local lootRule, lootClasses, lootLink = loot.lookupLootRule(itemID)
     Logger.Info(loot.guiLoot.console, "\aoLookup Rule\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", lootRule, lootClasses, itemName, lootLink)
     if lootRule == 'NULL' and item.NoDrop() then
         lootRule = "Ask"
-        loot.addRule(itemID, 'NormalItems', lootRule, lootClasses, item.ItemLink('CLICKABLE')())
+        loot.addRule(itemID, 'NormalItems', lootRule, lootClasses, itemLink)
     end
 
 
@@ -2260,22 +2261,34 @@ end
 
 function loot.RegisterActors()
     loot.lootActor = Actors.register('lootnscoot', function(message)
-        local lootMessage = message()
-        local who         = lootMessage.who or ''
-        local action      = lootMessage.action or ''
-        local itemID      = lootMessage.itemID or 0
-        local rule        = lootMessage.rule or 'NULL'
-        local section     = lootMessage.section or 'NormalItems'
-        local server      = lootMessage.Server or 'NULL'
-        local itemName    = lootMessage.item or 'NULL'
-        local itemLink    = lootMessage.link or 'NULL'
-        local itemClasses = lootMessage.classes or 'All'
-        local itemRaces   = lootMessage.races or 'All'
-        local boxSettings = lootMessage.settings or {}
-        local directions  = lootMessage.directions or 'NULL'
-        if directions == 'doloot' then
+        local lootMessage   = message()
+        local who           = lootMessage.who or ''
+        local action        = lootMessage.action or ''
+        local itemID        = lootMessage.itemID or 0
+        local rule          = lootMessage.rule or 'NULL'
+        local section       = lootMessage.section or 'NormalItems'
+        local server        = lootMessage.Server or 'NULL'
+        local itemName      = lootMessage.item or 'NULL'
+        local itemLink      = lootMessage.link or 'NULL'
+        local itemClasses   = lootMessage.classes or 'All'
+        local itemRaces     = lootMessage.races or 'All'
+        local boxSettings   = lootMessage.settings or {}
+        local directions    = lootMessage.directions or 'NULL'
+        local combatLooting = lootMessage.CombatLooting ~= nil and lootMessage.CombatLooting or false
+        if directions == 'doloot' and who == MyName then
             loot.LootNow = true
             return
+        end
+        if directions == 'combatlooting' then
+            loot.Settings.CombatLooting = combatLooting
+            loot.TempSettings.CombatLooting = combatLooting
+            loot.sendMySettings()
+            loot.writeSettings()
+            return
+        end
+        if directions == 'getcombatsetting' then
+            loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, },
+                { Subject = 'mysetting', Who = MyName, CombatLooting = loot.Settings.CombatLooting, })
         end
         if itemName == 'NULL' then
             itemName = loot.ALLITEMS[itemID] and loot.ALLITEMS[itemID].Name or 'NULL'
@@ -2318,6 +2331,7 @@ function loot.RegisterActors()
             loot.loadSettings()
             loot.sendMySettings()
         end
+
         if server ~= eqServer then return end
 
         -- Reload loot settings
@@ -2585,7 +2599,7 @@ function loot.commandHandler(...)
             if loot.guiLoot then
                 loot.guiLoot.GetSettings(
                     loot.Settings.HideNames,
-                    loot.Settings.LookupLinks,
+                    -- loot.Settings.LookupLinks,
                     loot.Settings.RecordData,
                     true,
                     loot.Settings.UseActors,
@@ -2597,7 +2611,7 @@ function loot.commandHandler(...)
             if loot.guiLoot then
                 loot.guiLoot.GetSettings(
                     loot.Settings.HideNames,
-                    loot.Settings.LookupLinks,
+                    -- loot.Settings.LookupLinks,
                     loot.Settings.RecordData,
                     true,
                     loot.Settings.UseActors,
@@ -2950,7 +2964,7 @@ end
 function loot.finishedLooting()
     if Mode == 'directed' then
         loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, },
-            { Subject = 'done_looting', Who = MyName, })
+            { Subject = 'done_looting', Who = MyName, CombatLooting = loot.Settings.CombatLooting, })
     end
 end
 
@@ -2964,10 +2978,17 @@ function loot.corpseLocked(corpseID)
 end
 
 function loot.lootMobs(limit)
+    if mq.TLO.Me.Invis(0)() then
+        Logger.Warn(loot.guiLoot.console, "lootMobs(): You are Invis and we don't want to break it so skipping.")
+        loot.finishedLooting()
+        return
+    end
+
     if zoneID ~= mq.TLO.Zone.ID() then
         zoneID        = mq.TLO.Zone.ID()
         lootedCorpses = {}
     end
+
 
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Entering lootMobs function.')
     local deadCount     = mq.TLO.SpawnCount(string.format('npccorpse radius %s zradius 50', loot.Settings.CorpseRadius or 100))()
@@ -3235,7 +3256,7 @@ function loot.eventForage()
     while mq.TLO.Cursor() do
         local cursorItem        = mq.TLO.Cursor
         local foragedItem       = cursorItem.Name()
-        local forageRule        = loot.split(loot.getRule(cursorItem, 'forage', {}, 0))
+        local forageRule        = loot.split(loot.getRule(cursorItem, 'forage', 0))
         local ruleAction        = forageRule[1] -- what to do with the item
         local ruleAmount        = forageRule[2] -- how many of the item should be kept
         local currentItemAmount = mq.TLO.FindItemCount('=' .. foragedItem)()
@@ -4761,6 +4782,7 @@ end
 ---@param delete_items boolean Delete items from the table
 function loot.bulkSet(item_table, setting, classes, which_table, delete_items)
     if item_table == nil or type(item_table) ~= "table" then return end
+    if which_table == 'Personal_Rules' then which_table = loot.PersonalTableName end
     local localName = which_table == 'Normal_Rules' and 'NormalItems' or 'GlobalItems'
     localName = which_table == loot.PersonalTableName and 'PersonalItems' or localName
 
@@ -5425,7 +5447,13 @@ function loot.renderMainUI()
                 ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
                 if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
                     -- loot.guiLoot.showReport = not loot.guiLoot.showReport
-                    loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', true)
+                    loot.guiLoot.GetSettings(loot.Settings.HideNames,
+                        -- loot.Settings.LookupLinks,
+                        loot.Settings.RecordData,
+                        true,
+                        loot.Settings.UseActors,
+                        'lootnscoot',
+                        true)
                     loot.Settings.ShowReport = loot.guiLoot.showReport
                     loot.TempSettings.NeedSave = true
                 end
@@ -5505,11 +5533,11 @@ function loot.renderMainUI()
 end
 
 function loot.informProcessing()
-    loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = "processing", Who = MyName, })
+    loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = "processing", Who = MyName, CombatLooting = loot.Settings.CombatLooting, })
 end
 
 function loot.doneProcessing()
-    loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = "done_processing", Who = MyName, })
+    loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = "done_processing", Who = MyName, CombatLooting = loot.Settings.CombatLooting, })
 end
 
 function loot.processArgs(args)
@@ -5518,7 +5546,13 @@ function loot.processArgs(args)
     if args == nil then return end
     if args[1] == 'directed' and args[2] ~= nil then
         if loot.guiLoot ~= nil then
-            loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
+            loot.guiLoot.GetSettings(loot.Settings.HideNames,
+                -- loot.Settings.LookupLinks,
+                loot.Settings.RecordData,
+                true,
+                loot.Settings.UseActors,
+                'lootnscoot',
+                false)
         end
         loot.DirectorScript = args[2]
         Mode = 'directed'
@@ -5535,7 +5569,13 @@ function loot.processArgs(args)
         loot.lootMobs()
     elseif args[1] == 'standalone' then
         if loot.guiLoot ~= nil then
-            loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', false)
+            loot.guiLoot.GetSettings(loot.Settings.HideNames,
+                -- loot.Settings.LookupLinks,
+                loot.Settings.RecordData,
+                true,
+                loot.Settings.UseActors,
+                'lootnscoot',
+                false)
         end
         Mode = 'standalone'
         loot.Terminate = false
@@ -5560,14 +5600,30 @@ function loot.init(args)
     loot.processArgs(args)
     loot.sendMySettings()
     mq.imgui.init('LootnScoot', loot.RenderUIs)
-    loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.UseActors, 'lootnscoot', loot.Settings.ShowReport)
+    loot.guiLoot.GetSettings(loot.Settings.HideNames,
+        -- loot.Settings.LookupLinks,
+        loot.Settings.RecordData,
+        true,
+        loot.UseActors,
+        'lootnscoot',
+        loot.Settings.ShowReport)
 
     if needsSave then loot.writeSettings() end
+    if Mode == 'directed' then
+        -- send them our combat setting
+        loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = 'combatsetting', Who = MyName, CombatLooting = loot.Settings.CombatLooting, })
+    end
     return needsSave
 end
 
 if loot.guiLoot ~= nil then
-    loot.guiLoot.GetSettings(loot.Settings.HideNames, loot.Settings.LookupLinks, loot.Settings.RecordData, true, loot.Settings.UseActors, 'lootnscoot', loot.Settings.ShowReport)
+    loot.guiLoot.GetSettings(loot.Settings.HideNames,
+        -- loot.Settings.LookupLinks,
+        loot.Settings.RecordData,
+        true,
+        loot.Settings.UseActors,
+        'lootnscoot',
+        loot.Settings.ShowReport)
     loot.guiLoot.init(true, true, 'lootnscoot')
     loot.guiExport()
 end
@@ -5581,7 +5637,14 @@ while not loot.Terminate do
     end
     if mq.TLO.MacroQuest.GameState() ~= "INGAME" then loot.Terminate = true end -- exit sctipt if at char select.
 
+    if loot.TempSettings.LastCombatSetting == nil then
+        loot.TempSettings.LastCombatSetting = loot.Settings.CombatLooting
+    end
 
+    if loot.TempSettings.LastCombatSetting ~= loot.Settings.CombatLooting and loot.TempSettings.NeedSave then
+        loot.TempSettings.LastCombatSetting = loot.Settings.CombatLooting
+        loot.lootActor:send({ mailbox = 'loot_module', script = loot.DirectorScript, }, { Subject = 'combatsetting', Who = MyName, CombatLooting = loot.Settings.CombatLooting, })
+    end
     if debugPrint then
         Logger.loglevel = 'debug'
     elseif not loot.Settings.ShowInfoMessages then
