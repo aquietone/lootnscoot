@@ -734,16 +734,39 @@ function LNS.checkCursor()
 end
 
 function LNS.navToID(spawnID)
-    mq.cmdf('/nav id %d log=off', spawnID)
-    mq.delay(50)
-    if mq.TLO.Navigation.Active() then
-        local startTime = os.time()
-        while mq.TLO.Navigation.Active() do
-            mq.delay(100)
-            if os.difftime(os.time(), startTime) > 5 then
-                break
+    local Nav = mq.TLO.Navigation
+    if Nav.MeshLoaded() then
+        if not Nav.Active() then
+            if Nav.PathExists("id " .. spawnID)() then
+                mq.cmdf('/squelch /nav id %d log=critical dist=5 lineofsight=on', spawnID)
+            else
+                Logger.Error(LNS.guiLoot.console, 'No valid nav path detected, returning.')
+                return
             end
+
+            mq.delay("3s", function() return Nav.Active() end)
+
+            if not Nav.Active() and mq.TLO.Spawn(spawnID).Distance() > 10 then
+                Logger.Error(LNS.guiLoot.console, 'Navigation failure detected, returning.')
+                return
+            end
+
+            if Nav.Active() then
+                local startTime = os.time()
+                while Nav.Active() do
+                    mq.delay(20)
+                    if os.difftime(os.time(), startTime) > 5 then
+                        Logger.Error(LNS.guiLoot.console, 'Navigation timeout reached, aborting navigation. Is your character stuck?')
+                        mq.cmd('/nav stop')
+                        break
+                    end
+                end
+            end
+        else
+            Logger.Warn(LNS.guiLoot.console, 'Nav already active, no command issued.')
         end
+    else --you could use /moveto as a fallback, but... meh.
+        Logger.Error(LNS.guiLoot.console, 'No mesh detected, aborting movement attempt.')
     end
 end
 
