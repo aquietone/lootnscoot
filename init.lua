@@ -342,13 +342,15 @@ function LNS.SortTableColums(input_table, sorted_keys, num_columns)
 
     -- If sorted_keys is provided, use it, otherwise extract the keys from the input_table
     local keys = sorted_keys or {}
-    if #keys == 0 then
-        for k, _ in pairs(input_table) do
-            table.insert(keys, k)
+    if input_Table ~= nil then
+        if #keys == 0 then
+            for k, _ in pairs(input_table) do
+                table.insert(keys, k)
+            end
+            table.sort(keys, function(a, b)
+                return a < b
+            end)
         end
-        table.sort(keys, function(a, b)
-            return a < b
-        end)
     end
 
     local total_items = #keys
@@ -5443,10 +5445,32 @@ function LNS.renderSettingsSection(who)
                     ImGui.TableNextColumn()
                     if type(LNS.Boxes[who][settingName]) == "number" then
                         ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                        LNS.Boxes[who][settingName] = ImGui.InputInt("##" .. settingName, LNS.Boxes[who][settingName])
+                        if LNS.TempSettings[who] == nil then
+                            LNS.TempSettings[who] = {}
+                        end
+                        if LNS.TempSettings[who][settingName] == nil then
+                            LNS.TempSettings[who][settingName] = LNS.Boxes[who][settingName]
+                        end
+                        LNS.TempSettings[who][settingName] = ImGui.InputInt("##" .. settingName, LNS.TempSettings[who][settingName])
+                        if LNS.TempSettings[who][settingName] ~= LNS.Boxes[who][settingName] then
+                            LNS.Boxes[who][settingName] = LNS.TempSettings[who][settingName]
+                            if who == MyName then LNS.Settings[settingName] = LNS.Boxes[who][settingName] end
+                            LNS.TempSettings.NeedSave = true
+                        end
                     elseif type(LNS.Boxes[who][settingName]) == "string" then
+                        if LNS.TempSettings[who] == nil then
+                            LNS.TempSettings[who] = {}
+                        end
+                        if LNS.TempSettings[who][settingName] == nil then
+                            LNS.TempSettings[who][settingName] = LNS.Boxes[who][settingName]
+                        end
                         ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
                         LNS.Boxes[who][settingName] = ImGui.InputText("##" .. settingName, LNS.Boxes[who][settingName])
+                        if LNS.TempSettings[who][settingName] ~= LNS.Boxes[who][settingName] then
+                            LNS.Boxes[who][settingName] = LNS.TempSettings[who][settingName]
+                            if who == MyName then LNS.Settings[settingName] = LNS.Boxes[who][settingName] end
+                            LNS.TempSettings.NeedSave = true
+                        end
                     end
                     ImGui.PopID()
                 end
