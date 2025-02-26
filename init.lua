@@ -788,7 +788,7 @@ function LNS.checkCursor()
         end
         currentItem = mq.TLO.Cursor()
         mq.cmdf('/autoinv')
-        mq.delay(10000, function() return not mq.TLO.Cursor() end)
+        mq.delay(3000, function() return not mq.TLO.Cursor() end)
     end
 end
 
@@ -1180,8 +1180,7 @@ function LNS.enterNewItemRuleInfo(data_table)
         }
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
     end
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, modMessage)
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, modMessage)
+    LNS.lootActor:send({ mailbox = 'lootnscoot', }, modMessage)
 end
 
 ------------------------------------
@@ -1313,7 +1312,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 
     db:exec("COMMIT")
     db:close()
-    mq.delay(1)
+
     local eval = action == 'Ignore' and 'Left' or action
     local actLabel = action == 'Destroy' and 'Destroyed' or action
     if action ~= 'Destroy' and action ~= 'Ignore' then
@@ -1599,8 +1598,7 @@ function LNS.addMyInventoryToDB()
     Logger.Info(LNS.guiLoot.console, "\at%s \axImported \ag%d\ax items from \aoInventory\ax, and \ag%d\ax items from the \ayBank\ax, into the DB", MyName, counter, counterBank)
     LNS.report(string.format("%s Imported %d items from Inventory, and %d items from the Bank, into the DB", MyName, counter, counterBank))
     local message = { who = MyName, Server = eqServer, action = 'ItemsDB_UPDATE', }
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+    LNS.lootActor:send({ mailbox = 'lootnscoot', }, message)
 end
 
 function LNS.addToItemDB(item)
@@ -1953,8 +1951,7 @@ DELETE FROM %s WHERE item_id = ?;
             bulkClasses = LNS[localName .. 'Classes'],
             bulkLink = LNS[localName .. 'Link'],
         }
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+        LNS.lootActor:send({ mailbox = 'lootnscoot', }, message)
     end
     LNS.TempSettings.BulkSet = {}
 end
@@ -2217,8 +2214,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID)
     Logger.Info(LNS.guiLoot.console, "\agAdding 1 \ayNEW\ax item: \at%s \ay(\axID: \at%s\at) \axwith rule: \ag%s", itemName, itemID, itemRule)
     -- LNS.actorAddRule(itemID, itemName, 'Normal', itemRule, LNS.TempItemClasses, itemLink)
     LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink)
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, newMessage)
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, newMessage)
+    LNS.lootActor:send({ mailbox = 'lootnscoot', }, newMessage)
 end
 
 ---comment: Takes in an item to modify the rules for, You can add, delete, or modify the rules for an item.
@@ -2327,8 +2323,7 @@ item_link                                    = excluded.item_link
             link    = link,
             classes = classes,
         }
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+        LNS.lootActor:send({ mailbox = 'lootnscoot', }, message)
     end
 end
 
@@ -3109,8 +3104,7 @@ function LNS.sendMySettings()
         action   = 'sendsettings',
         settings = tmpTable,
     }
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+    LNS.lootActor:send({ mailbox = 'lootnscoot', }, message)
 
     LNS.Boxes[MyName] = {}
     for k, v in pairs(LNS.Settings) do
@@ -3372,7 +3366,8 @@ function LNS.lootItem(index, doWhat, button, qKeep, cantWear)
     local itemLink       = corpseItem.ItemLink('CLICKABLE')()
     local isGlobalItem   = LNS.Settings.GlobalLootOn and (LNS.GlobalItemsRules[corpseItemID] ~= nil or LNS.BuyItemsTable[corpseItemID] ~= nil)
     local isPersonalItem = LNS.PersonalItemsRules[corpseItemID] ~= nil
-    local tmpLabel       = corpseName:sub(1, corpseName:find("corpse") - 4)
+    local corpsePos      = corpseName:find("corpse")
+    local tmpLabel       = corpsePos and corpseName:sub(1, corpsePos - 4) or corpseName
     corpseName           = tmpLabel
     local eval           = doWhat
     local dbgTbl         = {}
@@ -3498,7 +3493,10 @@ function LNS.lootCorpse(corpseID)
     Logger.Debug(LNS.guiLoot.console, 'Enter lootCorpse')
     shouldLootActions.Destroy = LNS.Settings.DoDestroy
     shouldLootActions.Tribute = LNS.Settings.TributeKeep
-
+    if corpseID == nil then
+        Logger.Warn(LNS.guiLoot.console, "lootCorpse(): No corpseID provided.")
+        return false
+    end
     allItems = {}
     if mq.TLO.Cursor() then LNS.checkCursor() end
 
@@ -3516,7 +3514,7 @@ function LNS.lootCorpse(corpseID)
             Logger.Warn(LNS.guiLoot.console, "lootCorpse(): Can't loot %s right now", mq.TLO.Target.CleanName())
             cantLootList[corpseID] = os.time()
         end
-        return
+        return false
     end
 
     mq.delay(1000, function() return mq.TLO.Corpse.Items() end)
@@ -3529,7 +3527,7 @@ function LNS.lootCorpse(corpseID)
                 mq.cmdf('/lootall')
                 mq.delay("45s", function() return not mq.TLO.Window('LootWnd').Open() end)
             end
-            return
+            return false
         end
 
         noDropItems, loreItems = {}, {}
@@ -3577,13 +3575,15 @@ function LNS.lootCorpse(corpseID)
             CorpseName = corpseName,
             LootedBy = MyName,
         }
-        LNS.lootActor:send({ mailbox = 'looted', script = 'lootnscoot', }, message)
-        LNS.lootActor:send({ mailbox = 'looted', script = 'rgmercs/lib/lootnscoot', }, message)
+        LNS.lootActor:send({ mailbox = 'looted', }, message)
+        -- LNS.lootActor:send({ mailbox = 'looted', script = 'rgmercs/lib/lootnscoot', }, message)
     end
+    return true
 end
 
 function LNS.lootMobs(limit)
-    if mq.TLO.Me.Invis(0)() then
+    -- check for normal, undead, animal invis should not see rogue sneak\hide
+    if mq.TLO.Me.Invis(1)() or mq.TLO.Me.Invis(2)() or mq.TLO.Me.Invis(3)() then
         Logger.Warn(LNS.guiLoot.console, "lootMobs(): You are Invis and we don't want to break it so skipping.")
         LNS.finishedLooting()
         return
@@ -3663,9 +3663,9 @@ function LNS.lootMobs(limit)
             end
 
             corpse.DoTarget()
-            LNS.lootCorpse(corpseID)
-            didLoot                 = true
-            lootedCorpses[corpseID] = true
+            local check             = LNS.lootCorpse(corpseID)
+            didLoot                 = check
+            lootedCorpses[corpseID] = check
 
             ::continue::
         end
@@ -3928,6 +3928,17 @@ function LNS.processItems(action)
                     if not LNS.goToVendor() or not LNS.openVendor() then return end
                 end
                 local sellPrice = item.Value() and item.Value() / 1000 or 0
+                local stackSize = item.StackSize() or 0
+                local haveAmt = mq.TLO.FindItemCount(item.Name())()
+
+                if stackSize > 1 and haveAmt > 1 then
+                    if haveAmt > stackSize then
+                        sellPrice = sellPrice * stackSize
+                    else
+                        sellPrice = sellPrice * haveAmt
+                    end
+                end
+
                 LNS.SellToVendor(itemID, bag, slot, item.Name())
                 totalPlat = totalPlat + sellPrice
                 mq.delay(1)
@@ -5349,8 +5360,7 @@ function LNS.renderSettingsSection(who)
                 who = who,
                 settings = tmpSet,
             }
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+            LNS.lootActor:send({ mailbox = 'lootnscoot', }, message)
         end
     end
     ImGui.SeparatorText("Clone Settings")
@@ -5416,8 +5426,7 @@ function LNS.renderSettingsSection(who)
                 who = LNS.TempSettings.CloneTo,
                 settings = tmpSet,
             }
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, message)
+            LNS.lootActor:send({ mailbox = 'lootnscoot', }, message)
 
             LNS.TempSettings.CloneTo = nil
         end
@@ -6071,8 +6080,7 @@ function LNS.processArgs(args)
         LNS.DirectorScript = args[2]
         Mode = 'directed'
         LNS.Terminate = false
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
+        LNS.lootActor:send({ mailbox = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
     elseif args[1] == 'sellstuff' then
         LNS.processItems('Sell')
     elseif args[1] == 'tributestuff' then
@@ -6093,8 +6101,7 @@ function LNS.processArgs(args)
         end
         Mode = 'standalone'
         LNS.Terminate = false
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'rgmercs/lib/lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
+        LNS.lootActor:send({ mailbox = 'lootnscoot', }, { action = 'Hello', Server = eqServer, who = MyName, })
     end
 end
 
