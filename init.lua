@@ -768,7 +768,7 @@ function LNS.valueToCoins(sellVal)
 end
 
 function LNS.checkSpells(item_name)
-    if string.find(item_name, "Spell: ") then
+    if string.find(item_name, "Spell: ") or string.find(item_name, "Song: ") then
         Logger.Debug(LNS.guiLoot.console, "Loot::checkSpells() \ay%s\ax \agFound\ax a spell", item_name)
         return true
     end
