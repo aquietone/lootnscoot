@@ -3610,7 +3610,7 @@ function LNS.lootCorpse(corpseID)
         }
         LNS.lootActor:send({ mailbox = 'looted', script = 'lootnscoot', }, message)
         if Mode == 'directed' then
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
+            LNS.lootActor:send({ mailbox = 'looted', script = LNS.DirectorLNSPath, }, message)
         end
         allItems = nil
     end
