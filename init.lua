@@ -3122,8 +3122,7 @@ function LNS.sendMySettings()
     }
     LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
     if Mode == 'directed' then
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, },
-            { Subject = 'mysetting', Who = MyName, CombatLooting = LNS.Settings.CombatLooting, })
+        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
     end
     LNS.Boxes[MyName] = {}
     for k, v in pairs(LNS.Settings) do
@@ -3227,6 +3226,7 @@ function LNS.RegisterActors()
                     end
                 end
             end
+            LNS.TempSettings.SendSettings = true
         end
 
         if action == 'updatesettings' and who == MyName then
@@ -6263,13 +6263,15 @@ while not LNS.Terminate do
 
     if LNS.TempSettings.SendSettings then
         LNS.sendMySettings()
+        LNS.SortTables()
         LNS.TempSettings.SendSettings = false
     end
 
-    if LNS.TempSettings.WriteSettings then
-        LNS.writeSettings()
-        LNS.TempSettings.WriteSettings = false
-    end
+    -- if LNS.TempSettings.WriteSettings then
+    --     LNS.writeSettings()
+    --     LNS.SortTables()
+    --     LNS.TempSettings.WriteSettings = false
+    -- end
 
     if LNS.TempSettings.ClearDateData then
         LNS.TempSettings.ClearDateData = false
@@ -6293,7 +6295,7 @@ while not LNS.Terminate do
         LNS.TempSettings.GetItem = nil
     end
 
-    if LNS.TempSettings.NeedSave then
+    if LNS.TempSettings.NeedSave or LNS.TempSettings.WriteSettings then
         for k, v in pairs(LNS.TempSettings.UpdatedBuyItems or {}) do
             if k ~= "" then
                 LNS.BuyItemsTable[k] = v
@@ -6310,6 +6312,7 @@ while not LNS.Terminate do
         LNS.TempSettings.DeletedBuyKeys = {}
         LNS.writeSettings()
         LNS.TempSettings.NeedSave = false
+        LNS.TempSettings.WriteSettings = false
         LNS.sendMySettings()
         LNS.SortTables()
     end
