@@ -743,7 +743,7 @@ function LNS.loadSettings(firstRun)
     LNS.Settings = tmpSettings
     LNS.Boxes[MyName] = {}
     LNS.Boxes[MyName] = LNS.Settings
-    table.insert(LNS.BoxKeys, MyName)
+    if firstRun then table.insert(LNS.BoxKeys, MyName) end
     LNS.guiLoot.openGUI = LNS.Settings.ShowConsole
 
     return needSave
@@ -3121,17 +3121,6 @@ function LNS.actorAddRule(itemID, itemName, tableName, rule, classes, link)
 end
 
 function LNS.sendMySettings()
-    local tmpTable = {}
-    -- for k, v in pairs(LNS.Settings) do
-    --     if type(v) == 'table' then
-    --         tmpTable[k] = {}
-    --         for kk, vv in pairs(v) do
-    --             tmpTable[k][kk] = vv
-    --         end
-    --     else
-    --         tmpTable[k] = v
-    --     end
-    -- end
     local message = {
         who      = MyName,
         action   = 'sendsettings',
@@ -3222,6 +3211,7 @@ function LNS.RegisterActors()
             table.sort(LNS.BoxKeys)
             return
         end
+
         if action == 'sendsettings' and who ~= MyName then
             if LNS.Boxes[who] ~= nil and os.difftime(os.time(), LNS.TempSettings.LastSent) > 60 then
                 return
@@ -3230,34 +3220,21 @@ function LNS.RegisterActors()
 
             LNS.Boxes[who] = boxSettings
             LNS.TempSettings[who] = boxSettings
-            -- for k, v in pairs(boxSettings) do
-            --     if type(k) ~= 'table' then
-            --         LNS.Boxes[who][k] = v
-            --     else
-            --         LNS.Boxes[who][k] = {}
-            --         for i, j in pairs(v) do
-            --             LNS.Boxes[who][k][i] = j
-            --         end
-            --     end
-            -- end
-            -- LNS.TempSettings.SendSettings = true
         end
 
         if action == 'updatesettings' then
-            -- for k, v in pairs(boxSettings) do
-            --     if type(k) ~= 'table' then
-            --         LNS.Settings[k] = v
-            --     else
-            --         for i, j in pairs(v) do
-            --             LNS.Settings[k][i] = j
-            --         end
-            --     end
-            -- end
+            if LNS.Boxes[who] == nil then LNS.Boxes[who] = {} end
+            LNS.Boxes[who] = {}
             LNS.Boxes[who] = boxSettings
-            LNS.TempSettings[who] = boxSettings
+            LNS.TempSettings[who] = nil
             if who == MyName then
-                LNS.Settings = LNS.Boxes[who]
-                LNS.TempSettings[who] = boxSettings
+                for k, v in pairs(boxSettings) do
+                    if type(v) ~= 'table' then
+                        LNS.Settings[k] = v
+                    end
+                end
+                LNS.Boxes[MyName] = LNS.Settings
+                LNS.TempSettings[MyName] = nil
                 LNS.TempSettings.UpdateSettings = true
             end
         end
@@ -5382,42 +5359,22 @@ function LNS.renderSettingsSection(who)
     ImGui.SameLine()
 
     if ImGui.SmallButton("Send Settings##LootnScoot") then
-        if who == MyName then
-            -- for k, v in pairs(LNS.Boxes[MyName]) do
-            --     if type(v) == 'table' then
-            --         for k2, v2 in pairs(v) do
-            --             LNS.Settings[k][k2] = v2
-            --         end
-            --     else
-            --         LNS.Settings[k] = v
-            --     end
-            -- end
-            LNS.Settings = LNS.Boxes[MyName]
-            LNS.writeSettings()
-            LNS.sendMySettings()
-        else
-            local tmpSet = LNS.Boxes[who]
-            -- for k, v in pairs(LNS.Boxes[who]) do
-            --     if type(v) == 'table' then
-            --         tmpSet[k] = {}
-            --         for k2, v2 in pairs(v) do
-            --             tmpSet[k][k2] = v2
-            --         end
-            --     else
-            --         tmpSet[k] = v
-            --     end
-            -- end
-            local message = {
-                action = 'updatesettings',
-                who = who,
-                settings = tmpSet,
-            }
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-            if Mode == 'directed' then
-                LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
-            end
+        -- if who == MyName then
+        --     -- LNS.TempSettings.UpdateSettings = true
+        --     LNS.TempSettings.SendSettings = true
+        -- end
+
+        local message = {
+            action = 'updatesettings',
+            who = who,
+            settings = LNS.Boxes[who],
+        }
+        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
+        if Mode == 'directed' then
+            LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
         end
     end
+
     ImGui.SeparatorText("Clone Settings")
     ImGui.SetNextItemWidth(120)
 
@@ -5457,7 +5414,7 @@ function LNS.renderSettingsSection(who)
             if Mode == 'directed' then
                 LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
             end
-            LNS.TempSettings.CloneWho = nil
+            -- LNS.TempSettings.CloneWho = nil
             LNS.TempSettings.CloneTo = nil
         end
     end
@@ -6266,14 +6223,14 @@ while not LNS.Terminate do
 
     mq.doevents()
 
-    if LNS.TempSettings.UpdateSettings == true then
+    if LNS.TempSettings.UpdateSettings then
         Logger.Info(LNS.guiLoot.console, "Updating Settings")
         mq.pickle(SettingsFile, LNS.Settings)
         LNS.loadSettings()
         LNS.TempSettings.UpdateSettings = false
     end
 
-    if LNS.TempSettings.SendSettings == true then
+    if LNS.TempSettings.SendSettings then
         LNS.TempSettings.SendSettings = false
         Logger.Info(LNS.guiLoot.console, "Sending Settings")
         LNS.sendMySettings()
