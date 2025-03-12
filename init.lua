@@ -348,27 +348,41 @@ function LNS.SortTableColums(input_table, sorted_keys, num_columns)
 
     -- If sorted_keys is provided, use it, otherwise extract the keys from the input_table
     local keys = sorted_keys or {}
-    if input_Table ~= nil then
-        if #keys == 0 then
-            for k, _ in pairs(input_table) do
-                table.insert(keys, k)
-            end
-            table.sort(keys, function(a, b)
-                return a < b
-            end)
+    if #keys == 0 then
+        for k, _ in pairs(input_table) do
+            table.insert(keys, k)
         end
+        table.sort(keys, function(a, b)
+            return a < b
+        end)
     end
 
     local total_items = #keys
-    local num_rows = math.ceil(total_items / num_columns)
-    local column_sorted = {}
+    local base_rows = math.floor(total_items / num_columns) -- number of rows per column
+    local extra_rows = total_items % num_columns            -- incase we have a remainder
 
-    -- Reorganize the keys to fill vertically by columns
-    for row = 1, num_rows do
+    local column_sorted = {}
+    local column_entries = {}
+
+    local start_index = 1
+    for col = 1, num_columns do
+        local rows_in_col = base_rows + (col <= extra_rows and 1 or 0)
+        column_entries[col] = {}
+
+        for row = 1, rows_in_col do
+            if start_index <= total_items then
+                table.insert(column_entries[col], keys[start_index])
+                start_index = start_index + 1
+            end
+        end
+    end
+
+    -- Rearrange into the final sorted order, maintaining column-first layout
+    local max_rows = base_rows + (extra_rows > 0 and 1 or 0)
+    for row = 1, max_rows do
         for col = 1, num_columns do
-            local index = (col - 1) * num_rows + row
-            if index <= total_items then
-                table.insert(column_sorted, keys[index])
+            if column_entries[col][row] then
+                table.insert(column_sorted, column_entries[col][row])
             end
         end
     end
@@ -804,39 +818,16 @@ function LNS.checkCursor()
 end
 
 function LNS.navToID(spawnID)
-    local Nav = mq.TLO.Navigation
-    if Nav.MeshLoaded() then
-        if not Nav.Active() then
-            if Nav.PathExists("id " .. spawnID)() then
-                mq.cmdf('/squelch /nav id %d log=critical dist=5 lineofsight=on', spawnID)
-            else
-                Logger.Error(LNS.guiLoot.console, 'No valid nav path detected, returning.')
-                return
+    mq.cmdf('/nav id %d log=off', spawnID)
+    mq.delay(50)
+    if mq.TLO.Navigation.Active() then
+        local startTime = os.time()
+        while mq.TLO.Navigation.Active() do
+            mq.delay(100)
+            if os.difftime(os.time(), startTime) > 5 then
+                break
             end
-
-            mq.delay("3s", function() return Nav.Active() end)
-
-            if not Nav.Active() and mq.TLO.Spawn(spawnID).Distance() > 10 then
-                Logger.Error(LNS.guiLoot.console, 'Navigation failure detected, returning.')
-                return
-            end
-
-            if Nav.Active() then
-                local startTime = os.time()
-                while Nav.Active() do
-                    mq.delay(20)
-                    if os.difftime(os.time(), startTime) > 5 then
-                        Logger.Error(LNS.guiLoot.console, 'Navigation timeout reached, aborting navigation. Is your character stuck?')
-                        mq.cmd('/nav stop')
-                        break
-                    end
-                end
-            end
-        else
-            Logger.Warn(LNS.guiLoot.console, 'Nav already active, no command issued.')
         end
-    else --you could use /moveto as a fallback, but... meh.
-        Logger.Error(LNS.guiLoot.console, 'No mesh detected, aborting movement attempt.')
     end
 end
 
@@ -2933,12 +2924,14 @@ function LNS.getRule(item, fromFunction, index)
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
     end
 
-    if newRule and ruletype == 'Normal' then
+    if newRule and ruletype == 'Normal' and not isNoDrop then
         if sellPrice > 0 then
             lootNewItemRule = 'Sell'
-        elseif tributeValue > 0 and not equipable then
+        elseif tributeValue > 0 then
             lootNewItemRule = 'Tribtue'
-        elseif tributeValue > 0 and equpiable then
+        elseif equpiable then
+            lootNewItemRule = 'Keep'
+        else
             lootNewItemRule = 'Ask'
         end
 
@@ -3207,7 +3200,7 @@ function LNS.RegisterActors()
             Classes = itemClasses,
             Link = itemLink,
         }
-        if directions == 'doloot' and who == MyName and LNS.Settings.DoLoot then
+        if directions == 'doloot' and who == MyName and (LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse) then
             LNS.LootNow = true
             return
         end
@@ -3677,7 +3670,7 @@ function LNS.lootMobs(limit)
     end
 
     -- Add other corpses to the loot list if not limited by the player's own corpse
-    if myCorpseCount == 0 then
+    if myCorpseCount == 0 and LNS.Settings.DoLoot then
         for i = 1, (limit or deadCount) do
             local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', LNS.Settings.CorpseRadius))
             if corpse() and (not lootedCorpses[corpse.ID()] or not LNS.Settings.CheckCorpseOnce) then
@@ -6180,9 +6173,11 @@ LNS.init({ ..., })
 
 while not LNS.Terminate do
     local directorRunning = mq.TLO.Lua.Script(LNS.DirectorScript).Status() == 'RUNNING' or false
+
     if not directorRunning and Mode == 'directed' then
         LNS.Terminate = true
     end
+
     if mq.TLO.MacroQuest.GameState() ~= "INGAME" then LNS.Terminate = true end -- exit sctipt if at char select.
 
     if LNS.TempSettings.LastCombatSetting == nil then
@@ -6193,6 +6188,7 @@ while not LNS.Terminate do
         LNS.TempSettings.LastCombatSetting = LNS.Settings.CombatLooting
         LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, }, { Subject = 'combatsetting', Who = MyName, CombatLooting = LNS.Settings.CombatLooting, })
     end
+
     if debugPrint then
         Logger.loglevel = 'debug'
     elseif not LNS.Settings.ShowInfoMessages then
@@ -6201,19 +6197,23 @@ while not LNS.Terminate do
         Logger.loglevel = 'info'
     end
 
-    if LNS.Settings.DoLoot and Mode ~= 'directed' then LNS.lootMobs() end
+    if LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse and Mode ~= 'directed' then LNS.lootMobs() end
+
     if LNS.LootNow then
         LNS.LootNow = false
         LNS.lootMobs()
     end
+
     if doSell then
         LNS.processItems('Sell')
         doSell = false
     end
+
     if doBuy then
         LNS.processItems('Buy')
         doBuy = false
     end
+
     if doTribute then
         LNS.processItems('Tribute')
         doTribute = false
