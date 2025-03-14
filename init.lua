@@ -2793,7 +2793,6 @@ function LNS.getRule(item, fromFunction, index)
         lootRule = "Bank"
         LNS.modifyItemRule(itemID, lootRule, 'Normal_Rules', lootClasses, lootLink)
     end
-
     if lootRule == 'Ask' then alwaysAsk = true end
 
     -- Re-evaluate settings if AlwaysEval is enabled
@@ -2926,12 +2925,16 @@ function LNS.getRule(item, fromFunction, index)
 
     if newRule and ruletype == 'Normal' and not isNoDrop then
         if sellPrice > 0 then
+            lootDecision = 'Sell'
             lootNewItemRule = 'Sell'
         elseif tributeValue > 0 then
+            lootDecision = 'Tribute'
             lootNewItemRule = 'Tribtue'
         elseif equpiable then
+            lootDecision = 'Keep'
             lootNewItemRule = 'Keep'
         else
+            lootDecision = 'Ask'
             lootNewItemRule = 'Ask'
         end
 
