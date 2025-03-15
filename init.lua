@@ -115,6 +115,7 @@ local settingsEnum                      = {
     showreport = 'ShowReport',
     ignorebagslot = 'IgnoreBagSlot',
     processingeval = 'ProcessingEval',
+    alwaysglobal = 'AlwaysGlobal',
 
 }
 local doSell, doBuy, doTribute, areFull = false, false, false, false
@@ -203,7 +204,8 @@ LNS.Settings    = {
     ShowInfoMessages = true,
     ShowConsole      = false,
     ShowReport       = false,
-    IgnoreBagSlot    = 0, -- Ignore this Bag Slot when buying, selling, tributing and destroying of items.
+    IgnoreBagSlot    = 0,     -- Ignore this Bag Slot when buying, selling, tributing and destroying of items.
+    AlwaysGlobal     = false, -- Always assign new rules to global as well as normal rules.
     -- ProcessingEval   = true, -- Re evaluate when processing items for sell\tribute? this will re check our settings and not sell or tribute items outside the new parameters
     BuyItemsTable    = {
         ['Iron Ration'] = 20,
@@ -1405,8 +1407,10 @@ function LNS.LoadRuleDB()
     local function processRules(stmt, ruleTable, classTable, linkTable)
         for row in stmt:nrows() do
             local id = row.item_id
-            local classes = row.item_rule_classes or 'All'
-            if classes == 'None' or classes:gsub(' ', '') then classes = 'All' end
+            local classes = row.item_rule_classes
+            if classes == nil then classes = 'None' end
+            local classTmp = string.gsub(classes, ' ', '')
+            if classes == 'None' or classTmp == '' then classes = 'All' end
             ruleTable[id] = row.item_rule
             classTable[id] = classes
             linkTable[id] = row.item_link or "NULL"
@@ -2115,18 +2119,20 @@ function LNS.lookupLootRule(itemID, tablename)
         local stepResult = stmt:step()
 
         local rule       = 'NULL'
-        local classes    = 'All'
+        local classes    = 'None'
         link             = 'NULL'
 
         -- Extract values if a row is returned
         if stepResult == SQLite3.ROW then
             local row = stmt:get_named_values()
             rule      = row.item_rule or 'NULL'
-            classes   = row.item_rule_classes or 'All'
+            classes   = row.item_rule_classes
             link      = row.item_link or 'NULL'
             found     = true
         end
-        if classes == 'None' or classes:gsub(" ", '') == '' then
+        if classes == nil then classes = 'None' end
+        local tmpClass = string.gsub(classes, " ", '')
+        if classes == 'None' or tmpClass == '' then
             classes = 'All'
         end
         -- Finalize the statement and close the database
@@ -2136,7 +2142,7 @@ function LNS.lookupLootRule(itemID, tablename)
     end
 
     local rule    = 'NULL'
-    local classes = 'All'
+    local classes = 'None'
     link          = 'NULL'
 
     if tablename == nil then
@@ -2155,7 +2161,7 @@ function LNS.lookupLootRule(itemID, tablename)
 
         if not found then
             rule = 'NULL'
-            classes = 'All'
+            classes = 'None'
             link = 'NULL'
         end
     else
@@ -2249,6 +2255,9 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID)
     Logger.Info(LNS.guiLoot.console, "\agAdding 1 \ayNEW\ax item: \at%s \ay(\axID: \at%s\at) \axwith rule: \ag%s", itemName, itemID, itemRule)
     -- LNS.actorAddRule(itemID, itemName, 'Normal', itemRule, LNS.TempItemClasses, itemLink)
     LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink)
+    if LNS.Settings.AlwaysGlobal then
+        LNS.addRule(itemID, 'GlobalItems', itemRule, LNS.TempItemClasses, itemLink)
+    end
     LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, newMessage)
     if Mode == 'directed' then
         LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, newMessage)
@@ -2643,6 +2652,7 @@ function LNS.checkTS(rule, decision, isTradeSkill)
 end
 
 function LNS.checkClasses(decision, classes, new)
+    local ret = decision
     if classes:lower() ~= "all" and decision:lower() == 'keep' and not new then
         if fromFunction == "loot" and not string.find(classes(), LNS.MyClass) then
             local dbgTbl = {
@@ -2651,10 +2661,10 @@ function LNS.checkClasses(decision, classes, new)
                 Classes = classes,
             }
             Logger.Debug(LNS.guiLoot.console, dbgTbl)
-            decision = "Ignore"
+            ret = "Ignore"
         end
     end
-    return decision
+    return ret
 end
 
 function LNS.checkWearable(isEqupiable, decision, ruletype, nodrop, newrule, isAug, item)
@@ -4357,6 +4367,9 @@ function LNS.drawNewItemsTable()
 
 
                     LNS.addRule(itemID, "NormalItems", tmpRules[itemID], classes, item.Link)
+                    if LNS.AlwaysGlobal then
+                        LNS.addRule(itemID, "GlobalItems", tmpRules[itemID], classes, item.Link)
+                    end
                     LNS.enterNewItemRuleInfo({
                         ID = itemID,
                         ItemName = item.Name,
