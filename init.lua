@@ -4058,7 +4058,7 @@ function LNS.processItems(action)
 
     -- Handle restocking if AutoRestock is enabled
     if action == 'Sell' and LNS.Settings.AutoRestock then
-        soldVal = mq.TLO.Me.Cash() - myCoins
+        soldVal = (mq.TLO.Me.Cash() - myCoins) / 1000
         LNS.RestockItems()
     end
 
@@ -4089,7 +4089,8 @@ function LNS.processItems(action)
         end
         -- totalPlat = math.floor(totalPlat)
         totalPlat = (mq.TLO.Me.Cash() - myCoins) / 1000
-        LNS.report('Plat Spent: \ay%0.2f\ax, Gained: \ag%0.2f\ax, Total Profit: %0.2f', spentVal, soldVal, totalPlat)
+        LNS.report('Plat Spent: \ar%0.2f\ax, Gained: \ag%0.2f\ax, \awTotal Profit\ax: \ag%0.2f', spentVal, soldVal, totalPlat)
+        Logger.Info(LNS.guiLoot.console, 'Plat Spent: \ar%0.2f\ax, Gained: \ag%0.2f\ax, \awTotal Profit\ax: \ag%0.2f', spentVal, soldVal, totalPlat)
     elseif action == 'Bank' then
         if mq.TLO.Window('BigBankWnd').Open() then
             mq.TLO.Window('BigBankWnd').DoClose()
@@ -6299,7 +6300,7 @@ while not LNS.Terminate do
 
     if LNS.TempSettings.SendSettings then
         LNS.TempSettings.SendSettings = false
-        Logger.Info(LNS.guiLoot.console, "Sending Settings")
+        Logger.Debug(LNS.guiLoot.console, "Sending Settings")
         LNS.sendMySettings()
     end
 
