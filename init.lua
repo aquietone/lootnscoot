@@ -3733,11 +3733,11 @@ function LNS.lootMobs(limit)
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Found %s corpses in range.', deadCount)
 
     -- Handle looting of the player's own corpse
-    local myCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse %s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
+    local myCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse =%s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
 
     if LNS.Settings.LootMyCorpse and myCorpseCount > 0 then
         for i = 1, (limit or myCorpseCount) do
-            local corpse = mq.TLO.NearestSpawn(string.format("%d, pccorpse %s radius %d zradius 100", i, mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
+            local corpse = mq.TLO.NearestSpawn(string.format("%d, pccorpse =%s radius %d zradius 100", i, mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
             if corpse() then
                 -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Adding my corpse to loot list. Corpse ID: %d', corpse.ID())
                 table.insert(corpseList, corpse)
@@ -3785,6 +3785,9 @@ function LNS.lootMobs(limit)
             end
 
             Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Navigating to corpse ID=%d.', corpseID)
+            while mq.TLO.Me.Casting() ~= nil do
+                mq.delay(10)
+            end
             LNS.navToID(corpseID)
 
             if mobsNearby > 0 and not LNS.Settings.CombatLooting then
@@ -4166,7 +4169,7 @@ function LNS.processItems(action)
         -- totalPlat = math.floor(totalPlat)
         totalPlat = (mq.TLO.Me.Cash() - myCoins) / 1000
         LNS.report('Plat Spent: \ar%0.3f\ax, Gained: \ag%0.3f\ax, \awTotal Profit\ax: \ag%0.3f', spentVal, soldVal, totalPlat)
-        Logger.Info(LNS.guiLoot.console, 'Plat Spent: \ar%0.3f\ax, Gained: \ag%0.3f\ax, \awTotal Profit\ax: \ag%0.3f', spentVal, soldVal, totalPlat)
+        Logger.Info(LNS.guiLoot.console, 'Plat Spent: \ay%0.3f\ax, Gained: \ag%0.3f\ax, \awTotal Profit\ax: \ag%0.3f', spentVal, soldVal, totalPlat)
     elseif action == 'Bank' then
         if mq.TLO.Window('BigBankWnd').Open() then
             mq.TLO.Window('BigBankWnd').DoClose()
