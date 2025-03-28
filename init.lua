@@ -574,6 +574,7 @@ function LNS.UpdateDataBases()
 end
 
 function LNS.writeSettings()
+    mq.cmdf("/squelch /mapfilter CastRadius %d", LNS.Settings.CorpseRadius)
     LNS.Settings.BuyItemsTable = LNS.BuyItemsTable
     mq.pickle(SettingsFile, LNS.Settings)
     Logger.Debug(LNS.guiLoot.console, "Loot::writeSettings()")
@@ -1279,6 +1280,23 @@ function LNS.LoadDateHistory(lookup_Date)
     stmt:bind_values(lookup_Date)
     for row in stmt:nrows() do
         table.insert(LNS.HistoryDataDate, row)
+    end
+
+    stmt:finalize()
+    db:exec("COMMIT")
+    db:close()
+end
+
+function LNS.LoadItemHistory(lookup_name)
+    local db = SQLite3.open(HistoryDB)
+    db:exec("PRAGMA journal_mode=WAL;")
+    db:exec("BEGIN TRANSACTION")
+
+    LNS.HistoryItemData = {}
+    local stmt = db:prepare("SELECT * FROM LootHistory WHERE Item LIKE ?")
+    stmt:bind_values(string.format("%%%s%%", lookup_name))
+    for row in stmt:nrows() do
+        table.insert(LNS.HistoryItemData, row)
     end
 
     stmt:finalize()
@@ -3781,9 +3799,14 @@ function LNS.lootMobs(limit)
     if #corpseList > 0 then
         Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Attempting to loot %d corpses.', #corpseList)
         for _, corpse in ipairs(corpseList) do
-            local corpseID = corpse.ID()
+            local corpseID = corpse.ID() or 0
 
-            if not corpseID or corpseID <= 0 or LNS.corpseLocked(corpseID) or
+            if not mq.TLO.Spawn(corpseID)() then
+                Logger.Info(LNS.guiLoot.console, 'lootMobs(): Corpse ID \ay%d \axis \arNO Longer Valid.\ax \atMoving to Next Corpse...', corpseID)
+                goto continue
+            end
+
+            if not corpseID or corpseID == 0 or LNS.corpseLocked(corpseID) or
                 (mq.TLO.Navigation.PathLength('spawn id ' .. corpseID)() or 100) > LNS.Settings.CorpseRadius then
                 Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Skipping corpse ID: %d.', corpseID)
                 table.remove(corpseList, _)
@@ -3919,13 +3942,14 @@ function LNS.RestockItems()
     for itemName, qty in pairs(LNS.BuyItemsTable) do
         Logger.Info(LNS.guiLoot.console, 'Checking \ao%s \axfor \at%s \axto \agRestock', mq.TLO.Target.CleanName(), itemName)
         local tmpVal = tonumber(qty) or 0
+        mq.delay(500, function() return mq.TLO.Window("MerchantWnd/MW_ItemList").List(string.format("=%s", itemName), 2)() end)
         rowNum       = mq.TLO.Window("MerchantWnd/MW_ItemList").List(string.format("=%s", itemName), 2)() or 0
-        mq.delay(200)
         local onHand = mq.TLO.FindItemCount(itemName)()
         local tmpQty = tmpVal - onHand
+        Logger.Debug(LNS.guiLoot.console, "\agHave\ax: \at%s\ax \aoNeed\ax: \ay%s \ax\ayROW\ax: \at%s", onHand, tmpQty, rowNum)
         if rowNum ~= 0 and tmpQty > 0 then
             ::need_more::
-            Logger.Info(LNS.guiLoot.console, "\ayRestocking \ax%s \aoHave\ax: \at%s\ax \agBuying\ax: \ay%s", itemName, onHand, tmpQty)
+            Logger.Debug(LNS.guiLoot.console, "\ayRestocking \ax%s \aoHave\ax: \at%s\ax \agBuying\ax: \ay%s", itemName, onHand, tmpQty)
             mq.TLO.Window("MerchantWnd/MW_ItemList").Select(rowNum)()
             mq.delay(100)
             mq.TLO.Window("MerchantWnd/MW_Buy_Button").LeftMouseUp()
@@ -3939,6 +3963,7 @@ function LNS.RestockItems()
             if onHand < tmpVal then
                 Logger.Info(LNS.guiLoot.console, "\ayStack Max Size \axis \arLess\ax than \ax%s \aoHave\ax: \at%s\ax", tmpVal, onHand)
                 tmpQty = tmpVal - onHand
+                mq.delay(10)
                 goto need_more
             end
         end
@@ -5846,8 +5871,10 @@ end
 function LNS.drawRecord(tableToDraw)
     if not LNS.TempSettings.PastHistory then return end
     if tableToDraw == nil then tableToDraw = LNS.TempSettings.SessionHistory or {} end
-    if LNS.HistoryDataDate ~= nil then
-        if #LNS.HistoryDataDate > 0 then tableToDraw = LNS.HistoryDataDate end
+    if LNS.HistoryDataDate ~= nil and #LNS.HistoryDataDate > 0 then
+        tableToDraw = LNS.HistoryDataDate
+    elseif LNS.HistoryItemData ~= nil and #LNS.HistoryItemData > 0 then
+        tableToDraw = LNS.HistoryItemData
     end
     local openWin, showRecord = ImGui.Begin("Loot PastHistory##", true)
     if not openWin then
@@ -5926,6 +5953,10 @@ function LNS.drawRecord(tableToDraw)
         ImGui.SameLine()
         if ImGui.SmallButton(Icons.MD_DELETE_SWEEP) then
             LNS.TempSettings.FilterHistory = ''
+        end
+        ImGui.SameLine()
+        if ImGui.SmallButton(Icons.MD_SEARCH) then
+            LNS.TempSettings.FindItemHistory = true
         end
         ImGui.SameLine()
         ImGui.Text("Found: ")
@@ -6050,27 +6081,40 @@ local function renderBtn()
     end
 
     if showBtn then
+        local cursorX, cursorY = ImGui.GetCursorScreenPos() -- grab location for later to draw button over icon.
         if LNS.NewItemsCount > 0 then
             animMini:SetTextureCell(645 - EQ_ICON_OFFSET)
         else
             animMini:SetTextureCell(644 - EQ_ICON_OFFSET)
         end
         ImGui.DrawTextureAnimation(animMini, 34, 34, true)
-    end
-    if ImGui.IsItemHovered() then
-        ImGui.BeginTooltip()
-        ImGui.Text("LootnScoot")
-        ImGui.Text("Click to Show/Hide")
-        ImGui.Text("Right Click to Show New Items")
-        ImGui.EndTooltip()
-        if ImGui.IsMouseReleased(0) then
+
+        -- draw invis button over icoon
+        ImGui.SetCursorScreenPos(cursorX, cursorY)
+        ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0, 0, 0, 0))
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ImVec4(1.0, 0.5, 0.2, 0.5))
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, ImVec4(0, 0, 0, 0))
+        if ImGui.Button("##LNSBtn", ImVec2(34, 34)) then
             LNS.ShowUI = not LNS.ShowUI
-        elseif ImGui.IsMouseReleased(1) and LNS.NewItemsCount > 0 then
-            showNewItem = not showNewItem
         end
-    end
-    if (ImGui.IsKeyDown(ImGuiMod.Ctrl) and ImGui.IsMouseClicked(2)) then
-        LNS.ShowUI = not LNS.ShowUI
+        ImGui.PopStyleColor(3)
+
+        -- tooltip and right click event
+        if ImGui.IsItemHovered() then
+            ImGui.BeginTooltip()
+            ImGui.Text("LootnScoot")
+            ImGui.Text("Click to Show/Hide")
+            ImGui.Text("Right Click to Show New Items")
+            ImGui.EndTooltip()
+            if ImGui.IsMouseReleased(1) and LNS.NewItemsCount > 0 then
+                showNewItem = not showNewItem
+            end
+        end
+
+        -- ctrl right click toggle option
+        if (ImGui.IsKeyDown(ImGuiMod.Ctrl) and ImGui.IsMouseClicked(2)) then
+            LNS.ShowUI = not LNS.ShowUI
+        end
     end
     ImGui.PopStyleVar(2)
     ImGui.End()
@@ -6405,11 +6449,22 @@ while not LNS.Terminate do
     if LNS.TempSettings.ClearDateData then
         LNS.TempSettings.ClearDateData = false
         LNS.HistoryDataDate = {}
+        LNS.HistoryItemData = {}
     end
 
     if LNS.TempSettings.LookUpDateData then
         LNS.TempSettings.LookUpDateData = false
         LNS.LoadDateHistory(lookupDate)
+        LNS.HistoryItemData = {}
+    end
+
+    if LNS.TempSettings.FindItemHistory then
+        LNS.TempSettings.FindItemHistory = false
+        if LNS.TempSettings.FilterHistory ~= nil and LNS.TempSettings.FilterHistory ~= "" then
+            LNS.LoadItemHistory(LNS.TempSettings.FilterHistory)
+            LNS.HistoryDataDate = {}
+            LNS.TempSettings.FilterHistory = ''
+        end
     end
 
     if LNS.TempSettings.DoGet then
