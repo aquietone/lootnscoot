@@ -34,6 +34,7 @@ local cantLootID                     = 0
 local itemNoValue                    = nil
 local noDropItems, loreItems         = {}, {}
 local allItems                       = {}
+
 -- Constants
 local spawnSearch                    = '%s radius %d zradius 50'
 local shouldLootActions              = { Ask = false, CanUse = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, }
@@ -265,6 +266,7 @@ LNS.TempSettings.SortedSettingsKeys = {}
 LNS.TempSettings.SortedToggleKeys   = {}
 LNS.TempSettings.UpdateSettings     = false
 LNS.TempSettings.SendSettings       = false
+LNS.PauseLooting                    = false
 
 local tableList                     = {
     "Global_Items", "Normal_Items", LNS.PersonalTableName,
@@ -914,6 +916,14 @@ function LNS.commandHandler(...)
         LNS.writeSettings()
         LNS.sendMySettings()
         return
+    end
+    if args[1] == 'pause' then
+        LNS.PauseLooting = true
+        Logger.Info(LNS.guiLoot.console, "\ayLooting\ax is now \aoPaused\ax")
+        return
+    elseif args[1] == 'unpause' or args[1] == 'resume' then
+        LNS.PauseLooting = false
+        Logger.Info(LNS.guiLoot.console, "\ayLooting\ax is now \agUnPaused\ax")
     end
     local dbgTbl = {
         CommandHandler = "/lns command issued",
@@ -3741,6 +3751,10 @@ function LNS.lootCorpse(corpseID)
 end
 
 function LNS.lootMobs(limit)
+    if LNS.PauseLooting then
+        LNS.finishedLooting()
+        return
+    end
     -- check for normal, undead, animal invis should not see rogue sneak\hide
     if mq.TLO.Me.Invis(1)() or mq.TLO.Me.Invis(2)() or mq.TLO.Me.Invis(3)() then
         Logger.Warn(LNS.guiLoot.console, "lootMobs(): You are Invis and we don't want to break it so skipping.")
@@ -3898,8 +3912,10 @@ function LNS.SellToVendor(itemID, bag, slot, name)
             or ('/itemnotify in pack%s %s leftmouseup'):format(bag, slot)
         mq.cmdf(notify)
         mq.delay(5000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemName end)
-        mq.cmdf('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
-        mq.delay(5000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
+        if mq.TLO.Window("MerchantWnd/MW_SelectedPriceLabel").Text() ~= "0c" then
+            mq.cmdf('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
+            mq.delay(5000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
+        end
     end
 end
 
@@ -4206,7 +4222,7 @@ function LNS.processItems(action)
         end
         -- totalPlat = math.floor(totalPlat)
         totalPlat = (mq.TLO.Me.Cash() - myCoins) / 1000
-        LNS.report('Plat Spent: \ar%0.3f\ax, Gained: \ag%0.3f\ax, \awTotal Profit\ax: \ag%0.3f', spentVal, soldVal, totalPlat)
+        LNS.report('Plat Spent: \ao%0.3f\ax, Gained: \ag%0.3f\ax, \awTotal Profit\ax: \ag%0.3f', spentVal, soldVal, totalPlat)
         Logger.Info(LNS.guiLoot.console, 'Plat Spent: \ay%0.3f\ax, Gained: \ag%0.3f\ax, \awTotal Profit\ax: \ag%0.3f', spentVal, soldVal, totalPlat)
     elseif action == 'Bank' then
         if mq.TLO.Window('BigBankWnd').Open() then
@@ -5868,7 +5884,7 @@ function LNS.RenderModifyItemWindow()
     ImGui.End()
 end
 
-function LNS.drawRecord(tableToDraw)
+function LNS.DrawRecord(tableToDraw)
     if not LNS.TempSettings.PastHistory then return end
     if tableToDraw == nil then tableToDraw = LNS.TempSettings.SessionHistory or {} end
     if LNS.HistoryDataDate ~= nil and #LNS.HistoryDataDate > 0 then
@@ -6069,7 +6085,7 @@ function LNS.drawRecord(tableToDraw)
     ImGui.End()
 end
 
-local function renderBtn()
+local function RenderBtn()
     -- apply_style()
 
     ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(9, 9))
@@ -6081,11 +6097,16 @@ local function renderBtn()
     end
 
     if showBtn then
+        local btnLbl = '##LNSBtn'
         local cursorX, cursorY = ImGui.GetCursorScreenPos() -- grab location for later to draw button over icon.
         if LNS.NewItemsCount > 0 then
-            animMini:SetTextureCell(645 - EQ_ICON_OFFSET)
+            animMini:SetTextureCell(645 - EQ_ICON_OFFSET)   -- gold coin
         else
-            animMini:SetTextureCell(644 - EQ_ICON_OFFSET)
+            animMini:SetTextureCell(644 - EQ_ICON_OFFSET)   -- platinum coin
+        end
+        if LNS.PauseLooting then
+            animMini:SetTextureCell(1436 - EQ_ICON_OFFSET) -- red gem
+            btnLbl = 'Paused##LNSBtn'
         end
         ImGui.DrawTextureAnimation(animMini, 34, 34, true)
 
@@ -6094,21 +6115,29 @@ local function renderBtn()
         ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0, 0, 0, 0))
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ImVec4(1.0, 0.5, 0.2, 0.5))
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, ImVec4(0, 0, 0, 0))
-        if ImGui.Button("##LNSBtn", ImVec2(34, 34)) then
+        if ImGui.Button(btnLbl, ImVec2(34, 34)) then
             LNS.ShowUI = not LNS.ShowUI
         end
         ImGui.PopStyleColor(3)
+        if ImGui.BeginPopupContextItem("##LootNScoot") then
+            if ImGui.MenuItem("Show/Hide LootnScoot") then
+                LNS.ShowUI = not LNS.ShowUI
+            end
+            if ImGui.MenuItem("Show New Items") then
+                showNewItem = not showNewItem
+            end
+            if ImGui.MenuItem("Toggle Pause Looting") then
+                LNS.PauseLooting = not LNS.PauseLooting
+            end
+            ImGui.EndPopup()
+        end
 
         -- tooltip and right click event
         if ImGui.IsItemHovered() then
             ImGui.BeginTooltip()
             ImGui.Text("LootnScoot")
             ImGui.Text("Click to Show/Hide")
-            ImGui.Text("Right Click to Show New Items")
             ImGui.EndTooltip()
-            if ImGui.IsMouseReleased(1) and LNS.NewItemsCount > 0 then
-                showNewItem = not showNewItem
-            end
         end
 
         -- ctrl right click toggle option
@@ -6120,7 +6149,7 @@ local function renderBtn()
     ImGui.End()
 end
 
-function LNS.renderMainUI()
+function LNS.RenderMainUI()
     if LNS.ShowUI then
         ImGui.SetNextWindowSize(800, 600, ImGuiCond.FirstUseEver)
         local open, show = ImGui.Begin('LootnScoot', true)
@@ -6235,12 +6264,12 @@ function LNS.RenderUIs()
         LNS.processPendingItem()
     end
 
-    LNS.renderMainUI()
+    LNS.RenderMainUI()
 
-    renderBtn()
+    RenderBtn()
 
     if LNS.TempSettings.PastHistory then
-        LNS.drawRecord()
+        LNS.DrawRecord()
     end
 
     if colCount > 0 then ImGui.PopStyleColor(colCount) end
@@ -6520,10 +6549,10 @@ while not LNS.Terminate do
         LNS.processItems('Destroy')
     end
 
-    if LNS.MyClass:lower() == 'brd' and LNS.Settings.DoDestroy then
-        LNS.Settings.DoDestroy = false
-        Logger.Warn(LNS.guiLoot.console, "\ayBard Detected\ax, \arDisabling\ax [\atDoDestroy\ax].")
-    end
+    -- if LNS.MyClass:lower() == 'brd' and LNS.Settings.DoDestroy then
+    --     LNS.Settings.DoDestroy = false
+    --     Logger.Warn(LNS.guiLoot.console, "\ayBard Detected\ax, \arDisabling\ax [\atDoDestroy\ax].")
+    -- end
     mq.delay(5)
 end
 
