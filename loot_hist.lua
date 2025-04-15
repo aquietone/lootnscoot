@@ -245,7 +245,7 @@ local function loadSettings()
 	for k, v in pairs(defaults) do
 		if settings[script][k] == nil then
 			settings[script][k] = v
-			Logger.Info("\ay[LOOT]: \atSetting: \ay%s\ao not found in settings file, adding default value \aw[\ag%s\aw].", k, v)
+			Logger.Info(nil, "\ay[LOOT]: \atSetting: \ay%s\ao not found in settings file, adding default value \aw[\ag%s\aw].", k, v)
 		end
 	end
 
