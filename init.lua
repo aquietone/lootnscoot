@@ -3506,17 +3506,12 @@ function LNS.lootCorpse(corpseID)
             if corpseItem() then
                 local corpseItemID = corpseItem.ID()
                 local isNoDrop     = corpseItem.NoDrop() or corpseItem.NoTrade()
-                local newNoDrop    = false
-                if LNS.ItemNames[corpseItemID] == nil and isNoDrop then
-                    newNoDrop = true
-                end
                 LNS.addToItemDB(corpseItem)
                 local itemRule, qKeep, newRule, iCanUse = LNS.getRule(corpseItem, 'loot', i)
                 mq.delay(1)
                 LNS.lootItem(i, itemRule, 'leftmouseup', qKeep, not iCanUse)
                 mq.delay(1)
                 Logger.Debug(LNS.guiLoot.console, "LootCorpse(): itemID=\ao%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s", corpseItemID, itemRule, qKeep, newRule)
-                newRule = newNoDrop or newRule
             end
 
             mq.delay(1)
@@ -3581,7 +3576,7 @@ function LNS.lootMobs(limit)
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Found %s corpses in range.', deadCount)
 
     -- Handle looting of the player's own corpse
-    local myCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse =%s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
+    local myCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse %s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
 
     if not LNS.Settings.LootMyCorpse and myCorpseCount > 0 then
         Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Puasing looting until finished looting my own corpse.')
