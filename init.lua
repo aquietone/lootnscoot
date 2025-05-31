@@ -3576,15 +3576,30 @@ function LNS.lootMobs(limit)
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Found %s corpses in range.', deadCount)
 
     -- Handle looting of the player's own corpse
-    local myCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse %s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
-
-    if not LNS.Settings.LootMyCorpse and myCorpseCount > 0 then
-        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Puasing looting until finished looting my own corpse.')
-        LNS.finishedLooting()
-        return false
+    local pcCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse %s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
+    local myCorpseCount = 0
+    local foundMine     = false
+    if pcCorpseCount > 0 then
+        for i = 1, pcCorpseCount do
+            local cps = mq.TLO.NearestSpawn(i, string.format("pccorpse %s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
+            if cps() then
+                local cpsName = cps.CleanName():gsub("'s corpse", "")
+                if cpsName == mq.TLO.Me.CleanName() then
+                    printf("lootMobs(): Found my corpse: %s", cpsName)
+                    foundMine = true
+                    myCorpseCount = myCorpseCount + 1
+                    if not LNS.Settings.LootMyCorpse and foundMine then
+                        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Puasing looting until finished looting my own corpse.')
+                        LNS.finishedLooting()
+                        return false
+                    end
+                end
+            end
+        end
     end
 
-    if LNS.Settings.LootMyCorpse and myCorpseCount > 0 then
+
+    if LNS.Settings.LootMyCorpse and foundMine then
         for i = 1, (limit or myCorpseCount) do
             local corpse = mq.TLO.NearestSpawn(string.format("%d, pccorpse =%s radius %d zradius 100", i, mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
             if corpse() then
@@ -3634,7 +3649,7 @@ function LNS.lootMobs(limit)
             end
 
             -- Attempt to move and loot the corpse
-            if corpse.DisplayName() == mq.TLO.Me.DisplayName() then
+            if corpse.DisplayName() == mq.TLO.Me.DisplayName() .. "'s corpse" then
                 Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Pulling own corpse closer. Corpse ID: %d', corpseID)
                 mq.cmdf("/corpse")
                 mq.delay(10)
