@@ -34,7 +34,7 @@ local cantLootID                     = 0
 local itemNoValue                    = nil
 local noDropItems, loreItems         = {}, {}
 local allItems                       = {}
-
+local foragingLoot                   = false
 -- Constants
 local spawnSearch                    = '%s radius %d zradius 50'
 local shouldLootActions              = { Ask = false, CanUse = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, }
@@ -746,7 +746,7 @@ function LNS.setupEvents()
     mq.event("CantLoot", "#*#may not loot this corpse#*#", LNS.eventCantLoot)
     mq.event("NoSlot", "#*#There are no open slots for the held item in your inventory#*#", LNS.eventNoSlot)
     mq.event("Sell", "#*#You receive#*# for the #1#(s)#*#", LNS.eventSell)
-    mq.event("ForageExtras", "Your forage mastery has enabled you to find something else!", LNS.eventForage)
+    -- mq.event("ForageExtras", "Your forage mastery has enabled you to find something else!", LNS.eventForage)
     mq.event("Forage", "You have scrounged up #*#", LNS.eventForage)
     mq.event("Novalue", "#*#give you absolutely nothing for the #1#.#*#", LNS.eventNovalue)
     mq.event("Tribute", "#*#We graciously accept your #1# as tribute, thank you!#*#", LNS.eventTribute)
@@ -1904,7 +1904,7 @@ end
 ---@return string link
 ---@return string which_table
 function LNS.lookupLootRule(itemID, tablename)
-    if not itemID then
+    if itemID == nil or itemID == 0 then
         return 'NULL', 'All', 'NULL', 'None'
     end
     local which_table = 'Normal'
@@ -2521,6 +2521,7 @@ end
 --- @return string
 function LNS.checkClasses(decision, allowedClasses, fromFunction, new)
     local ret = decision
+    if fromFunction ~= 'loot' then return ret end
     local tmpClasses = allowedClasses:lower() or 'all'
     if ret:lower() == 'keep' and not new then
         if not string.find(tmpClasses, LNS.MyClass) then
@@ -2652,17 +2653,15 @@ end
 ---@return boolean newRule True if Item does not exist in the Rules Tables
 ---@return boolean cantWear True if the item is not wearable by the character
 function LNS.getRule(item, fromFunction, index)
-    if item == nil then return 'NULL', 0, false, true end
+    if item == nil or not item() then return 'NULL', 0, false, true end
     local itemID = item.ID() or 0
     if itemID == 0 then return 'NULL', 0, false, true end
 
     -- Initialize values
     local lootDecision                              = 'Ignore'
-    local tradeskill                                = item.Tradeskills()
     local sellPrice                                 = (item.Value() or 0) / 1000
     local stackable                                 = item.Stackable()
     local isAug                                     = item.Type() == 'Augmentation'
-    local stackSize                                 = item.StackSize()
     local tributeValue                              = item.Tribute() or 0
 
     local countHave                                 = mq.TLO.FindItemCount(item.Name())() + mq.TLO.FindItemBankCount(item.Name())()
@@ -2688,7 +2687,8 @@ function LNS.getRule(item, fromFunction, index)
     local lootRule, lootClasses, lootLink, ruletype = LNS.lookupLootRule(itemID)
 
 
-    Logger.Info(LNS.guiLoot.console, "\aoLookup Rule\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", lootRule, lootClasses, itemName, lootLink)
+    Logger.Info(LNS.guiLoot.console, "\aoLookup Rule\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, ID: \ay%s\ax, \atLink: %s", lootRule, lootClasses, itemName, itemID,
+        lootLink)
 
     newRule = lootRule == 'NULL'
     lootDecision = lootRule
@@ -2710,7 +2710,7 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     if ruletype == 'Global' or ruletype == 'Normal' then
-        lootDecision = LNS.checkClasses(lootRule, lootClasses, 'loot', newRule)
+        lootDecision = LNS.checkClasses(lootRule, lootClasses, fromFunction, newRule)
     end
 
     Logger.Info(LNS.guiLoot.console, 'RuleType: %s', ruletype)
@@ -2971,7 +2971,7 @@ function LNS.getRule(item, fromFunction, index)
 
     ::quest_override::
 
-    if fromFunction == 'loot' then
+    if fromFunction == 'loot' or fromFunction == 'forage' then
         if type(lootDecision) == 'string' then
             if not lootLore then
                 lootDecision = 'Ignore'
@@ -3506,17 +3506,12 @@ function LNS.lootCorpse(corpseID)
             if corpseItem() then
                 local corpseItemID = corpseItem.ID()
                 local isNoDrop     = corpseItem.NoDrop() or corpseItem.NoTrade()
-                local newNoDrop    = false
-                if LNS.ItemNames[corpseItemID] == nil and isNoDrop then
-                    newNoDrop = true
-                end
                 LNS.addToItemDB(corpseItem)
                 local itemRule, qKeep, newRule, iCanUse = LNS.getRule(corpseItem, 'loot', i)
                 mq.delay(1)
                 LNS.lootItem(i, itemRule, 'leftmouseup', qKeep, not iCanUse)
                 mq.delay(1)
                 Logger.Debug(LNS.guiLoot.console, "LootCorpse(): itemID=\ao%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s", corpseItemID, itemRule, qKeep, newRule)
-                newRule = newNoDrop or newRule
             end
 
             mq.delay(1)
@@ -3581,15 +3576,29 @@ function LNS.lootMobs(limit)
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Found %s corpses in range.', deadCount)
 
     -- Handle looting of the player's own corpse
-    local myCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse =%s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
-
-    if not LNS.Settings.LootMyCorpse and myCorpseCount > 0 then
-        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Puasing looting until finished looting my own corpse.')
-        LNS.finishedLooting()
-        return false
+    local pcCorpseCount = mq.TLO.SpawnCount(string.format("pccorpse %s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))()
+    local myCorpseCount = 0
+    local foundMine     = false
+    if pcCorpseCount > 0 then
+        for i = 1, pcCorpseCount do
+            local cps = mq.TLO.NearestSpawn(i, string.format("pccorpse %s radius %d zradius 100", mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
+            if cps() then
+                local cpsName = cps.CleanName():gsub("'s corpse", "")
+                if cpsName == mq.TLO.Me.CleanName() then
+                    foundMine = true
+                    myCorpseCount = myCorpseCount + 1
+                    if not LNS.Settings.LootMyCorpse and foundMine then
+                        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Puasing looting until finished looting my own corpse.')
+                        LNS.finishedLooting()
+                        return false
+                    end
+                end
+            end
+        end
     end
 
-    if LNS.Settings.LootMyCorpse and myCorpseCount > 0 then
+
+    if LNS.Settings.LootMyCorpse and foundMine then
         for i = 1, (limit or myCorpseCount) do
             local corpse = mq.TLO.NearestSpawn(string.format("%d, pccorpse =%s radius %d zradius 100", i, mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
             if corpse() then
@@ -3639,7 +3648,7 @@ function LNS.lootMobs(limit)
             end
 
             -- Attempt to move and loot the corpse
-            if corpse.DisplayName() == mq.TLO.Me.DisplayName() then
+            if corpse.DisplayName() == mq.TLO.Me.DisplayName() .. "'s corpse" then
                 Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Pulling own corpse closer. Corpse ID: %d', corpseID)
                 mq.cmdf("/corpse")
                 mq.delay(10)
@@ -3874,35 +3883,44 @@ end
 -- FORAGING
 
 function LNS.eventForage()
+    if foragingLoot then return end
+    foragingLoot = true
     if not LNS.Settings.LootForage then return end
     Logger.Debug(LNS.guiLoot.console, 'Enter eventForage')
     -- allow time for item to be on cursor incase message is faster or something?
     mq.delay(1000, function() return mq.TLO.Cursor() end)
     -- there may be more than one item on cursor so go until its cleared
-    while mq.TLO.Cursor() do
-        local cursorItem             = mq.TLO.Cursor
-        local foragedItem            = cursorItem.Name()
+    local loopStatus = true
+    while loopStatus do
+        local cursorItem  = mq.TLO.Cursor
+        local foragedItem = cursorItem.Name()
+        local cursorID    = cursorItem.ID() or 0
+        mq.delay(10)
         local ruleAction, ruleAmount = LNS.getRule(cursorItem, 'forage', 0)
+        --LNS.lookupLootRule(itemID,)
         local currentItemAmount      = mq.TLO.FindItemCount('=' .. foragedItem)()
         -- >= because .. does finditemcount not count the item on the cursor?
         if not shouldLootActions[ruleAction] or (ruleAction == 'Quest' and currentItemAmount >= ruleAmount) then
             if mq.TLO.Cursor.Name() == foragedItem then
                 if LNS.Settings.LootForageSpam then Logger.Info(LNS.guiLoot.console, 'Destroying foraged item ' .. foragedItem) end
                 mq.cmdf('/destroy')
-                mq.delay(500)
+                mq.delay(2000, function() return (mq.TLO.Cursor.ID() or -1) ~= cursorID end)
             end
             -- will a lore item we already have even show up on cursor?
             -- free inventory check won't cover an item too big for any container so may need some extra check related to that?
-        elseif (shouldLootActions[ruleAction] or currentItemAmount < ruleAmount) and (not cursorItem.Lore() or currentItemAmount == 0)
-            and (mq.TLO.Me.FreeInventory() or (cursorItem.Stackable() and cursorItem.FreeStack())) then
+        elseif (shouldLootActions[ruleAction]) and
+            (not cursorItem.Lore() or (cursorItem.Lore() and currentItemAmount == 0)) and
+            (mq.TLO.Me.FreeInventory() > LNS.Settings.SaveBagSlots) or (cursorItem.Stackable() and cursorItem.FreeStack()) then
             if LNS.Settings.LootForageSpam then Logger.Info(LNS.guiLoot.console, 'Keeping foraged item ' .. foragedItem) end
             mq.cmdf('/autoinv')
+            mq.delay(2000, function() return (mq.TLO.Cursor.ID() or -1) ~= cursorID end)
         else
             if LNS.Settings.LootForageSpam then Logger.Warn(LNS.guiLoot.console, 'Unable to process item ' .. foragedItem) end
             break
         end
-        mq.delay(50)
+        if not mq.TLO.Cursor() then loopStatus = false end
     end
+    foragingLoot = false
 end
 
 -- Process Items
@@ -5393,7 +5411,6 @@ function LNS.drawSwitch(settingName, who)
             ImGui.SetTooltip("%s %s", settingName, LNS.TempSettings[who][settingName] and "Enabled" or "Disabled")
         end
         if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
-            LNS.TempSettings[who][settingName] = not LNS.TempSettings[who][settingName]
             if LNS.Boxes[who][settingName] ~= LNS.TempSettings[who][settingName] then
                 LNS.Boxes[who][settingName] = LNS.TempSettings[who][settingName]
                 if who == MyName then
