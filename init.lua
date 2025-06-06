@@ -13,7 +13,7 @@ if not success then
 end
 local eqServer                       = string.gsub(mq.TLO.EverQuest.Server(), ' ', '_')
 local version                        = 6
-local MyName                         = mq.TLO.Me.CleanName()
+local MyName                         = mq.TLO.Me.DisplayName()
 local Mode                           = 'once'
 local Files                          = require('mq.Utils')
 local SettingsFile                   = string.format('%s/LootNScoot/%s/%s.lua', mq.configDir, eqServer, MyName)
@@ -1089,7 +1089,7 @@ function LNS.enterNewItemRuleInfo(data_table)
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
     end
     LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, modMessage)
-    if Mode == 'directed' then
+    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
         LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, modMessage)
     end
 
@@ -1499,7 +1499,7 @@ function LNS.addMyInventoryToDB()
     LNS.report(string.format("%s Imported %d items from Inventory, and %d items from the Bank, into the DB", MyName, counter, counterBank))
     local message = { who = MyName, Server = eqServer, action = 'ItemsDB_UPDATE', }
     LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-    if Mode == 'directed' then
+    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
         LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
     end
 end
@@ -2127,7 +2127,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID)
     --     LNS.addRule(itemID, 'GlobalItems', itemRule, LNS.TempItemClasses, itemLink)
     -- end
     LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, newMessage)
-    if Mode == 'directed' then
+    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
         LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, newMessage)
     end
 end
@@ -3051,7 +3051,7 @@ function LNS.sendMySettings()
     }
     LNS.Boxes[MyName] = LNS.Settings
     LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-    if Mode == 'directed' then
+    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
         LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
     end
 
@@ -3109,13 +3109,14 @@ function LNS.RegisterActors()
             ItemID = itemID,
             Rule = rule,
             Classes = itemClasses,
-            Directed = directions,
+            Directions = directions,
             Who = who,
             Link = itemLink,
+            LNS_Mode = Mode,
         }
-        Logger.Debug(LNS.guiLoot.console, dbgTbl)
         if Mode == 'directed' then
-            if directions == 'doloot' and who == MyName and (LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse) then
+            if directions == 'doloot' and who == MyName and (LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse) and not LNS.LootNow then
+                Logger.Debug(LNS.guiLoot.console, dbgTbl)
                 LNS.LootNow = true
                 return
             end
@@ -3542,7 +3543,7 @@ function LNS.lootCorpse(corpseID)
             LootedBy = MyName,
         }
         LNS.lootActor:send({ mailbox = 'looted', script = 'lootnscoot', }, message)
-        if Mode == 'directed' then
+        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
             LNS.lootActor:send({ mailbox = 'looted', script = LNS.DirectorLNSPath, }, message)
         end
         allItems = nil
@@ -3600,7 +3601,7 @@ function LNS.lootMobs(limit)
 
     if LNS.Settings.LootMyCorpse and foundMine then
         for i = 1, (limit or myCorpseCount) do
-            local corpse = mq.TLO.NearestSpawn(string.format("%d, pccorpse =%s radius %d zradius 100", i, mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
+            local corpse = mq.TLO.NearestSpawn(string.format("%d, pccorpse \"=%s's corpse\" radius %d zradius 100", i, mq.TLO.Me.CleanName(), LNS.Settings.CorpseRadius))
             if corpse() then
                 -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Adding my corpse to loot list. Corpse ID: %d', corpse.ID())
                 table.insert(corpseList, corpse)
@@ -3662,6 +3663,7 @@ function LNS.lootMobs(limit)
 
             if mobsNearby > 0 and not LNS.Settings.CombatLooting then
                 Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Stopping looting due to aggro.')
+                LNS.finishedLooting()
                 return didLoot
             end
 
@@ -3731,7 +3733,7 @@ function LNS.SellToVendor(itemID, bag, slot, name)
             and ('/itemnotify %s leftmouseup'):format(bag)
             or ('/itemnotify in pack%s %s leftmouseup'):format(bag, slot)
         mq.cmdf(notify)
-        mq.delay(5000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemName end)
+        mq.delay(1000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemName end)
         if mq.TLO.Window("MerchantWnd/MW_SelectedPriceLabel").Text() ~= "0c" then
             mq.cmdf('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
             mq.delay(5000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == '' end)
@@ -3791,10 +3793,10 @@ function LNS.RestockItems()
             mq.TLO.Window("MerchantWnd/MW_Buy_Button").LeftMouseUp()
             mq.delay(500, function() return mq.TLO.Window("QuantityWnd").Open() end)
             mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
-            mq.delay(100, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
+            mq.delay(1000, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
             Logger.Info(LNS.guiLoot.console, "\agBuying\ay " .. mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() .. "\at " .. itemName)
             mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
-            mq.delay(500)
+            mq.delay(500, function() return not mq.TLO.Window("QuantityWnd").Open() end)
             onHand = mq.TLO.FindItemCount(itemName)()
             if onHand < tmpVal then
                 Logger.Info(LNS.guiLoot.console, "\ayStack Max Size \axis \arLess\ax than \ax%s \aoHave\ax: \at%s\ax", tmpVal, onHand)
@@ -3938,11 +3940,11 @@ function LNS.processItems(action)
         if not item or not item.ID() then return end
         local itemID     = item.ID()
         local tradeskill = item.Tradeskills()
-        local rule       = LNS.NormalItemsRules[itemID]
-        if LNS.GlobalItemsRules[itemID] then
-            rule = LNS.GlobalItemsRules[itemID]
-        elseif LNS.PersonalItemsRules[itemID] then
+        local rule       = LNS.NormalItemsRules[itemID] or "Ignore"
+        if LNS.PersonalItemsRules[itemID] then
             rule = LNS.PersonalItemsRules[itemID]
+        elseif LNS.GlobalItemsRules[itemID] then
+            rule = LNS.GlobalItemsRules[itemID]
         elseif tradeskill and todo == 'Bank' then
             rule = (tradeskill and LNS.Settings.BankTradeskills) and 'Bank' or rule
         end
@@ -5449,7 +5451,7 @@ function LNS.renderSettingsSection(who)
             settings = LNS.Boxes[who],
         }
         LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-        if Mode == 'directed' then
+        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
             LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
         end
     end
@@ -5490,7 +5492,7 @@ function LNS.renderSettingsSection(who)
                 settings = tmpSet,
             }
             LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-            if Mode == 'directed' then
+            if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
                 LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
             end
             -- LNS.TempSettings.CloneWho = nil
@@ -6013,6 +6015,7 @@ local function RenderBtn()
             if ImGui.MenuItem("Toggle Pause Looting") then
                 LNS.PauseLooting = not LNS.PauseLooting
             end
+            _, debugPrint = ImGui.MenuItem(Icons.FA_BUG .. " Debug", nil, debugPrint)
             ImGui.EndPopup()
         end
 
@@ -6045,6 +6048,16 @@ function LNS.RenderMainUI()
             local sizeY = ImGui.GetWindowHeight() - 10
             if ImGui.BeginChild('Main', 0.0, 400, bit32.bor(ImGuiChildFlags.ResizeY, ImGuiChildFlags.Border)) then
                 ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
+                local pushColor = debugPrint and ImVec4(1.0, 0.4, 0.4, 0.4) or ImVec4(0.4, 1.0, 0.4, 0.4)
+                ImGui.PushStyleColor(ImGuiCol.Button, pushColor)
+                if ImGui.SmallButton(Icons.FA_BUG) then
+                    debugPrint = not debugPrint
+                end
+                ImGui.PopStyleColor(1)
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Toggle Debug Print")
+                end
+                ImGui.SameLine()
                 if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
                     -- loot.guiLoot.showReport = not loot.guiLoot.showReport
                     LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
@@ -6168,12 +6181,10 @@ end
 
 function LNS.processArgs(args)
     LNS.Terminate = true
-    local directorRunning = mq.TLO.Lua.Script(LNS.DirectorScript).Status() == 'RUNNING' or false
     if args == nil then return end
     if args[1] == 'directed' and args[2] ~= nil then
         if LNS.guiLoot ~= nil then
             LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
-
                 LNS.Settings.RecordData,
                 true,
                 LNS.Settings.UseActors,
@@ -6182,11 +6193,14 @@ function LNS.processArgs(args)
         end
         LNS.DirectorScript = args[2]
         LNS.DirectorLNSPath = string.format("%s/lib/lootnscoot", args[2])
+        if args[3] ~= nil then
+            LNS.DirectorLNSPath = args[3]
+        end
         Mode = 'directed'
         LNS.Terminate = false
         LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', },
             { action = 'Hello', Server = eqServer, who = MyName, })
-        if Mode == 'directed' then
+        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
             LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, },
                 { action = 'Hello', Server = eqServer, who = MyName, })
         end
@@ -6290,12 +6304,9 @@ while not LNS.Terminate do
         Logger.loglevel = 'info'
     end
 
-    if (LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse) and Mode ~= 'directed' then LNS.lootMobs() end
-
-    if LNS.LootNow and Mode == 'directed' then
-        -- LNS.LootNow = false
+    if (LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse) and
+        (Mode ~= 'directed' or (LNS.LootNow and Mode == 'directed')) then
         LNS.lootMobs()
-        LNS.LootNow = false
     end
 
     if doSell then
@@ -6437,7 +6448,7 @@ while not LNS.Terminate do
     --     LNS.Settings.DoDestroy = false
     --     Logger.Warn(LNS.guiLoot.console, "\ayBard Detected\ax, \arDisabling\ax [\atDoDestroy\ax].")
     -- end
-    mq.delay(5)
+    mq.delay(300)
 end
 
 if LNS.Terminate then
