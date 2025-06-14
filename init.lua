@@ -319,6 +319,7 @@ LNS.TempSettings.UpdatedBuyItems    = {}
 LNS.TempSettings.DeletedBuyKeys     = {}
 LNS.TempSettings.SortedSettingsKeys = {}
 LNS.TempSettings.SortedToggleKeys   = {}
+LNS.TempSettings.ShowHelp           = false
 LNS.TempSettings.UpdateSettings     = false
 LNS.TempSettings.SendSettings       = false
 LNS.TempSettings.LastZone           = nil
@@ -911,11 +912,13 @@ function LNS.commandHandler(...)
             Logger.Info(LNS.guiLoot.console, "\ayUpdated the DB from loot.ini \axand \atreloaded settings")
         elseif command == 'importinv' then
             LNS.addMyInventoryToDB()
-        elseif command == 'bank' then
+        elseif command == 'bankstuff' then
             LNS.processItems('Bank')
         elseif command == 'cleanup' then
-            -- LNS.processItems('Destroy')
+            LNS.processItems('Destroy')
             LNS.TempSettings.NeedsCleanup = true
+        elseif command == 'help' then
+            LNS.TempSettings.ShowHelp = true
         elseif command == 'gui' or command == 'console' and LNS.guiLoot then
             LNS.guiLoot.openGUI = not LNS.guiLoot.openGUI
         elseif command == 'report' and LNS.guiLoot then
@@ -995,7 +998,7 @@ function LNS.commandHandler(...)
 
             Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", item_name)
         end
-    elseif #args == 3 then
+    elseif #args == 3 or args[1] == 'globalitem' or args[1] == 'buy' then
         if args[1] == 'globalitem' and args[2] == 'quest' and item() then
             local itemID = item.ID()
             LNS.addRule(itemID, 'GlobalItems', 'Quest|' .. args[3], 'All', item.ItemLink('CLICKABLE')())
@@ -1244,10 +1247,10 @@ function LNS.AddSafeZone(zoneName)
     db:close()
     LNS.SafeZones[zoneName] = true
     LNS.send({
-            who = MyName,
-            action = 'addsafezone',
-            zone = zoneName,
-        })
+        who = MyName,
+        action = 'addsafezone',
+        zone = zoneName,
+    })
     if LNS.SafeZones[LNS.Zone] then
         Logger.Warn(LNS.guiLoot.console, "You are in a safe zone: \at%s\ax \ayLooting Disabled", LNS.Zone)
     end
@@ -1271,10 +1274,10 @@ function LNS.RemoveSafeZone(zoneName)
     db:close()
     LNS.SafeZones[zoneName] = nil
     LNS.send({
-            who = MyName,
-            action = 'removesafezone',
-            zone = zoneName,
-        })
+        who = MyName,
+        action = 'removesafezone',
+        zone = zoneName,
+    })
 end
 
 function LNS.LoadItemHistory(lookup_name)
@@ -1966,14 +1969,14 @@ DELETE FROM %s WHERE item_id = ?;
     if localName ~= 'PersonalItems' then
         LNS.TempSettings.NeedSave = true
         LNS.send({
-                action = 'reloadrules',
-                who = MyName,
-                Server = eqServer,
-                bulkLabel = localName,
-                bulkRules = LNS[localName .. 'Rules'],
-                bulkClasses = LNS[localName .. 'Classes'],
-                bulkLink = LNS[localName .. 'Link'],
-            })
+            action = 'reloadrules',
+            who = MyName,
+            Server = eqServer,
+            bulkLabel = localName,
+            bulkRules = LNS[localName .. 'Rules'],
+            bulkClasses = LNS[localName .. 'Classes'],
+            bulkLink = LNS[localName .. 'Link'],
+        })
     end
     LNS.TempSettings.BulkSet = {}
 end
@@ -2347,16 +2350,16 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link)
     if success then
         -- Notify other actors about the rule change
         LNS.send({
-                who     = MyName,
-                Server  = eqServer,
-                action  = action ~= 'delete' and 'addrule' or 'deleteitem',
-                item    = itemName,
-                itemID  = itemID,
-                rule    = action,
-                section = section,
-                link    = link,
-                classes = classes,
-            })
+            who     = MyName,
+            Server  = eqServer,
+            action  = action ~= 'delete' and 'addrule' or 'deleteitem',
+            item    = itemName,
+            itemID  = itemID,
+            rule    = action,
+            section = section,
+            link    = link,
+            classes = classes,
+        })
     end
 end
 
@@ -3156,21 +3159,21 @@ end
 
 function LNS.send(message, mailbox)
     if mailbox == 'loot_module' then
-        LNS.lootActor:send({mailbox = mailbox, script = LNS.DirectorScript}, message)
+        LNS.lootActor:send({ mailbox = mailbox, script = LNS.DirectorScript, }, message)
     elseif mailbox == 'looted' then
-        LNS.lootActor:send({mailbox = mailbox, script = LNS.DirectorLNSPath or 'lootnscoot'}, message)
+        LNS.lootActor:send({ mailbox = mailbox, script = LNS.DirectorLNSPath or 'lootnscoot', }, message)
     else
-        LNS.lootActor:send({mailbox = 'lootnscoot', script = LNS.DirectorLNSPath or 'lootnscoot'}, message)
+        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath or 'lootnscoot', }, message)
     end
 end
 
 function LNS.sendMySettings()
     LNS.Boxes[MyName] = LNS.Settings
     LNS.send({
-            who      = MyName,
-            action   = 'sendsettings',
-            settings = LNS.Settings,
-        })
+        who      = MyName,
+        action   = 'sendsettings',
+        settings = LNS.Settings,
+    })
 
     LNS.Boxes[MyName] = LNS.Settings
 
@@ -3180,14 +3183,14 @@ end
 function LNS.finishedLooting()
     if Mode == 'directed' then
         LNS.send({
-                Subject = 'done_looting',
-                Who = MyName,
-                CombatLooting = LNS.Settings.CombatLooting,
-                CorpseRadius = LNS.Settings.CorpseRadius,
-                LootMyCorpse = LNS.Settings.LootMyCorpse,
-                IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-                CorpsesToIgnore = lootedCorpses or {},
-            }, 'loot_module')
+            Subject = 'done_looting',
+            Who = MyName,
+            CombatLooting = LNS.Settings.CombatLooting,
+            CorpseRadius = LNS.Settings.CorpseRadius,
+            LootMyCorpse = LNS.Settings.LootMyCorpse,
+            IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
+            CorpsesToIgnore = lootedCorpses or {},
+        }, 'loot_module')
     end
     LNS.LootNow = false
 end
@@ -3196,14 +3199,14 @@ function LNS.informProcessing()
     if Mode == 'directed' then
         Logger.Info(LNS.guiLoot.console, "\ayInforming \ax\aw[\at%s\ax\aw]\ax that I am \agProcessing.", LNS.DirectorScript)
         LNS.send({
-                Subject = "processing",
-                Who = MyName,
-                CombatLooting = LNS.Settings.CombatLooting,
-                CorpseRadius = LNS.Settings.CorpseRadius,
-                LootMyCorpse = LNS.Settings.LootMyCorpse,
-                CorpsesToIgnore = lootedCorpses or {},
+            Subject = "processing",
+            Who = MyName,
+            CombatLooting = LNS.Settings.CombatLooting,
+            CorpseRadius = LNS.Settings.CorpseRadius,
+            LootMyCorpse = LNS.Settings.LootMyCorpse,
+            CorpsesToIgnore = lootedCorpses or {},
 
-            }, 'loot_module')
+        }, 'loot_module')
     end
 end
 
@@ -3211,15 +3214,15 @@ function LNS.doneProcessing()
     if Mode == 'directed' then
         Logger.Info(LNS.guiLoot.console, "\ayInforming \ax\aw[\at%s\ax\aw]\ax that I am \agDone Processing.", LNS.DirectorScript)
         LNS.send({
-                Subject = "done_processing",
-                Who = MyName,
-                CombatLooting = LNS.Settings.CombatLooting,
-                CorpseRadius = LNS.Settings.CorpseRadius,
-                LootMyCorpse = LNS.Settings.LootMyCorpse,
-                IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-                CorpsesToIgnore = lootedCorpses or {},
+            Subject = "done_processing",
+            Who = MyName,
+            CombatLooting = LNS.Settings.CombatLooting,
+            CorpseRadius = LNS.Settings.CorpseRadius,
+            LootMyCorpse = LNS.Settings.LootMyCorpse,
+            IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
+            CorpsesToIgnore = lootedCorpses or {},
 
-            }, 'loot_module')
+        }, 'loot_module')
     end
 end
 
@@ -3297,14 +3300,14 @@ function LNS.RegisterActors()
             if directions == 'getsettings_directed' or directions == 'getcombatsetting' then
                 Logger.Debug(LNS.guiLoot.console, dbgTbl)
                 LNS.send({
-                        Subject = 'mysetting',
-                        Who = MyName,
-                        CombatLooting = LNS.Settings.CombatLooting,
-                        CorpseRadius = LNS.Settings.CorpseRadius,
-                        LootMyCorpse = LNS.Settings.LootMyCorpse,
-                        IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-                        CorpsesToIgnore = lootedCorpses or {},
-                    }, 'loot_module')
+                    Subject = 'mysetting',
+                    Who = MyName,
+                    CombatLooting = LNS.Settings.CombatLooting,
+                    CorpseRadius = LNS.Settings.CorpseRadius,
+                    LootMyCorpse = LNS.Settings.LootMyCorpse,
+                    IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
+                    CorpsesToIgnore = lootedCorpses or {},
+                }, 'loot_module')
                 LNS.TempSettings.SentSettings = true
                 LNS.TempSettings.NeedSave = true
                 return
@@ -3914,14 +3917,14 @@ function LNS.lootMobs(limit)
 
             if allItems ~= nil and #allItems > 0 then
                 LNS.send({
-                        ID = corpseID,
-                        Items = allItems,
-                        Zone = LNS.Zone,
-                        Server = eqServer,
-                        LootedAt = mq.TLO.Time(),
-                        CorpseName = corpse.DisplayName() or 'unknown',
-                        LootedBy = MyName,
-                    }, 'looted')
+                    ID = corpseID,
+                    Items = allItems,
+                    Zone = LNS.Zone,
+                    Server = eqServer,
+                    LootedAt = mq.TLO.Time(),
+                    CorpseName = corpse.DisplayName() or 'unknown',
+                    LootedBy = MyName,
+                }, 'looted')
                 allItems = nil
             end
             ::continue::
@@ -3977,8 +3980,10 @@ end
 
 function LNS.openVendor()
     Logger.Debug(LNS.guiLoot.console, 'Opening merchant window')
-    mq.cmdf('/nomodkey /click right target')
+    mq.TLO.Target.RightClick()
     mq.delay(5000, function() return mq.TLO.Window('MerchantWnd').Open() end)
+    mq.delay(500) -- give the item list time to populate
+
     return mq.TLO.Window('MerchantWnd').Open()
 end
 
@@ -4035,41 +4040,63 @@ end
 -- BUYING
 
 function LNS.RestockItems()
-    local rowNum = 0
     for itemName, qty in pairs(LNS.BuyItemsTable) do
+        local rowNum = -1
         ::try_again::
         Logger.Info(LNS.guiLoot.console, 'Checking \ao%s \axfor \at%s \axto \agRestock', mq.TLO.Target.CleanName(), itemName)
-        local tmpVal = tonumber(qty) or 0
         mq.delay(500, function() return mq.TLO.Window("MerchantWnd/MW_ItemList").List(string.format("=%s", itemName), 2)() end)
-        rowNum       = mq.TLO.Window("MerchantWnd/MW_ItemList").List(string.format("=%s", itemName), 2)() or 0
+        rowNum = mq.TLO.Window("MerchantWnd/MW_ItemList").List(string.format("=%s", itemName), 2)() or -1
+        mq.delay(1)
+        if rowNum <= 0 then
+            Logger.Warn(LNS.guiLoot.console, "\arItem \ax%s \arnot found in vendor list\ax, skipping...", itemName)
+            goto next_item
+        end
         local onHand = mq.TLO.FindItemCount(itemName)()
-        local tmpQty = tmpVal - onHand
+        local tmpQty = (qty - onHand > 0) and qty - onHand or 0
         Logger.Debug(LNS.guiLoot.console, "\agHave\ax: \at%s\ax \aoNeed\ax: \ay%s \ax\ayROW\ax: \at%s", onHand, tmpQty, rowNum)
-        if rowNum ~= 0 and tmpQty > 0 then
+        if tmpQty > 0 then
             ::need_more::
-            Logger.Debug(LNS.guiLoot.console, "\ayRestocking \ax%s \aoHave\ax: \at%s\ax \agBuying\ax: \ay%s", itemName, onHand, tmpQty)
             mq.TLO.Window("MerchantWnd/MW_ItemList").Select(rowNum)()
+            Logger.Debug(LNS.guiLoot.console, "\ayRestocking \ax%s \aoHave\ax: \at%s\ax \agBuying\ax: \ay%s", itemName, onHand, tmpQty)
             mq.delay(3000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemName end)
             if mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() ~= itemName then
+                Logger.Warn(LNS.guiLoot.console, "\arFailed\ax to select item: \ay%s\ax, retrying...", itemName)
+                if LNS.TempSettings.RestockAttempts == nil then
+                    LNS.TempSettings.RestockAttempts = 0
+                end
+                if LNS.TempSettings.RestockAttempts >= 5 then
+                    Logger.Warn(LNS.guiLoot.console, "\arFailed to select item\ax: \ay%s\ax after 5 attempts, skipping...", itemName)
+                    LNS.TempSettings.RestockAttempts = 0
+                    goto next_item
+                end
+                LNS.TempSettings.RestockAttempts = LNS.TempSettings.RestockAttempts + 1
                 goto try_again
             end
             mq.TLO.Window("MerchantWnd/MW_Buy_Button").LeftMouseUp()
-            mq.delay(500, function() return mq.TLO.Window("QuantityWnd").Open() end)
-            mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
-            mq.delay(1000, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
-            Logger.Info(LNS.guiLoot.console, "\agBuying\ay " .. mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() .. "\at " .. itemName)
-            mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
-            mq.delay(500, function() return not mq.TLO.Window("QuantityWnd").Open() end)
+            mq.delay(1)
+            mq.delay(2000, function() return mq.TLO.Window("QuantityWnd").Open() or mq.TLO.FindItemCount(itemName)() > onHand end)
+            if mq.TLO.Window("QuantityWnd").Open() then
+                mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
+                mq.delay(20000, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
+                Logger.Info(LNS.guiLoot.console, "\agBuying\ay " .. mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() .. "\at " .. itemName)
+                mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
+                mq.delay(2000, function() return not mq.TLO.Window("QuantityWnd").Open() end)
+            end
+            mq.delay(2000, function() return (onHand < mq.TLO.FindItemCount(itemName)()) end) -- delay before checking counts so things can update or we get into a loop of rebuying the same item
             onHand = mq.TLO.FindItemCount(itemName)()
-            if onHand < tmpVal then
-                Logger.Info(LNS.guiLoot.console, "\ayStack Max Size \axis \arLess\ax than \ax%s \aoHave\ax: \at%s\ax", tmpVal, onHand)
-                tmpQty = tmpVal - onHand
+            mq.delay(1)
+            if onHand < qty then
+                Logger.Info(LNS.guiLoot.console, "\ayStack Max Size \axis \arLess\ax than \ax%s \aoHave\ax: \at%s\ax", qty, onHand)
+                tmpQty = (qty - onHand > 0) and qty - onHand or 0
                 mq.delay(10)
                 goto need_more
             end
         end
         mq.delay(500, function() return mq.TLO.FindItemCount(itemName)() >= qty end)
+        ::next_item::
     end
+    LNS.TempSettings.RestockAttempts = 0
+    Logger.Info(LNS.guiLoot.console, '\ayRestock \agComplete.')
     -- close window when done buying
     return mq.TLO.Window('MerchantWnd').DoClose()
 end
@@ -4349,6 +4376,194 @@ end
 --          GUI FUNCTIONS
 ------------------------------------
 
+function LNS.drawHelpWindow()
+    if not LNS.TempSettings.ShowHelp then
+        return
+    end
+    local openHelp, drawHelp = ImGui.Begin('Loot N Scoot Help', true)
+    if not openHelp then
+        LNS.TempSettings.ShowHelp = false
+        drawHelp = false
+    end
+
+    if drawHelp then
+        fontScale = ImGui.SliderFloat("Font Scale", fontScale, 1, 2)
+        ImGui.SetWindowFontScale(fontScale)
+        ImGui.TextWrapped('Loot N Scoot is a plugin for MQ2 that automates looting, selling, banking, and tributing items on EverQuest EMU Servers.')
+        ImGui.Separator()
+        if ImGui.CollapsingHeader('Commands:##LNSHelp') then
+            ImGui.SeparatorText("Startup Commands")
+
+            if ImGui.BeginTable("CommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+                ImGui.TableSetupColumn("Command")
+                ImGui.TableSetupColumn("Description")
+                ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot once')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Run LNS once through the loot cycle.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot standalone')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Run LNS in the background.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot tributestuff')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Tribute items to the Targeted Tribute Master then Close.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot sellstuff')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Sell items to the Targeted Vendor then Close.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot bankstuff')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Bank items to the Targeted Banker then Close.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot cleanup')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Destroy items in your inventory flagged Destroy then Close.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot directed')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Run LNS in Directed Mode, you will loot items when told by the directing script.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lua run lootnscoot directed scriptPath')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Run LNS in Directed Mode with a specific script path if using a bundled version, you will loot items when told by the directing script.')
+                ImGui.EndTable()
+            end
+            ImGui.Spacing()
+
+
+            ImGui.Spacing()
+
+            ImGui.SeparatorText("Basic Commands##LNSHelp")
+
+            if ImGui.BeginTable("BasicCommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+                ImGui.TableSetupColumn("Command")
+                ImGui.TableSetupColumn("Description")
+                ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns sellstuff')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Sell items to the Targeted Vendor.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns bankstuff')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Bank items in your inventory with the Targeted Banker.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns tributestuff')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Tribute items to the Targeted Tribute Master.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns restock')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Restock items from the Targeted Vendor.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns cleanup')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Destroy items in your inventory flagged Destroy.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns loot')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Loot corpses in range.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns set settingname [on|off|value]')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Set a setting in LNS. Use "on" or "off" for boolean settings, or a value for numeric settings.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns pause')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Pause LNS, this will stop all looting and processing until resumed.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns resume')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Resume LNS after it has been paused.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns help')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Show this help window.')
+                ImGui.EndTable()
+            end
+            ImGui.Spacing()
+
+            ImGui.SeparatorText("Item Commands##LNSHelp")
+            if ImGui.BeginTable("ItemCommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+                ImGui.TableSetupColumn("Command")
+                ImGui.TableSetupColumn("Description")
+                ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns [sell|keep|quest|bank|ignore|destroy]')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Set the item on your cursor to the specified rule.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns [sell|keep|quest|bank|ignore|destroy] itemName')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped(
+                    'Attempt to set the item with the specified name to the specified rule. Items with duplicate names in the db may not pick the right one. Recommend using the item lookup table in those cases.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns buy itemname [qty]')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped(
+                    'Attempt to add the item to the BuyItemsTable for restocking. If qty is not specified, it defaults to 1. If the item is already in the table, it will update the quantity.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns quest|#')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Set the item on your cursor to the Quest rule with the specified quantity. If no quantity is specified.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns find itemName')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Search for an item by name in the LNS database. This will return the item info for the first 20 matching items found.')
+                ImGui.EndTable()
+            end
+        end
+
+
+        ImGui.Spacing()
+
+        if ImGui.CollapsingHeader('Toggles:##LNSHelp') then
+            if ImGui.BeginTable("TogglesTable##LNSHelp", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+                ImGui.TableSetupColumn("Toggle")
+                ImGui.TableSetupColumn("Description")
+                ImGui.TableHeadersRow()
+                for k, v in pairs(LNS.Settings) do
+                    if type(v) == 'boolean' and not settingsNoDraw[k] then
+                        ImGui.TableNextRow()
+                        ImGui.TableNextColumn()
+                        ImGui.TextWrapped(k)
+                        ImGui.TableNextColumn()
+                        ImGui.TextWrapped(LNS.Tooltips[k] or "No tooltip available")
+                    end
+                end
+                ImGui.EndTable()
+            end
+        end
+
+        ImGui.Spacing()
+
+        if ImGui.CollapsingHeader('Settings:##LNSHelp') then
+            if ImGui.BeginTable("SettingsTable##LNSHelp", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+                ImGui.TableSetupColumn("Setting")
+                ImGui.TableSetupColumn("Description")
+                ImGui.TableHeadersRow()
+                for k, v in pairs(LNS.Settings) do
+                    if type(v) ~= 'boolean' and not settingsNoDraw[k] then
+                        ImGui.TableNextRow()
+                        ImGui.TableNextColumn()
+                        ImGui.TextWrapped(k)
+                        ImGui.TableNextColumn()
+                        ImGui.TextWrapped(LNS.Tooltips[k] or "No tooltip available")
+                    end
+                end
+                ImGui.EndTable()
+            end
+        end
+    end
+    ImGui.End()
+end
 
 function LNS.drawIcon(iconID, iconSize)
     if iconSize == nil then iconSize = 16 end
@@ -5742,10 +5957,10 @@ function LNS.renderSettingsSection(who)
 
     if ImGui.SmallButton("Send Settings##LootnScoot") then
         LNS.send({
-                action = 'updatesettings',
-                who = who,
-                settings = LNS.Boxes[who],
-            })
+            action = 'updatesettings',
+            who = who,
+            settings = LNS.Boxes[who],
+        })
     end
 
     ImGui.SeparatorText("Clone Settings")
@@ -6424,6 +6639,13 @@ function LNS.RenderMainUI()
                 if clicked then
                     Logger.Warn(LNS.guiLoot.console, "\ayDebugging\ax is now %s", debugPrint and "\agon" or "\aroff")
                 end
+                ImGui.SameLine()
+
+                LNS.TempSettings.ShowHelp, clicked = LNS.DrawToggle("Help##Toggle",
+                    LNS.TempSettings.ShowHelp,
+                    ImVec4(0.4, 1.0, 0.4, 0.4),
+                    ImVec4(1.0, 0.4, 0.4, 0.4),
+                    16, 36)
 
                 ImGui.SameLine()
                 if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
@@ -6533,6 +6755,8 @@ function LNS.RenderUIs()
 
     RenderBtn()
 
+    LNS.drawHelpWindow()
+
     if LNS.TempSettings.PastHistory then
         LNS.DrawRecord()
     end
@@ -6621,15 +6845,15 @@ function LNS.init(args)
     if Mode == 'directed' then
         -- send them our combat setting
         LNS.send({
-                Subject = 'settings',
-                Who = MyName,
-                CombatLooting = LNS.Settings.CombatLooting,
-                CorpseRadius = LNS.Settings.CorpseRadius,
-                LootMyCorpse = LNS.Settings.LootMyCorpse,
-                IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-                CorpsesToIgnore = lootedCorpses or {},
+            Subject = 'settings',
+            Who = MyName,
+            CombatLooting = LNS.Settings.CombatLooting,
+            CorpseRadius = LNS.Settings.CorpseRadius,
+            LootMyCorpse = LNS.Settings.LootMyCorpse,
+            IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
+            CorpsesToIgnore = lootedCorpses or {},
 
-            }, 'loot_module')
+        }, 'loot_module')
     end
     return needsSave
 end
@@ -6677,15 +6901,15 @@ function LNS.MainLoop()
             if Mode == 'directed' then
                 -- send them our combat setting
                 LNS.send({
-                        Subject = 'settings',
-                        Who = MyName,
-                        CombatLooting = LNS.Settings.CombatLooting,
-                        CorpseRadius = LNS.Settings.CorpseRadius,
-                        LootMyCorpse = LNS.Settings.LootMyCorpse,
-                        IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-                        CorpsesToIgnore = lootedCorpses or {},
+                    Subject = 'settings',
+                    Who = MyName,
+                    CombatLooting = LNS.Settings.CombatLooting,
+                    CorpseRadius = LNS.Settings.CorpseRadius,
+                    LootMyCorpse = LNS.Settings.LootMyCorpse,
+                    IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
+                    CorpsesToIgnore = lootedCorpses or {},
 
-                    }, 'loot_module')
+                }, 'loot_module')
             end
             LNS.TempSettings.LastZone = LNS.Zone
         end
@@ -6722,15 +6946,15 @@ function LNS.MainLoop()
                 LNS.TempSettings.LastLootMyCorpse = LNS.Settings.LootMyCorpse
                 LNS.TempSettings.LastIgnoreNearby = LNS.Settings.IgnoreMyNearCorpses
                 LNS.send({
-                        Subject = 'combatsetting',
-                        Who = MyName,
-                        CombatLooting = LNS.Settings.CombatLooting,
-                        CorpseRadius = LNS.Settings.CorpseRadius,
-                        LootMyCorpse = LNS.Settings.LootMyCorpse,
-                        IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-                        CorpsesToIgnore = lootedCorpses or {},
+                    Subject = 'combatsetting',
+                    Who = MyName,
+                    CombatLooting = LNS.Settings.CombatLooting,
+                    CorpseRadius = LNS.Settings.CorpseRadius,
+                    LootMyCorpse = LNS.Settings.LootMyCorpse,
+                    IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
+                    CorpsesToIgnore = lootedCorpses or {},
 
-                    }, 'loot_module')
+                }, 'loot_module')
             end
         end
 
