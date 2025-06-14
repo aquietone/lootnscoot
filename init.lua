@@ -279,7 +279,7 @@ if LNS.guiLoot ~= nil then
 end
 
 LNS.DirectorScript                  = 'none'
-LNS.DirectorLNSPath                 = 'none'
+LNS.DirectorLNSPath                 = nil
 LNS.BuyItemsTable                   = {}
 LNS.ALLITEMS                        = {}
 LNS.GlobalItemsRules                = {}
@@ -1154,17 +1154,11 @@ function LNS.enterNewItemRuleInfo(data_table)
         }
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
     end
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, modMessage)
-    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, modMessage)
-    end
+    LNS.send(modMessage)
 
     if LNS.Settings.AlwaysGlobal then
         modMessage.section = "GlobalItems"
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, modMessage)
-        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, modMessage)
-        end
+        LNS.send(modMessage)
     end
 end
 
@@ -1249,18 +1243,11 @@ function LNS.AddSafeZone(zoneName)
     db:exec("COMMIT")
     db:close()
     LNS.SafeZones[zoneName] = true
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, {
-        who = MyName,
-        action = 'addsafezone',
-        zone = zoneName,
-    })
-    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, {
+    LNS.send({
             who = MyName,
             action = 'addsafezone',
             zone = zoneName,
         })
-    end
     if LNS.SafeZones[LNS.Zone] then
         Logger.Warn(LNS.guiLoot.console, "You are in a safe zone: \at%s\ax \ayLooting Disabled", LNS.Zone)
     end
@@ -1283,18 +1270,11 @@ function LNS.RemoveSafeZone(zoneName)
     db:exec("COMMIT")
     db:close()
     LNS.SafeZones[zoneName] = nil
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, {
-        who = MyName,
-        action = 'removesafezone',
-        zone = zoneName,
-    })
-    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, {
+    LNS.send({
             who = MyName,
             action = 'removesafezone',
             zone = zoneName,
         })
-    end
 end
 
 function LNS.LoadItemHistory(lookup_name)
@@ -1641,11 +1621,7 @@ function LNS.addMyInventoryToDB()
     end
     Logger.Info(LNS.guiLoot.console, "\at%s \axImported \ag%d\ax items from \aoInventory\ax, and \ag%d\ax items from the \ayBank\ax, into the DB", MyName, counter, counterBank)
     LNS.report(string.format("%s Imported %d items from Inventory, and %d items from the Bank, into the DB", MyName, counter, counterBank))
-    local message = { who = MyName, Server = eqServer, action = 'ItemsDB_UPDATE', }
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
-    end
+    LNS.send({ who = MyName, Server = eqServer, action = 'ItemsDB_UPDATE', })
 end
 
 function LNS.addToItemDB(item)
@@ -1989,19 +1965,15 @@ DELETE FROM %s WHERE item_id = ?;
     db:close()
     if localName ~= 'PersonalItems' then
         LNS.TempSettings.NeedSave = true
-        local message = {
-            action = 'reloadrules',
-            who = MyName,
-            Server = eqServer,
-            bulkLabel = localName,
-            bulkRules = LNS[localName .. 'Rules'],
-            bulkClasses = LNS[localName .. 'Classes'],
-            bulkLink = LNS[localName .. 'Link'],
-        }
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
-        end
+        LNS.send({
+                action = 'reloadrules',
+                who = MyName,
+                Server = eqServer,
+                bulkLabel = localName,
+                bulkRules = LNS[localName .. 'Rules'],
+                bulkClasses = LNS[localName .. 'Classes'],
+                bulkLink = LNS[localName .. 'Link'],
+            })
     end
     LNS.TempSettings.BulkSet = {}
 end
@@ -2270,10 +2242,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID)
     -- if LNS.Settings.AlwaysGlobal then
     --     LNS.addRule(itemID, 'GlobalItems', itemRule, LNS.TempItemClasses, itemLink)
     -- end
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, newMessage)
-    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, newMessage)
-    end
+    LNS.send(newMessage)
 end
 
 ---comment: Takes in an item to modify the rules for, You can add, delete, or modify the rules for an item.
@@ -2377,21 +2346,17 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link)
 
     if success then
         -- Notify other actors about the rule change
-        local message = {
-            who     = MyName,
-            Server  = eqServer,
-            action  = action ~= 'delete' and 'addrule' or 'deleteitem',
-            item    = itemName,
-            itemID  = itemID,
-            rule    = action,
-            section = section,
-            link    = link,
-            classes = classes,
-        }
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
-        end
+        LNS.send({
+                who     = MyName,
+                Server  = eqServer,
+                action  = action ~= 'delete' and 'addrule' or 'deleteitem',
+                item    = itemName,
+                itemID  = itemID,
+                rule    = action,
+                section = section,
+                link    = link,
+                classes = classes,
+            })
     end
 end
 
@@ -3189,18 +3154,23 @@ end
 --          ACTORS
 ------------------------------------
 
+function LNS.send(message, mailbox)
+    if mailbox == 'loot_module' then
+        LNS.lootActor:send({mailbox = mailbox, script = LNS.DirectorScript}, message)
+    elseif mailbox == 'looted' then
+        LNS.lootActor:send({mailbox = mailbox, script = LNS.DirectorLNSPath or 'lootnscoot'}, message)
+    else
+        LNS.lootActor:send({mailbox = 'lootnscoot', script = LNS.DirectorLNSPath or 'lootnscoot'}, message)
+    end
+end
 
 function LNS.sendMySettings()
-    local message = {
-        who      = MyName,
-        action   = 'sendsettings',
-        settings = LNS.Settings,
-    }
     LNS.Boxes[MyName] = LNS.Settings
-    LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-    if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
-    end
+    LNS.send({
+            who      = MyName,
+            action   = 'sendsettings',
+            settings = LNS.Settings,
+        })
 
     LNS.Boxes[MyName] = LNS.Settings
 
@@ -3209,9 +3179,7 @@ end
 
 function LNS.finishedLooting()
     if Mode == 'directed' then
-        -- Logger.Info(LNS.guiLoot.console, "\ayInforming \ax\aw[\at%s\ax\aw]\ax that I am \agDone Looting.", LNS.DirectorScript)
-        LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, },
-            {
+        LNS.send({
                 Subject = 'done_looting',
                 Who = MyName,
                 CombatLooting = LNS.Settings.CombatLooting,
@@ -3219,7 +3187,7 @@ function LNS.finishedLooting()
                 LootMyCorpse = LNS.Settings.LootMyCorpse,
                 IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                 CorpsesToIgnore = lootedCorpses or {},
-            })
+            }, 'loot_module')
     end
     LNS.LootNow = false
 end
@@ -3227,8 +3195,7 @@ end
 function LNS.informProcessing()
     if Mode == 'directed' then
         Logger.Info(LNS.guiLoot.console, "\ayInforming \ax\aw[\at%s\ax\aw]\ax that I am \agProcessing.", LNS.DirectorScript)
-        LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, },
-            {
+        LNS.send({
                 Subject = "processing",
                 Who = MyName,
                 CombatLooting = LNS.Settings.CombatLooting,
@@ -3236,15 +3203,14 @@ function LNS.informProcessing()
                 LootMyCorpse = LNS.Settings.LootMyCorpse,
                 CorpsesToIgnore = lootedCorpses or {},
 
-            })
+            }, 'loot_module')
     end
 end
 
 function LNS.doneProcessing()
     if Mode == 'directed' then
         Logger.Info(LNS.guiLoot.console, "\ayInforming \ax\aw[\at%s\ax\aw]\ax that I am \agDone Processing.", LNS.DirectorScript)
-        LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, },
-            {
+        LNS.send({
                 Subject = "done_processing",
                 Who = MyName,
                 CombatLooting = LNS.Settings.CombatLooting,
@@ -3253,7 +3219,7 @@ function LNS.doneProcessing()
                 IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                 CorpsesToIgnore = lootedCorpses or {},
 
-            })
+            }, 'loot_module')
     end
 end
 
@@ -3330,8 +3296,7 @@ function LNS.RegisterActors()
             end
             if directions == 'getsettings_directed' or directions == 'getcombatsetting' then
                 Logger.Debug(LNS.guiLoot.console, dbgTbl)
-                LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, },
-                    {
+                LNS.send({
                         Subject = 'mysetting',
                         Who = MyName,
                         CombatLooting = LNS.Settings.CombatLooting,
@@ -3339,7 +3304,7 @@ function LNS.RegisterActors()
                         LootMyCorpse = LNS.Settings.LootMyCorpse,
                         IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                         CorpsesToIgnore = lootedCorpses or {},
-                    })
+                    }, 'loot_module')
                 LNS.TempSettings.SentSettings = true
                 LNS.TempSettings.NeedSave = true
                 return
@@ -3760,6 +3725,7 @@ function LNS.lootCorpse(corpseID)
     local items = mq.TLO.Corpse.Items() or 0
     Logger.Debug(LNS.guiLoot.console, "lootCorpse(): Loot window open. Items: %s", items)
     if items == 0 then
+        mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
         Logger.Debug(LNS.guiLoot.console, "lootCorpse(): \arNo items\ax to loot on corpse \at%s\ax (\ay%s\ax)", corpseName, corpseID)
         return true
     end
@@ -3947,19 +3913,15 @@ function LNS.lootMobs(limit)
             lootedCorpses[corpseID] = check
 
             if allItems ~= nil and #allItems > 0 then
-                local message = {
-                    ID = corpseID,
-                    Items = allItems,
-                    Zone = LNS.Zone,
-                    Server = eqServer,
-                    LootedAt = mq.TLO.Time(),
-                    CorpseName = corpse.DisplayName() or 'unknown',
-                    LootedBy = MyName,
-                }
-                LNS.lootActor:send({ mailbox = 'looted', script = 'lootnscoot', }, message)
-                if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-                    LNS.lootActor:send({ mailbox = 'looted', script = LNS.DirectorLNSPath, }, message)
-                end
+                LNS.send({
+                        ID = corpseID,
+                        Items = allItems,
+                        Zone = LNS.Zone,
+                        Server = eqServer,
+                        LootedAt = mq.TLO.Time(),
+                        CorpseName = corpse.DisplayName() or 'unknown',
+                        LootedBy = MyName,
+                    }, 'looted')
                 allItems = nil
             end
             ::continue::
@@ -5779,15 +5741,11 @@ function LNS.renderSettingsSection(who)
     ImGui.SameLine()
 
     if ImGui.SmallButton("Send Settings##LootnScoot") then
-        local message = {
-            action = 'updatesettings',
-            who = who,
-            settings = LNS.Boxes[who],
-        }
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
-        end
+        LNS.send({
+                action = 'updatesettings',
+                who = who,
+                settings = LNS.Boxes[who],
+            })
     end
 
     ImGui.SeparatorText("Clone Settings")
@@ -5820,15 +5778,11 @@ function LNS.renderSettingsSection(who)
         if ImGui.SmallButton("Clone Settings") then
             LNS.Boxes[LNS.TempSettings.CloneTo] = LNS.Boxes[LNS.TempSettings.CloneWho]
             local tmpSet = LNS.Boxes[LNS.TempSettings.CloneWho]
-            local message = {
+            LNS.send({
                 action = 'updatesettings',
                 who = LNS.TempSettings.CloneTo,
                 settings = tmpSet,
-            }
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', }, message)
-            if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-                LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, }, message)
-            end
+            })
             -- LNS.TempSettings.CloneWho = nil
             LNS.TempSettings.CloneTo = nil
         end
@@ -6606,18 +6560,12 @@ function LNS.processArgs(args)
                 false)
         end
         LNS.DirectorScript = args[2]
-        LNS.DirectorLNSPath = string.format("%s/lib/lootnscoot", args[2])
         if args[3] ~= nil then
             LNS.DirectorLNSPath = args[3]
         end
         Mode = 'directed'
         LNS.Terminate = false
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script = 'lootnscoot', },
-            { action = 'Hello', Server = eqServer, who = MyName, })
-        if Mode == 'directed' and LNS.DirectorLNSPath ~= 'lootnscoot' then
-            LNS.lootActor:send({ mailbox = 'lootnscoot', script = LNS.DirectorLNSPath, },
-                { action = 'Hello', Server = eqServer, who = MyName, })
-        end
+        LNS.send({ action = 'Hello', Server = eqServer, who = MyName, })
     elseif args[1] == 'sellstuff' then
         LNS.processItems('Sell')
     elseif args[1] == 'tributestuff' then
@@ -6639,8 +6587,7 @@ function LNS.processArgs(args)
         end
         Mode = 'standalone'
         LNS.Terminate = false
-        LNS.lootActor:send({ mailbox = 'lootnscoot', script == 'lootnscoot', },
-            { action = 'Hello', Server = eqServer, who = MyName, })
+        LNS.send({ action = 'Hello', Server = eqServer, who = MyName, })
     end
 end
 
@@ -6673,8 +6620,7 @@ function LNS.init(args)
     if needsSave then LNS.writeSettings("Init()") end
     if Mode == 'directed' then
         -- send them our combat setting
-        LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, },
-            {
+        LNS.send({
                 Subject = 'settings',
                 Who = MyName,
                 CombatLooting = LNS.Settings.CombatLooting,
@@ -6683,7 +6629,7 @@ function LNS.init(args)
                 IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                 CorpsesToIgnore = lootedCorpses or {},
 
-            })
+            }, 'loot_module')
     end
     return needsSave
 end
@@ -6730,8 +6676,7 @@ function LNS.MainLoop()
 
             if Mode == 'directed' then
                 -- send them our combat setting
-                LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, },
-                    {
+                LNS.send({
                         Subject = 'settings',
                         Who = MyName,
                         CombatLooting = LNS.Settings.CombatLooting,
@@ -6740,7 +6685,7 @@ function LNS.MainLoop()
                         IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                         CorpsesToIgnore = lootedCorpses or {},
 
-                    })
+                    }, 'loot_module')
             end
             LNS.TempSettings.LastZone = LNS.Zone
         end
@@ -6776,8 +6721,7 @@ function LNS.MainLoop()
                 LNS.TempSettings.LastCorpseRadius = LNS.Settings.CorpseRadius
                 LNS.TempSettings.LastLootMyCorpse = LNS.Settings.LootMyCorpse
                 LNS.TempSettings.LastIgnoreNearby = LNS.Settings.IgnoreMyNearCorpses
-                LNS.lootActor:send({ mailbox = 'loot_module', script = LNS.DirectorScript, },
-                    {
+                LNS.send({
                         Subject = 'combatsetting',
                         Who = MyName,
                         CombatLooting = LNS.Settings.CombatLooting,
@@ -6786,7 +6730,7 @@ function LNS.MainLoop()
                         IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                         CorpsesToIgnore = lootedCorpses or {},
 
-                    })
+                    }, 'loot_module')
             end
         end
 
