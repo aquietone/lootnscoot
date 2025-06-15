@@ -3728,7 +3728,8 @@ function LNS.lootCorpse(corpseID)
         return false
     end
 
-    local corpseName = mq.TLO.Corpse.CleanName():lower() or 'none'
+    local corpseName = mq.TLO.Corpse.CleanName() or 'none'
+    corpseName = corpseName:lower()
 
     mq.delay(1000, function() return mq.TLO.Corpse.Items() end)
     local items = mq.TLO.Corpse.Items() or 0
