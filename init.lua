@@ -331,6 +331,7 @@ LNS.Zone                            = mq.TLO.Zone.ShortName()
 local tableList            = {
     "Global_Items", "Normal_Items", LNS.PersonalTableName,
 }
+
 local tableListRules       = {
     "Global_Rules", "Normal_Rules", LNS.PersonalTableName,
 }
@@ -3170,9 +3171,15 @@ end
 function LNS.sendMySettings()
     LNS.Boxes[MyName] = LNS.Settings
     LNS.send({
-        who      = MyName,
-        action   = 'sendsettings',
-        settings = LNS.Settings,
+        who             = MyName,
+        action          = 'sendsettings',
+        settings        = LNS.Settings,
+        CorpsesToIgnore = lootedCorpses or {},
+        CombatLooting   = LNS.Settings.CombatLooting,
+        CorpseRadius    = LNS.Settings.CorpseRadius,
+        LootMyCorpse    = LNS.Settings.LootMyCorpse,
+        IgnoreNearby    = LNS.Settings.IgnoreMyNearCorpses,
+
     })
 
     LNS.Boxes[MyName] = LNS.Settings
@@ -3185,11 +3192,12 @@ function LNS.finishedLooting()
         LNS.send({
             Subject = 'done_looting',
             Who = MyName,
+            LNSSettings = LNS.Settings,
+            CorpsesToIgnore = lootedCorpses or {},
             CombatLooting = LNS.Settings.CombatLooting,
             CorpseRadius = LNS.Settings.CorpseRadius,
             LootMyCorpse = LNS.Settings.LootMyCorpse,
             IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-            CorpsesToIgnore = lootedCorpses or {},
         }, 'loot_module')
     end
     LNS.LootNow = false
@@ -3201,11 +3209,12 @@ function LNS.informProcessing()
         LNS.send({
             Subject = "processing",
             Who = MyName,
+            LNSSettings = LNS.Settings,
+            CorpsesToIgnore = lootedCorpses or {},
             CombatLooting = LNS.Settings.CombatLooting,
             CorpseRadius = LNS.Settings.CorpseRadius,
             LootMyCorpse = LNS.Settings.LootMyCorpse,
-            CorpsesToIgnore = lootedCorpses or {},
-
+            IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
         }, 'loot_module')
     end
 end
@@ -3216,12 +3225,12 @@ function LNS.doneProcessing()
         LNS.send({
             Subject = "done_processing",
             Who = MyName,
+            LNSSettings = LNS.Settings,
+            CorpsesToIgnore = lootedCorpses or {},
             CombatLooting = LNS.Settings.CombatLooting,
             CorpseRadius = LNS.Settings.CorpseRadius,
             LootMyCorpse = LNS.Settings.LootMyCorpse,
             IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
-            CorpsesToIgnore = lootedCorpses or {},
-
         }, 'loot_module')
     end
 end
@@ -3302,10 +3311,7 @@ function LNS.RegisterActors()
                 LNS.send({
                     Subject = 'mysetting',
                     Who = MyName,
-                    CombatLooting = LNS.Settings.CombatLooting,
-                    CorpseRadius = LNS.Settings.CorpseRadius,
-                    LootMyCorpse = LNS.Settings.LootMyCorpse,
-                    IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
+                    LNSSettings = LNS.Settings,
                     CorpsesToIgnore = lootedCorpses or {},
                 }, 'loot_module')
                 LNS.TempSettings.SentSettings = true
@@ -3729,6 +3735,7 @@ function LNS.lootCorpse(corpseID)
     Logger.Debug(LNS.guiLoot.console, "lootCorpse(): Loot window open. Items: %s", items)
     if items == 0 then
         mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
+        mq.TLO.Window('LootWnd').DoClose()
         Logger.Debug(LNS.guiLoot.console, "lootCorpse(): \arNo items\ax to loot on corpse \at%s\ax (\ay%s\ax)", corpseName, corpseID)
         return true
     end
@@ -3766,6 +3773,7 @@ function LNS.lootCorpse(corpseID)
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
     mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
+    mq.TLO.Window('LootWnd').DoClose()
     mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
 
     if mq.TLO.Spawn(('corpse id %s'):format(corpseID))() then
@@ -3791,6 +3799,11 @@ function LNS.lootMobs(limit)
         LNS.finishedLooting()
         return false
     end
+
+    if mq.TLO.Corpse.DisplayName() and mq.TLO.Corpse.DisplayName() ~= mq.TLO.Me.DisplayName() then
+        mq.TLO.Window('LootWnd').DoClose()
+    end
+
     if limit == nil then limit = 50 end
     if zoneID ~= mq.TLO.Zone.ID() then
         zoneID        = mq.TLO.Zone.ID()
@@ -3914,6 +3927,7 @@ function LNS.lootMobs(limit)
             corpse.DoTarget()
             check                   = LNS.lootCorpse(corpseID)
             lootedCorpses[corpseID] = check
+            mq.TLO.Window('LootWnd').DoClose()
 
             if allItems ~= nil and #allItems > 0 then
                 LNS.send({
@@ -6977,7 +6991,7 @@ function LNS.MainLoop()
             end
         elseif LNS.LootNow and Mode == 'directed' then
             if checkDif > LNS.Settings.LootCheckDelay then
-                LNS.lootMobs(LNS.TempSettings.LootLimit or 1)
+                LNS.lootMobs(LNS.TempSettings.LootLimit or LNS.Settings.MaxCorpsesPerCycle)
             else
                 -- Logger.Debug(LNS.guiLoot.console, "\atToo Soon\ax CheckDelay: \ag%s\ax seconds, LastCheck: \ag%0.2f\ax seconds ago",
                 -- LNS.Settings.LootCheckDelay, checkDif)
