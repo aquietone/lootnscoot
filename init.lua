@@ -235,10 +235,9 @@ LNS.Tooltips    = {
     LootNoDropNew       = "Enable looting of new NoDrop items.",
     LootQuest           = "Enable Looting of Items Marked 'Quest', requires LootNoDrop on to loot NoDrop quest items",
     DoDestroy           = "Enable Destroy functionality. Otherwise 'Destroy' acts as 'Ignore'",
-    AlwaysDestroy       = {
-        [1] = "Always Destroy items to clean corpese Will Destroy Non-Quest items marked 'Ignore' items",
-        [2] = "REQUIRES DoDestroy set to true",
-    },
+    AlwaysDestroy       = [[
+Always Destroy items to clean corpese Will Destroy Non-Quest items marked 'Ignore' items",
+REQUIRES DoDestroy set to true.]],
     QuestKeep           = "Default number to keep if item not set using Quest|# format.",
     LootChannel         = "Channel we report loot to.",
     GroupChannel        = "Channel we use for Group Commands Default(dgze)",
@@ -4391,7 +4390,7 @@ end
 --          GUI FUNCTIONS
 ------------------------------------
 
-function LNS.drawHelpWindow()
+function LNS.renderHelpWindow()
     if not LNS.TempSettings.ShowHelp then
         return
     end
@@ -4409,7 +4408,7 @@ function LNS.drawHelpWindow()
         if ImGui.CollapsingHeader('Commands:##LNSHelp') then
             ImGui.SeparatorText("Startup Commands")
 
-            if ImGui.BeginTable("CommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+            if ImGui.BeginTable("CommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
                 ImGui.TableSetupColumn("Command")
                 ImGui.TableSetupColumn("Description")
                 ImGui.TableHeadersRow()
@@ -4455,7 +4454,7 @@ function LNS.drawHelpWindow()
 
             ImGui.SeparatorText("Basic Commands##LNSHelp")
 
-            if ImGui.BeginTable("BasicCommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+            if ImGui.BeginTable("BasicCommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
                 ImGui.TableSetupColumn("Command")
                 ImGui.TableSetupColumn("Description")
                 ImGui.TableHeadersRow()
@@ -4505,25 +4504,34 @@ function LNS.drawHelpWindow()
             ImGui.Spacing()
 
             ImGui.SeparatorText("Item Commands##LNSHelp")
-            if ImGui.BeginTable("ItemCommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+            if ImGui.BeginTable("ItemCommandsTable", 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
                 ImGui.TableSetupColumn("Command")
                 ImGui.TableSetupColumn("Description")
                 ImGui.TableHeadersRow()
                 ImGui.TableNextRow()
+
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('/lns [sell|keep|quest|bank|ignore|destroy]')
+
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('Set the item on your cursor to the specified rule.')
+
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('/lns [sell|keep|quest|bank|ignore|destroy] itemName')
+
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped(
-                    'Attempt to set the item with the specified name to the specified rule. Items with duplicate names in the db may not pick the right one. Recommend using the item lookup table in those cases.')
+                    [[Attempt to set the item with the specified name to the specified rule.
+Items with duplicate names in the db may not pick the right one.
+Recommend using the item lookup table in those cases.]])
                 ImGui.TableNextColumn()
+
                 ImGui.TextWrapped('/lns buy itemname [qty]')
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped(
-                    'Attempt to add the item to the BuyItemsTable for restocking. If qty is not specified, it defaults to 1. If the item is already in the table, it will update the quantity.')
+                    [[Attempt to add the item to the BuyItemsTable for restocking.
+If qty is not specified, it defaults to 1.
+If the item is already in the table, it will update the quantity.]])
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('/lns quest|#')
                 ImGui.TableNextColumn()
@@ -4531,7 +4539,9 @@ function LNS.drawHelpWindow()
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('/lns find itemName')
                 ImGui.TableNextColumn()
-                ImGui.TextWrapped('Search for an item by name in the LNS database. This will return the item info for the first 20 matching items found.')
+                ImGui.TextWrapped(
+                    [[Search for an item by name in the LNS database.
+This will return the item info for the first 20 matching items found.]])
                 ImGui.EndTable()
             end
         end
@@ -4540,7 +4550,7 @@ function LNS.drawHelpWindow()
         ImGui.Spacing()
 
         if ImGui.CollapsingHeader('Toggles:##LNSHelp') then
-            if ImGui.BeginTable("TogglesTable##LNSHelp", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+            if ImGui.BeginTable("TogglesTable##LNSHelp", 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
                 ImGui.TableSetupColumn("Toggle")
                 ImGui.TableSetupColumn("Description")
                 ImGui.TableHeadersRow()
@@ -4560,7 +4570,7 @@ function LNS.drawHelpWindow()
         ImGui.Spacing()
 
         if ImGui.CollapsingHeader('Settings:##LNSHelp') then
-            if ImGui.BeginTable("SettingsTable##LNSHelp", 2, bit32.bor(ImGuiTableFlags.Borders)) then
+            if ImGui.BeginTable("SettingsTable##LNSHelp", 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
                 ImGui.TableSetupColumn("Setting")
                 ImGui.TableSetupColumn("Description")
                 ImGui.TableHeadersRow()
@@ -5955,8 +5965,9 @@ function LNS.drawSwitch(settingName, who)
     end
 end
 
-function LNS.renderSettingsSection(who)
-    if who == nil then who = MyName end
+function LNS.renderSettingsTables(who)
+    if who == nil then return end
+
     local col = 2
     col = math.max(2, math.floor(ImGui.GetContentRegionAvail() / 140))
     local colCount = col + (col % 2)
@@ -5967,60 +5978,9 @@ function LNS.renderSettingsSection(who)
             colCount = colCount - 2
         end
     end
-
-    ImGui.SameLine()
-
-    if ImGui.SmallButton("Send Settings##LootnScoot") then
-        LNS.send({
-            action = 'updatesettings',
-            who = who,
-            settings = LNS.Boxes[who],
-        })
-    end
-
-    ImGui.SeparatorText("Clone Settings")
-    ImGui.SetNextItemWidth(120)
-
-    if ImGui.BeginCombo('##Source', LNS.TempSettings.CloneWho or "Select Source") then
-        for _, k in ipairs(LNS.BoxKeys) do
-            if ImGui.Selectable(k) then
-                LNS.TempSettings.CloneWho = k
-            end
-        end
-        ImGui.EndCombo()
-    end
-
-    ImGui.SameLine()
-
-    ImGui.SetNextItemWidth(120)
-    if ImGui.BeginCombo('##Dest', LNS.TempSettings.CloneTo or "Select Destination") then
-        for _, k in ipairs(LNS.BoxKeys) do
-            if ImGui.Selectable(k) then
-                LNS.TempSettings.CloneTo = k
-            end
-        end
-        ImGui.EndCombo()
-    end
-
-    if LNS.TempSettings.CloneWho and LNS.TempSettings.CloneTo then
-        ImGui.SameLine()
-
-        if ImGui.SmallButton("Clone Settings") then
-            LNS.Boxes[LNS.TempSettings.CloneTo] = LNS.Boxes[LNS.TempSettings.CloneWho]
-            local tmpSet = LNS.Boxes[LNS.TempSettings.CloneWho]
-            LNS.send({
-                action = 'updatesettings',
-                who = LNS.TempSettings.CloneTo,
-                settings = tmpSet,
-            })
-            -- LNS.TempSettings.CloneWho = nil
-            LNS.TempSettings.CloneTo = nil
-        end
-    end
-
-
     local sorted_settings = LNS.SortTableColums(nil, LNS.TempSettings.SortedSettingsKeys, colCount / 2)
     local sorted_toggles = LNS.SortTableColums(nil, LNS.TempSettings.SortedToggleKeys, colCount / 2)
+
     if ImGui.CollapsingHeader(string.format("Settings %s##%s", who, who)) then
         if ImGui.BeginTable("##Settings", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.AutoResizeY, ImGuiTableFlags.Resizable)) then
             ImGui.TableSetupScrollFreeze(colCount, 1)
@@ -6030,7 +5990,8 @@ function LNS.renderSettingsSection(who)
             end
             ImGui.TableHeadersRow()
 
-            for i, settingName in ipairs(sorted_settings) do
+            for i, settingName in ipairs(sorted_settings or {}) do
+                if who == nil then break end
                 if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
                     if LNS.TempSettings[who] == nil then
                         LNS.TempSettings[who] = {}
@@ -6038,7 +5999,7 @@ function LNS.renderSettingsSection(who)
                     if LNS.TempSettings[who][settingName] == nil then
                         LNS.TempSettings[who][settingName] = LNS.Boxes[who][settingName]
                     end
-                    if type(LNS.Boxes[who][settingName]) ~= "boolean" then
+                    if who ~= nil and LNS.TempSettings[who][settingName] ~= nil and type(LNS.Boxes[who][settingName]) ~= "boolean" then
                         ImGui.PushID(settingName)
                         ImGui.TableNextColumn()
                         ImGui.Indent(2)
@@ -6097,14 +6058,15 @@ function LNS.renderSettingsSection(who)
 
     if ImGui.CollapsingHeader(string.format("Toggles %s##%s", who, who)) then
         if ImGui.BeginTable("Toggles##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)) then
-            ImGui.TableSetupScrollFreeze(colCount, 1)
-            for i = 1, colCount / 2 do
+            ImGui.TableSetupScrollFreeze(2, 1)
+            for i = 1, 2 / 2 do
                 ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
                 ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 80)
             end
             ImGui.TableHeadersRow()
 
-            for i, settingName in ipairs(sorted_toggles) do
+            for i, settingName in ipairs(sorted_toggles or {}) do
+                if who == nil then break end
                 if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
                     if LNS.TempSettings[who] == nil then
                         LNS.TempSettings[who] = {}
@@ -6112,7 +6074,7 @@ function LNS.renderSettingsSection(who)
                     if LNS.TempSettings[who][settingName] == nil then
                         LNS.TempSettings[who][settingName] = LNS.Boxes[who][settingName]
                     end
-                    if type(LNS.Boxes[who][settingName]) == "boolean" then
+                    if who ~= nil and type(LNS.Boxes[who][settingName]) == "boolean" then
                         ImGui.PushID(settingName)
                         ImGui.TableNextColumn()
                         ImGui.Indent(2)
@@ -6147,6 +6109,167 @@ function LNS.renderSettingsSection(who)
             ImGui.EndTable()
         end
     end
+end
+
+function LNS.renderCloneWindow()
+    if not LNS.TempSettings.PopCloneWindow then
+        return
+    end
+    ImGui.SetNextWindowSize(ImVec2(650, 400), ImGuiCond.Appearing)
+    local openClone, showClone = ImGui.Begin("Clone Who##who_settings", true)
+    if not openClone then
+        LNS.TempSettings.CloneTo = nil
+        LNS.TempSettings.PopCloneWindow = false
+        showClone = false
+    end
+    if showClone then
+        ImGui.SeparatorText("Clone Settings")
+        ImGui.SetNextItemWidth(120)
+
+        -- if ImGui.BeginCombo('##Source', LNS.TempSettings.CloneWho or "Select Source") then
+        --     for _, k in ipairs(LNS.BoxKeys) do
+        --         if ImGui.Selectable(k) then
+        --             LNS.TempSettings.CloneWho = k
+        --         end
+        --     end
+        --     ImGui.EndCombo()
+        -- end
+
+        -- ImGui.SameLine()
+
+        -- ImGui.SetNextItemWidth(120)
+        -- if ImGui.BeginCombo('##Dest', LNS.TempSettings.CloneTo or "Select Destination") then
+        --     for _, k in ipairs(LNS.BoxKeys) do
+        --         if ImGui.Selectable(k) then
+        --             LNS.TempSettings.CloneTo = k
+        --         end
+        --     end
+        --     ImGui.EndCombo()
+        -- end
+        ImGui.SetNextItemWidth(150)
+        ImGui.InputTextWithHint("Clone Who##CloneWho", "Source Character", LNS.TempSettings.CloneWho or "", ImGuiInputTextFlags.ReadOnly)
+        ImGui.SameLine()
+
+        ImGui.SetNextItemWidth(150)
+        ImGui.InputTextWithHint("Clone To##CloneTo", "Destination Character", LNS.TempSettings.CloneTo or "", ImGuiInputTextFlags.ReadOnly)
+
+        if LNS.TempSettings.CloneWho and LNS.TempSettings.CloneTo then
+            ImGui.SameLine()
+            LNS.TempSettings.PopCloneWindow = true
+
+            if ImGui.SmallButton("Clone Now") then
+                LNS.Boxes[LNS.TempSettings.CloneTo] = LNS.Boxes[LNS.TempSettings.CloneWho]
+                local tmpSet = LNS.Boxes[LNS.TempSettings.CloneWho]
+                LNS.send({
+                    action = 'updatesettings',
+                    who = LNS.TempSettings.CloneTo,
+                    settings = tmpSet,
+                })
+                -- LNS.TempSettings.CloneWho = nil
+                LNS.TempSettings.CloneTo = nil
+            end
+        end
+        ImGui.Spacing()
+        ImGui.SeparatorText("Clone Settings Tables")
+        ImGui.Spacing()
+        -- left panel
+        if ImGui.BeginChild("Clone Who##list", 200, 0.0, ImGuiChildFlags.Border) then
+            --list of boxes right click to select where to set them as cloneWho or cloneTo
+            ImGui.TextWrapped("Right click a name to select as either Source or Destination")
+            ImGui.Separator()
+            for _, k in ipairs(LNS.BoxKeys) do
+                ImGui.PushID(k)
+                if LNS.TempSettings.CloneWho == k then
+                    ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.4, 1.0, 0.1, 1.0))
+                elseif LNS.TempSettings.CloneTo == k then
+                    ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.0, 1.0, 1.0, 1.0))
+                else
+                    ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.8, 0.8, 0.8, 1.0))
+                end
+                ImGui.Selectable(k, LNS.TempSettings.CloneWho == k or LNS.TempSettings.CloneTo == k)
+
+                ImGui.PopStyleColor()
+                if ImGui.BeginPopupContextItem("##CloneWhoContext") then
+                    if ImGui.Selectable("Set as Source") then
+                        if LNS.TempSettings.CloneTo == k then
+                            LNS.TempSettings.CloneTo = nil
+                        end
+                        LNS.TempSettings.CloneWho = k
+                    end
+                    if ImGui.Selectable("Set as Destination") then
+                        if LNS.TempSettings.CloneWho == k then
+                            LNS.TempSettings.CloneWho = nil
+                        end
+                        LNS.TempSettings.CloneTo = k
+                    end
+                    if ImGui.Selectable("Clear Selection") then
+                        if k == LNS.TempSettings.CloneWho then
+                            LNS.TempSettings.CloneWho = nil
+                        elseif k == LNS.TempSettings.CloneTo then
+                            LNS.TempSettings.CloneTo = nil
+                        end
+                    end
+                    ImGui.EndPopup()
+                end
+                ImGui.PopID()
+            end
+        end
+        ImGui.EndChild()
+        ImGui.SameLine()
+
+        -- middle Panel
+        if ImGui.BeginChild("Clone Who##who_settings_left", 200, 0.0, ImGuiChildFlags.Border) then
+            ImGui.Text("Select Settings to Clone")
+            ImGui.Separator()
+            LNS.renderSettingsTables(LNS.TempSettings.CloneWho)
+        end
+        ImGui.EndChild()
+        ImGui.SameLine()
+        -- right panel
+
+        if ImGui.BeginChild("Clone Who##who_settings_right", 200, 0.0, ImGuiChildFlags.Border) then
+            ImGui.Text("Select Settings to Apply")
+            ImGui.Separator()
+            LNS.renderSettingsTables(LNS.TempSettings.CloneTo)
+        end
+        ImGui.EndChild()
+    end
+    ImGui.End()
+end
+
+function LNS.renderSettingsSection(who)
+    if who == nil then who = MyName end
+
+
+    ImGui.SameLine()
+
+    if ImGui.SmallButton("Send Settings##LootnScoot") then
+        LNS.send({
+            action = 'updatesettings',
+            who = who,
+            settings = LNS.Boxes[who],
+        })
+    end
+
+    ImGui.SameLine()
+
+    if ImGui.SmallButton("Clone Settings##LootnScoot") then
+        LNS.TempSettings.PopCloneWindow = true
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.BeginTooltip()
+        ImGui.PushTextWrapPos(200)
+        ImGui.Text("Opens a window to clone settings from one character to another.")
+        ImGui.Text("You can select a source character and a destination character.")
+        ImGui.Text("The destination character will receive a copy of the source character's settings.")
+        ImGui.PopTextWrapPos()
+        ImGui.EndTooltip()
+    end
+    ImGui.Spacing()
+
+    LNS.renderSettingsTables(who)
+
+    ImGui.Spacing()
 
     if ImGui.CollapsingHeader('SafeZones##LNS') then
         if LNS.TempSettings.NewSafeZone == nil then
@@ -6770,7 +6893,9 @@ function LNS.RenderUIs()
 
     RenderBtn()
 
-    LNS.drawHelpWindow()
+    LNS.renderCloneWindow()
+
+    LNS.renderHelpWindow()
 
     if LNS.TempSettings.PastHistory then
         LNS.DrawRecord()
