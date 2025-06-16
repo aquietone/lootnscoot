@@ -4055,6 +4055,7 @@ end
 
 function LNS.RestockItems()
     for itemName, qty in pairs(LNS.BuyItemsTable) do
+        qty = tonumber(qty) or 0
         local rowNum = -1
         ::try_again::
         Logger.Info(LNS.guiLoot.console, 'Checking \ao%s \axfor \at%s \axto \agRestock', mq.TLO.Target.CleanName(), itemName)
@@ -4091,7 +4092,7 @@ function LNS.RestockItems()
             mq.delay(2000, function() return mq.TLO.Window("QuantityWnd").Open() or mq.TLO.FindItemCount(itemName)() > onHand end)
             if mq.TLO.Window("QuantityWnd").Open() then
                 mq.TLO.Window("QuantityWnd/QTYW_SliderInput").SetText(tostring(tmpQty))()
-                mq.delay(20000, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
+                mq.delay(200, function() return mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() == tostring(tmpQty) end)
                 Logger.Info(LNS.guiLoot.console, "\agBuying\ay " .. mq.TLO.Window("QuantityWnd/QTYW_SliderInput").Text() .. "\at " .. itemName)
                 mq.TLO.Window("QuantityWnd/QTYW_Accept_Button").LeftMouseUp()
                 mq.delay(2000, function() return not mq.TLO.Window("QuantityWnd").Open() end)
@@ -4099,6 +4100,7 @@ function LNS.RestockItems()
             mq.delay(2000, function() return (onHand < mq.TLO.FindItemCount(itemName)()) end) -- delay before checking counts so things can update or we get into a loop of rebuying the same item
             onHand = mq.TLO.FindItemCount(itemName)()
             mq.delay(1)
+
             if onHand < qty then
                 Logger.Info(LNS.guiLoot.console, "\ayStack Max Size \axis \arLess\ax than \ax%s \aoHave\ax: \at%s\ax", qty, onHand)
                 tmpQty = (qty - onHand > 0) and qty - onHand or 0
