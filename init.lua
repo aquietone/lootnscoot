@@ -326,17 +326,16 @@ LNS.SafeZones                       = {}
 LNS.PauseLooting                    = false
 LNS.Zone                            = mq.TLO.Zone.ShortName()
 
-
-local tableList            = {
+local tableList                     = {
     "Global_Items", "Normal_Items", LNS.PersonalTableName,
 }
 
-local tableListRules       = {
+local tableListRules                = {
     "Global_Rules", "Normal_Rules", LNS.PersonalTableName,
 }
 
 -- FORWARD DECLARATIONS
-LNS.AllItemColumnListIndex = {
+LNS.AllItemColumnListIndex          = {
     [1]  = 'name',
     [2]  = 'sell_value',
     [3]  = 'tribute_value',
@@ -520,9 +519,32 @@ function LNS.SortKeys(input_table)
     return keys
 end
 
+function LNS.FixBuyQty(input_table)
+    local fixed_table = {}
+    local needSave = false
+    for k, v in pairs(input_table or {}) do
+        if type(v) == 'number' then
+            fixed_table[k] = v
+        elseif type(v) == 'string' then
+            local num = tonumber(v)
+            if num then
+                fixed_table[k] = num
+            else
+                fixed_table[k] = 0 -- Default to 0 if conversion fails
+            end
+            needSave = true
+        else
+            fixed_table[k] = 0 -- Default to 0 for unsupported types
+            needSave = true
+        end
+    end
+    return fixed_table, needSave
+end
+
 function LNS.writeSettings(caller)
     mq.cmdf("/squelch /mapfilter CastRadius %d", LNS.Settings.CorpseRadius)
-    LNS.Settings.BuyItemsTable = LNS.BuyItemsTable
+
+    LNS.Settings.BuyItemsTable = LNS.FixBuyQty(LNS.BuyItemsTable)
     mq.pickle(SettingsFile, LNS.Settings)
     LNS.Boxes[MyName] = LNS.Settings
 
@@ -712,6 +734,12 @@ function LNS.loadSettings(firstRun)
     LNS.Boxes[MyName] = LNS.Settings
     if firstRun then table.insert(LNS.BoxKeys, MyName) end
     LNS.guiLoot.openGUI = LNS.Settings.ShowConsole
+    local needFixBuyQty = false
+    LNS.BuyItemsTable, needFixBuyQty = LNS.FixBuyQty(LNS.BuyItemsTable)
+    if needFixBuyQty then
+        needSave = true
+        Logger.Warn(LNS.guiLoot.console, "BuyItemsTable had invalid values, fixed them and saved the settings.")
+    end
 
     return needSave
 end
@@ -985,7 +1013,7 @@ function LNS.commandHandler(...)
                 LNS.setBuyItem(cursorItem, args[2])
                 LNS.TempSettings.NeedSave = true
                 LNS.TempSettings.NewBuyItem = ""
-                LNS.TempSettings.NewBuyQty = args[2]
+                LNS.TempSettings.NewBuyQty = tonumber(args[2]) or 0
 
                 Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", cursorItem)
             end
@@ -1022,7 +1050,7 @@ function LNS.commandHandler(...)
             LNS.setBuyItem(args[2], args[3])
             LNS.TempSettings.NeedSave = true
             LNS.TempSettings.NewBuyItem = ""
-            LNS.TempSettings.NewBuyQty = args[3]
+            LNS.TempSettings.NewBuyQty = tonumber(args[3]) or 0
             Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", args[2])
         end
     end
@@ -3800,14 +3828,15 @@ function LNS.lootMobs(limit)
         return false
     end
 
-    if mq.TLO.Corpse.DisplayName() and mq.TLO.Corpse.DisplayName() ~= mq.TLO.Me.DisplayName() then
-        mq.TLO.Window('LootWnd').DoClose()
-    end
-
     if limit == nil then limit = 50 end
     if zoneID ~= mq.TLO.Zone.ID() then
         zoneID        = mq.TLO.Zone.ID()
         lootedCorpses = {}
+    end
+
+    if mq.TLO.Window('LootWnd').Open() then
+        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Already Looting, Aborting!.')
+        return false
     end
 
 
@@ -3881,10 +3910,10 @@ function LNS.lootMobs(limit)
             local check = false
             local corpseID = corpse.ID() or 0
 
-            if mq.TLO.Window('LootWnd').Open() then
-                mq.TLO.Window('LootWnd').DoClose()
-                mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
-            end
+            -- if mq.TLO.Window('LootWnd').Open() then
+            --     mq.TLO.Window('LootWnd').DoClose()
+            --     mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
+            -- end
 
             if not mq.TLO.Spawn(corpseID)() then
                 Logger.Info(LNS.guiLoot.console, 'lootMobs(): Corpse ID \ay%d \axis \arNO Longer Valid.\ax \atMoving to Next Corpse...', corpseID)
@@ -4055,7 +4084,6 @@ end
 
 function LNS.RestockItems()
     for itemName, qty in pairs(LNS.BuyItemsTable) do
-        qty = tonumber(qty) or 0
         local rowNum = -1
         ::try_again::
         Logger.Info(LNS.guiLoot.console, 'Checking \ao%s \axfor \at%s \axto \agRestock', mq.TLO.Target.CleanName(), itemName)
@@ -4730,7 +4758,7 @@ function LNS.drawNewItemsTable()
             ImGui.TableHeadersRow()
 
             -- Iterate Over New Items
-            for idx, itemID in ipairs(LNS.TempSettings.NewItemIDs) do
+            for idx, itemID in ipairs(LNS.TempSettings.NewItemIDs or {}) do
                 local item = LNS.NewItems[itemID]
 
                 -- Ensure tmpRules has a default value
@@ -6731,8 +6759,10 @@ local function RenderBtn()
             if ImGui.MenuItem("Show/Hide LootnScoot") then
                 LNS.ShowUI = not LNS.ShowUI
             end
-            if ImGui.MenuItem("Show New Items") then
-                showNewItem = not showNewItem
+            if LNS.NewItemsCount > 0 then
+                if ImGui.MenuItem("Show New Items") then
+                    showNewItem = not showNewItem
+                end
             end
             if ImGui.MenuItem("Toggle Pause Looting") then
                 LNS.PauseLooting = not LNS.PauseLooting
@@ -6885,7 +6915,9 @@ function LNS.RenderUIs()
 
     if LNS.TempSettings.ModifyItemRule then LNS.RenderModifyItemWindow() end
 
-    LNS.renderNewItem()
+    if LNS.NewItemsCount > 0 then
+        LNS.renderNewItem()
+    end
 
     if LNS.pendingItemData ~= nil then
         LNS.processPendingItem()
@@ -7226,7 +7258,7 @@ function LNS.MainLoop()
         if LNS.TempSettings.NeedSave then
             for k, v in pairs(LNS.TempSettings.UpdatedBuyItems or {}) do
                 if k ~= "" then
-                    LNS.BuyItemsTable[k] = v
+                    LNS.BuyItemsTable[k] = tonumber(v)
                 end
             end
 
