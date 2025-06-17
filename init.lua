@@ -3828,14 +3828,15 @@ function LNS.lootMobs(limit)
         return false
     end
 
-    if mq.TLO.Corpse.DisplayName() and mq.TLO.Corpse.DisplayName() ~= mq.TLO.Me.DisplayName() then
-        mq.TLO.Window('LootWnd').DoClose()
-    end
-
     if limit == nil then limit = 50 end
     if zoneID ~= mq.TLO.Zone.ID() then
         zoneID        = mq.TLO.Zone.ID()
         lootedCorpses = {}
+    end
+
+    if mq.TLO.Window('LootWnd').Open() then
+        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Already Looting, Aborting!.')
+        return false
     end
 
 
@@ -3909,10 +3910,10 @@ function LNS.lootMobs(limit)
             local check = false
             local corpseID = corpse.ID() or 0
 
-            if mq.TLO.Window('LootWnd').Open() then
-                mq.TLO.Window('LootWnd').DoClose()
-                mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
-            end
+            -- if mq.TLO.Window('LootWnd').Open() then
+            --     mq.TLO.Window('LootWnd').DoClose()
+            --     mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
+            -- end
 
             if not mq.TLO.Spawn(corpseID)() then
                 Logger.Info(LNS.guiLoot.console, 'lootMobs(): Corpse ID \ay%d \axis \arNO Longer Valid.\ax \atMoving to Next Corpse...', corpseID)
