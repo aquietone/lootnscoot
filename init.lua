@@ -6,6 +6,7 @@ local PackageMan      = require('mq.PackageMan')
 local SQLite3         = PackageMan.Require('lsqlite3')
 local Icons           = require('mq.ICONS')
 local success, Logger = pcall(require, 'lib.Write')
+-- local MasterLooter = require('MasterLooter')
 
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
@@ -103,7 +104,7 @@ local settingsEnum                      = {
     lootforagespam = 'LootForageSpam',
     addnewsales = 'AddNewSales',
     addnewtributes = 'AddNewTributes',
-    gmlselect = 'GMLSelect',
+    masterlooting = 'MasterLooting',
     lootcheckdelay = 'LootCheckDelay',
     hidenames = 'HideNames',
     recorddata = 'RecordData',
@@ -145,6 +146,7 @@ local settingsNoDraw                    = {
     ShowReport = true,
     ShowConsole = true,
     LookupLinks = true,
+    MasterLooting = false,
 }
 
 -- table stuff
@@ -190,7 +192,7 @@ LNS.Settings    = {
     LootForageSpam      = false,  -- Echo spam for Foraged Items
     AddNewSales         = true,   -- Adds 'Sell' Flag to items automatically if you sell them while the script is running.
     AddNewTributes      = true,   -- Adds 'Tribute' Flag to items automatically if you Tribute them while the script is running.
-    GMLSelect           = true,   -- not implimented yet
+    MasterLooting       = false,  -- Master Looter Mode, you will be prompted for who to loot for items marked as (Sell, Keep, Tribute).
     LootCheckDelay      = 0,      -- How long between checks to wait before checking again (seconds)
     HideNames           = false,  -- Hides names and uses class shortname in looted window
     RecordData          = true,   -- Enables recording data to report later.
@@ -217,7 +219,7 @@ LNS.Settings    = {
 }
 
 LNS.Tooltips    = {
-    GlobalLootOn        = "Enable Global Loot Items. not implimented yet",
+    GlobalLootOn        = "Toggle using Global Rules if off we will only use Normal or Personal Rules. This setting is old and will probably be removed in the future.",
     CombatLooting       = "Enables looting during combat. Not recommended on the MT",
     CorpseRadius        = "Radius to activly loot corpses",
     MobsTooClose        = "Don't loot if mobs are in this range.",
@@ -227,7 +229,7 @@ LNS.Tooltips    = {
     MinSellPrice        = "Minimum Sell price to keep item. -1 = any",
     StackPlatValue      = "Minimum sell value for full stack",
     StackableOnly       = "Only loot stackable items",
-    AlwaysEval          = "Re-Evaluate all *Non Quest* items. useful to update loot.ini after changing min sell values.",
+    AlwaysEval          = "Re-Evaluate all *Non Quest* (Normal Item Rules) items. useful to update loot.ini after changing min sell values.",
     BankTradeskills     = "Toggle flagging Tradeskill items as Bank or not.",
     DoLoot              = "Enable auto looting in standalone mode",
     LootForage          = "Enable Looting of Foraged Items",
@@ -239,32 +241,32 @@ LNS.Tooltips    = {
 Always Destroy items to clean corpese Will Destroy Non-Quest items marked 'Ignore' items",
 REQUIRES DoDestroy set to true.]],
     QuestKeep           = "Default number to keep if item not set using Quest|# format.",
-    LootChannel         = "Channel we report loot to.",
+    LootChannel         = "Channel we report loot to. ex dgt",
     GroupChannel        = "Channel we use for Group Commands Default(dgze)",
     ReportLoot          = "Report loot items to group or not.",
     SpamLootInfo        = "Echo Spam for Looting",
     LootForageSpam      = "Echo spam for Foraged Items",
     AddNewSales         = "Adds 'Sell' Flag to items automatically if you sell them while the script is running.",
     AddNewTributes      = "Adds 'Tribute' Flag to items automatically if you Tribute them while the script is running.",
-    GMLSelect           = "not implimented yet",
-    LootCheckDelay      = "How log to wait between loot checks.",
+    MasterLooting       = "If Enabled you are in Master Looter Mode, you will be prompted for who to loot for items marked as (Sell, Keep, Tribute).",
+    LootCheckDelay      = "How log to wait between loot checks. also applied to locked corpses before rechecking",
     HideNames           = "Hides names and uses class shortname in looted window",
     RecordData          = "Enables recording data to report later.",
     AutoTag             = "Automatically tag items to sell if they meet the MinSellPrice",
-    AutoRestock         = "Automatically restock items from the BuyItems list when selling",
+    AutoRestock         = "Automatically restock items from the BuyItems list after selling",
     LootMyCorpse        = "Loot your own corpse if its nearby (Does not check for REZ)",
-    LootAugments        = "Loot Augments",
+    LootAugments        = "Loot Augments Overrides Normal Rules for Augments, Global and Personal Rules will override this setting",
     CheckCorpseOnce     = "Check Corpse once and move on. Ignore the next time it is in range if enabled",
     AutoShowNewItem     = "Automatically show new items in the looted window",
-    KeepSpells          = "Keep spells",
-    CanWear             = "Only loot items you can wear",
+    KeepSpells          = "Keep spells reguardless of Normal Rule Global or Personal Rules will override this setting",
+    CanWear             = "(Applies to No Drop New Items) Only loot items you can wear",
     ShowInfoMessages    = "Show or Hide [INFO] Messages in the loot console",
     ShowConsole         = "Show or Hide the Loot Console window",
     ShowReport          = "Prints report to the Console also toggles the report table window open if its closed.",
     IgnoreBagSlot       = "gnore this Bag Slot when buying, selling, tributing and destroying of items.",
     MaxCorpsesPerCycle  = "Maximum number of corpses to loot per cycle.",
-    AlwaysGlobal        = "lways assign new rules to global as well as normal rules.",
-    IgnoreMyNearCorpses = "gnore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.",
+    AlwaysGlobal        = "Always assign new rules to global as well as normal rules.",
+    IgnoreMyNearCorpses = "Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.",
 }
 
 local tmpCmd    = LNS.GroupChannel or 'dgae'
@@ -315,12 +317,16 @@ LNS.histTotalPages                  = 1
 LNS.histTotalItems                  = 0
 LNS.HistoricalDates                 = {}
 LNS.HistoryDataDate                 = {}
+LNS.MasterLootList                  = nil
 LNS.PersonalTableName               = string.format("%s_Rules", MyName)
 LNS.TempSettings.Edit               = {}
 LNS.TempSettings.ImportDBFileName   = ''
 LNS.TempSettings.ImportDBFilePath   = ''
+LNS.TempSettings.ItemsToLoot        = {}
 LNS.TempSettings.UpdatedBuyItems    = {}
 LNS.TempSettings.DeletedBuyKeys     = {}
+LNS.TempSettings.RemoveMLItemInfo   = {}
+LNS.TempSettings.RemoveMLCorpseInfo = {}
 LNS.TempSettings.SortedSettingsKeys = {}
 LNS.TempSettings.SortedToggleKeys   = {}
 LNS.TempSettings.ModifyItemMatches  = nil
@@ -409,6 +415,64 @@ LNS.AllItemColumnListIndex          = {
 --      UTILITY functions
 ------------------------------------
 
+---comment
+---@param item_name string
+---@param corpseID string|number
+---@param item_id string|number
+---@param itemLink string|nil
+---@param item_is_lore boolean
+---@param item_is_nodrop boolean
+---@param item_value string|number
+function LNS.InsertMasterLootList(item_name, corpseID, item_id, itemLink, item_is_lore, item_is_nodrop, item_value)
+    if not item_name then return end
+    if itemLink == nil then
+        itemLink = LNS.ItemLinks[item_id] or 'NULL'
+    end
+
+    local myCount = mq.TLO.FindItemCount(string.format("=%s", item_name))() + mq.TLO.FindItemBankCount(string.format("=%s", item_name))()
+    if LNS.MasterLootList == nil then
+        LNS.MasterLootList = {}
+    end
+    if LNS.MasterLootList[corpseID] == nil then
+        LNS.MasterLootList[corpseID] = {}
+        LNS.MasterLootList[corpseID].Items = {}
+        LNS.MasterLootList[corpseID].Items[item_name] = {
+            Members = {},
+        }
+    end
+    if LNS.MasterLootList[corpseID].Items == nil then
+        LNS.MasterLootList[corpseID].Items = {}
+    end
+    if LNS.MasterLootList[corpseID].Items[item_name] == nil then
+        LNS.MasterLootList[corpseID].Items[item_name] = {
+            Link = LNS.ItemLinks[item_id] or itemLink,
+            Value = item_value,
+            NoDrop = item_is_nodrop,
+            IsLore = item_is_lore,
+            Members = {},
+        }
+    end
+    LNS.MasterLootList[corpseID].Items[item_name].Link = LNS.ItemLinks[item_id] or itemLink
+    LNS.MasterLootList[corpseID].Items[item_name].Value = item_value
+    LNS.MasterLootList[corpseID].Items[item_name].NoDrop = item_is_nodrop
+    LNS.MasterLootList[corpseID].Items[item_name].IsLore = item_is_lore
+    if LNS.MasterLootList[corpseID].Items[item_name].Members[MyName] == nil then
+        LNS.send({
+            who = MyName,
+            action = 'check_item',
+            item = item_name,
+            link = LNS.ItemLinks[item_id],
+            Count = myCount,
+            CorpseID = corpseID,
+            Value = item_value,
+            NoDrop = item_is_nodrop,
+            IsLore = item_is_lore,
+        })
+    end
+
+    LNS.MasterLootList[corpseID].Items[item_name].Members[MyName] = myCount
+end
+
 ---This will keep your table sorted by columns instead of rows.
 ---@param input_table table|nil the table to sort (optional) You can send a set of sorted keys if you have already custom sorted it.
 ---@param sorted_keys table|nil  the sorted keys table (optional) if you have already sorted the keys
@@ -482,7 +546,7 @@ function LNS.SortSettings()
     LNS.TempSettings.SortedSettingsKeys = {}
     LNS.TempSettings.SortedToggleKeys   = {}
     for k in pairs(LNS.Settings) do
-        if settingsNoDraw[k] == nil then
+        if not settingsNoDraw[k] then
             if type(LNS.Settings[k]) == 'boolean' then
                 table.insert(LNS.TempSettings.SortedToggleKeys, k)
             else
@@ -495,10 +559,11 @@ function LNS.SortSettings()
 end
 
 function LNS.SortTables()
-    LNS.TempSettings.SortedGlobalItemKeys = {}
-    LNS.TempSettings.SortedBuyItemKeys    = {}
-    LNS.TempSettings.SortedNormalItemKeys = {}
-
+    LNS.TempSettings.SortedGlobalItemKeys     = {}
+    LNS.TempSettings.SortedBuyItemKeys        = {}
+    LNS.TempSettings.SortedNormalItemKeys     = {}
+    LNS.TempSettings.SortedMissingGlobalNames = {}
+    LNS.TempSettings.SortedMissingNormalNames = {}
 
     for k in pairs(LNS.GlobalItemsRules) do
         table.insert(LNS.TempSettings.SortedGlobalItemKeys, k)
@@ -513,8 +578,26 @@ function LNS.SortTables()
     for k in pairs(LNS.NormalItemsRules) do
         table.insert(LNS.TempSettings.SortedNormalItemKeys, k)
     end
-
     table.sort(LNS.TempSettings.SortedNormalItemKeys, function(a, b) return a < b end)
+
+    local tmpTbl = {}
+    for name, id in pairs(LNS.GlobalMissingNames) do
+        table.insert(tmpTbl, { name = name, id = id, })
+    end
+    table.sort(tmpTbl, function(a, b)
+        return a.name < b.name
+    end)
+    LNS.TempSettings.SortedMissingGlobalNames = tmpTbl
+
+
+    tmpTbl = {}
+    for name, id in pairs(LNS.NormalMissingNames) do
+        table.insert(tmpTbl, { name = name, id = id, })
+    end
+    table.sort(tmpTbl, function(a, b)
+        return a.name < b.name
+    end)
+    LNS.TempSettings.SortedMissingNormalNames = tmpTbl
 end
 
 function LNS.SortKeys(input_table)
@@ -869,6 +952,9 @@ function LNS.commandHandler(...)
             end
             if type(LNS.Settings[settingName]) == 'boolean' then
                 LNS.Settings[settingName] = settingVal == 'on'
+                if settingName == 'MasterLooting' then
+                    LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, })
+                end
             elseif type(LNS.Settings[settingName]) == 'number' then
                 LNS.Settings[settingName] = tonumber(settingVal)
             else
@@ -1432,7 +1518,7 @@ CREATE TABLE IF NOT EXISTS LootHistory (
 
     db:exec("BEGIN TRANSACTION")
 
-    local stmt = db:prepare("SELECT DISTINCT Date FROM LootHistory")
+    local stmt = db:prepare("SELECT DISTINCT Date FROM LootHistory ORDER BY Date DESC")
 
     for row in stmt:nrows() do
         table.insert(LNS.HistoricalDates, row.Date)
@@ -3028,8 +3114,8 @@ function LNS.getRule(item, fromFunction, index)
                 itemLink)
 
             Logger.Info(LNS.guiLoot.console, "\arItem \ax%s\ar is missing from the database. Re-adding with \ayImported rule\ax: \ag%s\ax",
-                itemName, LNS.GlobalItemsMissing[negID].Rule)
-            LNS.GlobalMissingNames[negID] = nil
+                itemName, LNS.GlobalItemsMissing[negID].item_rule)
+            LNS.GlobalMissingNames[itemName] = nil
             LNS.GlobalItemsMissing[negID] = nil
         end
     end
@@ -3043,8 +3129,8 @@ function LNS.getRule(item, fromFunction, index)
                 itemLink)
 
             Logger.Info(LNS.guiLoot.console, "\arItem \ax%s\ar is missing from the database. Re-adding with \ayImported rule\ax: \ag%s\ax",
-                itemName, LNS.NormalNames[negID].Rule)
-            LNS.NormalMissingNames[negID] = nil
+                itemName, LNS.NormalItemsMissing[negID].item_rule)
+            LNS.NormalMissingNames[itemName] = nil
             LNS.NormalItemsMissing[negID] = nil
         end
     end
@@ -3132,7 +3218,7 @@ function LNS.getRule(item, fromFunction, index)
     ::skip_new_rule::
     lootNewItemRule = lootRule
 
-    if lootRule == ('Sell' or 'Tribute') and ruletype == 'Normal' and not newRule then
+    if (lootRule == 'Sell' or lootRule == 'Tribute') and ruletype == 'Normal' and not newRule then
         lootDecision = LNS.checkDecision(item, lootRule)
         lootNewItemRule = lootDecision
     end
@@ -3349,6 +3435,15 @@ function LNS.getRule(item, fromFunction, index)
         Logger.Warn(LNS.guiLoot.console, "Invalid lootDecision type: %s for item: %s", type(lootDecision), itemName)
         lootDecision = 'Ignore'
     end
+
+    if LNS.Settings.MasterLooting then
+        local cID = mq.TLO.Corpse.ID() or 0
+        if (lootRule ~= 'Ignore' or ruletype == 'Personal') and lootDecision ~= 'Destroy' then
+            LNS.InsertMasterLootList(itemName, cID, itemID, LNS.ItemLinks[itemID], isLore, isNoDrop, item.Value())
+            return 'MasterLooter', qKeep, newRule, iCanUse
+        end
+    end
+
     return lootDecision, qKeep, newRule, iCanUse
 end
 
@@ -3370,6 +3465,7 @@ function LNS.setGlobalItem(itemID, val, classes, link)
         LNS.ItemLinks[itemID]          = link or (LNS.ItemLinks[itemID] or 'NULL')
     else
         LNS.GlobalItemsClasses[itemID] = nil
+        LNS.GlobalItemsMissing[LNS.TempSettings.ModifyItemID] = nil
     end
 end
 
@@ -3385,6 +3481,7 @@ function LNS.setNormalItem(itemID, val, classes, link)
         LNS.ItemLinks[itemID]          = link or (LNS.ItemLinks[itemID] or 'NULL')
     else
         LNS.NormalItemsClasses[itemID] = nil
+        LNS.NormalItemsMissing[LNS.TempSettings.ModifyItemID] = nil
     end
     LNS.modifyItemRule(itemID, val, 'Normal_Rules', classes, link)
 end
@@ -3485,6 +3582,15 @@ function LNS.doneProcessing()
     end
 end
 
+function LNS.GetTableSize(tbl)
+    local count = 0
+    if tbl == nil then return count end
+    for _ in pairs(tbl) do
+        count = count + 1
+    end
+    return count
+end
+
 function LNS.RegisterActors()
     LNS.lootActor = Actors.register('lootnscoot', function(message)
         local lootMessage   = message()
@@ -3555,6 +3661,7 @@ function LNS.RegisterActors()
                 -- LNS.sendMySettings()
                 LNS.TempSettings[MyName] = nil
                 LNS.TempSettings.NeedSave = true
+                return
             end
             if directions == 'getsettings_directed' or directions == 'getcombatsetting' then
                 Logger.Debug(LNS.guiLoot.console, dbgTbl)
@@ -3580,11 +3687,108 @@ function LNS.RegisterActors()
             return
         end
 
+        if action == 'check_item' and who ~= MyName then
+            local corpseID = lootMessage.CorpseID
+
+            local MyCount = mq.TLO.FindItemCount(string.format("=%s", itemName))() + mq.TLO.FindItemBankCount(string.format("=%s", itemName))()
+            if LNS.MasterLootList == nil then
+                LNS.MasterLootList = {}
+            end
+            if LNS.MasterLootList[corpseID] == nil then
+                LNS.MasterLootList[corpseID] = {}
+                LNS.MasterLootList[corpseID].Items = {}
+                LNS.MasterLootList[corpseID].Items[itemName] = {
+                    Link = itemLink,
+                    Value = lootMessage.Value or 0,
+                    NoDrop = lootMessage.NoDrop or false,
+                    Lore = lootMessage.Lore or false,
+                    Members = {},
+                }
+            end
+            if LNS.MasterLootList[corpseID].Items == nil then
+                LNS.MasterLootList[corpseID].Items = {}
+            end
+            if LNS.MasterLootList[corpseID].Items[itemName] == nil then
+                LNS.MasterLootList[corpseID].Items[itemName] = {
+                    Link = itemLink,
+                    Value = lootMessage.Value or 0,
+                    NoDrop = lootMessage.NoDrop or false,
+                    Lore = lootMessage.Lore or false,
+                    Members = {},
+                }
+            end
+            if LNS.MasterLootList[corpseID].Items[itemName].Members == nil then
+                LNS.MasterLootList[corpseID].Items[itemName].Members = {}
+            end
+
+            LNS.MasterLootList[corpseID].Items[itemName].Members[who] = lootMessage.Count
+
+            if LNS.MasterLootList[corpseID].Items[itemName].Members[MyName] == nil then
+                LNS.MasterLootList[corpseID].Items[itemName].Members[MyName] = MyCount
+                LNS.send({
+                    who = MyName,
+                    action = 'check_item',
+                    item = itemName,
+                    link = itemLink,
+                    Count = MyCount,
+                    CorpseID = corpseID,
+                    Value = lootMessage.Value or 0,
+                    NoDrop = lootMessage.NoDrop or false,
+                    Lore = lootMessage.Lore or false,
+                })
+            end
+            lootedCorpses[lootMessage.CorpseID] = true
+            return
+        end
+
+        if action == 'recheck_item' and who ~= MyName then
+            local MyCount = mq.TLO.FindItemCount(string.format("=%s", itemName))() + mq.TLO.FindItemBankCount(string.format("=%s", itemName))()
+            local corpseID = lootMessage.CorpseID
+            LNS.send({ who = MyName, action = 'check_item', item = itemName, link = itemLink, Count = MyCount, CorpseID = corpseID, })
+            return
+        end
+
+        if action == 'item_gone' then
+            LNS.TempSettings.RemoveMLItemInfo = {
+                ['itemName'] = itemName,
+                ['corpseID'] = lootMessage.CorpseID,
+            }
+            LNS.TempSettings.RemoveMLItem = true
+            return
+        end
+
+        if action == 'corpse_gone' then
+            LNS.TempSettings.RemoveMLCorpseInfo = {
+                ['corpseID'] = lootMessage.CorpseID,
+            }
+            LNS.TempSettings.RemoveMLCorpse = true
+            return
+        end
+
+        if action == 'master_looter' and who ~= MyName and LNS.Settings.MasterLooting ~= lootMessage.select then
+            LNS.Settings.MasterLooting          = lootMessage.select
+            LNS.TempSettings[who].MasterLooting = lootMessage.select
+            LNS.Boxes[MyName]                   = LNS.Settings
+            LNS.TempSettings[MyName]            = nil
+            LNS.TempSettings.NeedSave           = true
+            LNS.TempSettings.UpdateSettings     = true
+            Logger.Debug(LNS.guiLoot.console, dbgTbl)
+            return
+        end
+
+        if action == 'loot_item' and who == MyName then
+            --LNS.send({ who = member, action = 'loot_item', CorpseID = cID, item = item, })
+            Logger.Info(LNS.guiLoot.console, "\agLooting Item\ax: \at%s\ax, \ayLink\ax: \at%s\ax, \awFrom\ax: \ag%s\ax", itemName, itemLink, who)
+            table.insert(LNS.TempSettings.ItemsToLoot, { corpseID = lootMessage.CorpseID, itemName = itemName, })
+            return
+        end
+
         if action == 'sendsettings' and who ~= MyName then
             if LNS.Boxes[who] == nil then LNS.Boxes[who] = {} end
 
             LNS.Boxes[who] = boxSettings
             LNS.TempSettings[who] = boxSettings
+            return
         end
 
         if action == 'updatesettings' then
@@ -3602,6 +3806,7 @@ function LNS.RegisterActors()
                 LNS.TempSettings[MyName] = nil
                 LNS.TempSettings.UpdateSettings = true
             end
+            return
         end
 
         if action == 'addsafezone' then
@@ -3821,7 +4026,8 @@ function LNS.lootItem(index, doWhat, button, qKeep, cantWear)
     corpseName           = tmpLabel
     local eval           = type(actionToTake) == 'string' and actionToTake or '?'
     local dbgTbl         = {}
-    dbgTbl               = {
+    if allItems == nil then allItems = {} end
+    dbgTbl = {
         Lookup = 'loot.lootItem()',
         Check = 'INSERT HISTORY CHECK Entry',
         Evaluation = eval,
@@ -4008,9 +4214,11 @@ function LNS.lootCorpse(corpseID)
                 LNS.addToItemDB(corpseItem)
                 local itemRule, qKeep, newRule, iCanUse = LNS.getRule(corpseItem, 'loot', i)
                 mq.delay(1)
-                LNS.lootItem(i, itemRule, 'leftmouseup', qKeep, not iCanUse)
-                mq.delay(1)
-                Logger.Debug(LNS.guiLoot.console, "LootCorpse(): itemID=\ao%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s", corpseItemID, itemRule, qKeep, newRule)
+                if itemRule ~= 'MasterLooter' and itemRule ~= 'NULL' then
+                    LNS.lootItem(i, itemRule, 'leftmouseup', qKeep, not iCanUse)
+                    mq.delay(1)
+                    Logger.Debug(LNS.guiLoot.console, "LootCorpse(): itemID=\ao%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s", corpseItemID, itemRule, qKeep, newRule)
+                end
             end
 
             mq.delay(1)
@@ -4206,6 +4414,51 @@ function LNS.lootMobs(limit)
     LNS.finishedLooting()
 
     return didLoot
+end
+
+function LNS.LootItemML(itemName, corpseID)
+    local startCount = mq.TLO.FindItemCount(string.format("=%s", itemName))()
+    local checkMore = false
+
+    Logger.Info(LNS.guiLoot.console, 'Looting item: %s from corpse ID: %s MyCount: %s', itemName, corpseID, startCount)
+    if not mq.TLO.Spawn(corpseID)() then
+        Logger.Warn(LNS.guiLoot.console, 'LootItemML(): Corpse ID %d does not exist.', corpseID)
+        LNS.send({ action = 'corpse_gone', CorpseID = corpseID, })
+        return false
+    end
+    LNS.navToID(corpseID)
+
+
+
+    mq.TLO.Spawn(corpseID).DoTarget()
+    mq.delay(1000, function() return mq.TLO.Target.ID() == corpseID end)
+    mq.cmdf('/loot')
+    mq.delay(4000, function() return mq.TLO.Window('LootWnd').Open() end)
+    local itemCount = mq.TLO.Corpse.Items() or 0
+    for i = 1, itemCount do
+        local item = mq.TLO.Corpse.Item(i)
+        if item() and item.Name() == itemName then
+            Logger.Debug(LNS.guiLoot.console, 'Looting item: %s from corpse ID: %d', itemName, corpseID)
+            LNS.lootItem(i, 'Keep', 'leftmouseup', 0, not false)
+            mq.delay(4000, function() return mq.TLO.FindItemCount(string.format("=%s", itemName))() > startCount end)
+            checkMore = mq.TLO.Corpse.Item(string.format("=%s", itemName))() ~= nil or false
+            break
+        end
+    end
+
+    checkMore = mq.TLO.Corpse.Item(string.format("=%s", itemName))() ~= nil or false
+
+    if not checkMore then
+        Logger.Warn(LNS.guiLoot.console, 'LootItemML(): Item %s not found on corpse ID: %d', itemName, corpseID)
+        LNS.send({ action = 'item_gone', item = itemName, CorpseID = corpseID, })
+    end
+    mq.TLO.Window('LootWnd').DoClose()
+    mq.delay(1000, function() return not mq.TLO.Window('LootWnd').Open() end)
+    if not mq.TLO.Spawn(corpseID)() then
+        LNS.send({ action = 'corpse_gone', CorpseID = corpseID, })
+    end
+
+    return mq.TLO.FindItemCount(string.format("=%s", itemName))() > startCount
 end
 
 ------------------------------------
@@ -4450,29 +4703,29 @@ function LNS.eventForage()
     local loopStatus = true
     while loopStatus do
         local cursorItem  = mq.TLO.Cursor
-        local foragedItem = cursorItem.Name()
+        local foragedItem = cursorItem.Name() or 'unknown_item'
         local cursorID    = cursorItem.ID() or 0
         mq.delay(10)
         local ruleAction, ruleAmount = LNS.getRule(cursorItem, 'forage', 0)
         --LNS.lookupLootRule(itemID,)
         local currentItemAmount      = mq.TLO.FindItemCount('=' .. foragedItem)()
         -- >= because .. does finditemcount not count the item on the cursor?
-        if not shouldLootActions[ruleAction] or (ruleAction == 'Quest' and currentItemAmount >= ruleAmount) then
+        if mq.TLO.Cursor() and (not shouldLootActions[ruleAction] or (ruleAction == 'Quest' and currentItemAmount >= ruleAmount)) then
             if mq.TLO.Cursor.Name() == foragedItem then
-                if LNS.Settings.LootForageSpam then Logger.Info(LNS.guiLoot.console, 'Destroying foraged item ' .. foragedItem) end
+                if LNS.Settings.LootForageSpam then Logger.Info(LNS.guiLoot.console, 'Destroying foraged item \ao%s', foragedItem) end
                 mq.cmdf('/destroy')
                 mq.delay(2000, function() return (mq.TLO.Cursor.ID() or -1) ~= cursorID end)
             end
             -- will a lore item we already have even show up on cursor?
             -- free inventory check won't cover an item too big for any container so may need some extra check related to that?
-        elseif (shouldLootActions[ruleAction]) and
+        elseif (shouldLootActions[ruleAction]) and cursorItem() and
             (not cursorItem.Lore() or (cursorItem.Lore() and currentItemAmount == 0)) and
             (mq.TLO.Me.FreeInventory() > LNS.Settings.SaveBagSlots) or (cursorItem.Stackable() and cursorItem.FreeStack()) then
-            if LNS.Settings.LootForageSpam then Logger.Info(LNS.guiLoot.console, 'Keeping foraged item ' .. foragedItem) end
+            if LNS.Settings.LootForageSpam then Logger.Info(LNS.guiLoot.console, 'Keeping foraged item \at%s', foragedItem) end
             mq.cmdf('/autoinv')
             mq.delay(2000, function() return (mq.TLO.Cursor.ID() or -1) ~= cursorID end)
         else
-            if LNS.Settings.LootForageSpam then Logger.Warn(LNS.guiLoot.console, 'Unable to process item ' .. foragedItem) end
+            if LNS.Settings.LootForageSpam then Logger.Warn(LNS.guiLoot.console, 'Unable to process item \ao%s', foragedItem) end
             break
         end
         if not mq.TLO.Cursor() then loopStatus = false end
@@ -4650,25 +4903,27 @@ function LNS.renderMissingItemsTables()
         ImGui.TableSetupColumn("Item Classes##g", ImGuiTableColumnFlags.WidthFixed, 60)
         ImGui.TableHeadersRow()
         ImGui.TableNextRow()
-        for k, v in pairs(LNS.GlobalItemsMissing or {}) do
-            ImGui.TableNextColumn()
-            ImGui.TextColored(ImVec4(1.000, 0.557, 0.000, 1.000), "%s", v.item_id)
-            ImGui.TableNextColumn()
-            ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.370, 0.704, 1.000, 1.000))
-            if ImGui.Selectable(string.format("%s", v.item_name), false) then
-                LNS.TempSettings.ModifyItemRule = true
-                LNS.TempSettings.ModifyItemName = v.item_name
-                LNS.TempSettings.ModifyItemLink = nil
-                LNS.TempSettings.ModifyItemID = v.item_id
-                LNS.TempSettings.ModifyItemTable = "Global_Items"
-                LNS.TempSettings.ModifyClasses = v.item_classes
-                LNS.TempSettings.ModifyItemSetting = v.item_rule
+        for _, v in ipairs(LNS.TempSettings.SortedMissingGlobalNames or {}) do
+            if LNS.GlobalItemsMissing[v.id] ~= nil then
+                ImGui.TableNextColumn()
+                ImGui.TextColored(ImVec4(1.000, 0.557, 0.000, 1.000), "%s", LNS.GlobalItemsMissing[v.id].item_id)
+                ImGui.TableNextColumn()
+                ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.370, 0.704, 1.000, 1.000))
+                if ImGui.Selectable(string.format("%s", LNS.GlobalItemsMissing[v.id].item_name), false) then
+                    LNS.TempSettings.ModifyItemRule = true
+                    LNS.TempSettings.ModifyItemName = LNS.GlobalItemsMissing[v.id].item_name
+                    LNS.TempSettings.ModifyItemLink = nil
+                    LNS.TempSettings.ModifyItemID = LNS.GlobalItemsMissing[v.id].item_id
+                    LNS.TempSettings.ModifyItemTable = "Global_Items"
+                    LNS.TempSettings.ModifyClasses = LNS.GlobalItemsMissing[v.id].item_classes
+                    LNS.TempSettings.ModifyItemSetting = LNS.GlobalItemsMissing[v.id].item_rule
+                end
+                ImGui.PopStyleColor()
+                ImGui.TableNextColumn()
+                ImGui.Text(LNS.GlobalItemsMissing[v.id].item_rule or 'Unknown')
+                ImGui.TableNextColumn()
+                ImGui.Text(LNS.GlobalItemsMissing[v.id].item_classes or 'Unknown')
             end
-            ImGui.PopStyleColor()
-            ImGui.TableNextColumn()
-            ImGui.Text(v.item_rule or 'Unknown')
-            ImGui.TableNextColumn()
-            ImGui.Text(v.item_classes or 'Unknown')
         end
 
         ImGui.EndTable()
@@ -4683,25 +4938,27 @@ function LNS.renderMissingItemsTables()
         ImGui.TableHeadersRow()
         ImGui.TableNextRow()
 
-        for k, v in pairs(LNS.NormalItemsMissing or {}) do
-            ImGui.TableNextColumn()
-            ImGui.TextColored(ImVec4(1.000, 0.557, 0.000, 1.000), "%s", v.item_id)
-            ImGui.TableNextColumn()
-            ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.370, 0.704, 1.000, 1.000))
-            if ImGui.Selectable(string.format("%s", v.item_name), false) then
-                LNS.TempSettings.ModifyItemRule = true
-                LNS.TempSettings.ModifyItemName = v.item_name
-                LNS.TempSettings.ModifyItemLink = nil
-                LNS.TempSettings.ModifyItemID = v.item_id
-                LNS.TempSettings.ModifyItemTable = "Normal_Items"
-                LNS.TempSettings.ModifyClasses = v.item_classes
-                LNS.TempSettings.ModifyItemSetting = v.item_rule
+        for _, v in ipairs(LNS.TempSettings.SortedMissingNormalNames or {}) do
+            if LNS.NormalItemsMissing[v.id] ~= nil then
+                ImGui.TableNextColumn()
+                ImGui.TextColored(ImVec4(1.000, 0.557, 0.000, 1.000), "%s", LNS.NormalItemsMissing[v.id].item_id)
+                ImGui.TableNextColumn()
+                ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.370, 0.704, 1.000, 1.000))
+                if ImGui.Selectable(string.format("%s", LNS.NormalItemsMissing[v.id].item_name), false) then
+                    LNS.TempSettings.ModifyItemRule = true
+                    LNS.TempSettings.ModifyItemName = LNS.NormalItemsMissing[v.id].item_name
+                    LNS.TempSettings.ModifyItemLink = nil
+                    LNS.TempSettings.ModifyItemID = LNS.NormalItemsMissing[v.id].item_id
+                    LNS.TempSettings.ModifyItemTable = "Normal_Items"
+                    LNS.TempSettings.ModifyClasses = LNS.NormalItemsMissing[v.id].item_classes
+                    LNS.TempSettings.ModifyItemSetting = LNS.NormalItemsMissing[v.id].item_rule
+                end
+                ImGui.PopStyleColor()
+                ImGui.TableNextColumn()
+                ImGui.Text(LNS.NormalItemsMissing[v.id].item_rule or 'Unknown')
+                ImGui.TableNextColumn()
+                ImGui.Text(LNS.NormalItemsMissing[v.id].item_classes or 'Unknown')
             end
-            ImGui.PopStyleColor()
-            ImGui.TableNextColumn()
-            ImGui.Text(v.item_rule or 'Unknown')
-            ImGui.TableNextColumn()
-            ImGui.Text(v.item_classes or 'Unknown')
         end
 
         ImGui.EndTable()
@@ -6313,16 +6570,20 @@ end
 
 function LNS.drawSwitch(settingName, who)
     if LNS.TempSettings[who] ~= nil then
-        LNS.TempSettings[who][settingName] = LNS.DrawToggle("##" .. settingName, LNS.TempSettings[who][settingName],
+        local clicked = false
+        LNS.TempSettings[who][settingName], clicked = LNS.DrawToggle("##" .. settingName, LNS.TempSettings[who][settingName],
             ImVec4(0.4, 1.0, 0.4, 0.4), ImVec4(1.0, 0.4, 0.4, 0.4))
 
-        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
+        if clicked then
             if LNS.Boxes[who][settingName] ~= LNS.TempSettings[who][settingName] then
                 LNS.Boxes[who][settingName] = LNS.TempSettings[who][settingName]
                 if who == MyName then
                     LNS.Settings[settingName] = LNS.TempSettings[who][settingName]
                     LNS.TempSettings.NeedSave = true
                 end
+            end
+            if settingName == 'MasterLooting' then
+                LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, })
             end
         end
     end
@@ -6355,7 +6616,7 @@ function LNS.renderSettingsTables(who)
 
             for i, settingName in ipairs(sorted_settings or {}) do
                 if who == nil then break end
-                if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
+                if not settingsNoDraw[settingName] then
                     if LNS.TempSettings[who] == nil then
                         LNS.TempSettings[who] = {}
                     end
@@ -6430,7 +6691,7 @@ function LNS.renderSettingsTables(who)
 
             for i, settingName in ipairs(sorted_toggles or {}) do
                 if who == nil then break end
-                if settingsNoDraw[settingName] == nil or settingsNoDraw[settingName] == false then
+                if not settingsNoDraw[settingName] then
                     if LNS.TempSettings[who] == nil then
                         LNS.TempSettings[who] = {}
                     end
@@ -6450,6 +6711,9 @@ function LNS.renderSettingsTables(who)
                                     LNS.Settings[settingName] = LNS.Boxes[who][settingName]
                                     LNS.TempSettings.NeedSave = true
                                 end
+                            end
+                            if settingName == 'MasterLooting' then
+                                LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, })
                             end
                         end
                         if ImGui.IsItemHovered() then
@@ -6698,6 +6962,131 @@ end
 --          GUI WINDOWS
 ------------------------------------
 
+function LNS.RenderMasterLooterWindow()
+    if LNS.MasterLootList == nil then return end
+    -- if (LNS.MasterLootList ~= nil and #LNS.MasterLootList == 0) then
+    --     return
+    -- end
+
+    ImGui.SetNextWindowSize(ImVec2(600, 500), ImGuiCond.FirstUseEver)
+    local open, show = ImGui.Begin("Master Looter", true)
+    if not open then show = false end
+
+    if show then
+        if ImGui.BeginTable("MLoot", 3) then
+            ImGui.TableSetupColumn("cID", ImGuiTableColumnFlags.WidthFixed, 30)
+            ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch)
+            ImGui.TableSetupColumn("Members", ImGuiTableColumnFlags.WidthFixed, 250)
+            ImGui.TableHeadersRow()
+            ImGui.TableNextRow()
+            for cID, cData in pairs(LNS.MasterLootList or {}) do
+                if type(cData) == 'table' then
+                    for item, itemData in pairs(cData.Items or {}) do
+                        ImGui.PushID(cID .. item)
+                        ImGui.TableNextColumn()
+
+                        ImGui.Text("%s", cID)
+
+                        ImGui.TableNextColumn()
+
+                        if ImGui.SmallButton(item .. "##ExecLink" .. cID .. item) then
+                            mq.cmdf("/executelink %s", itemData.Link)
+                        end
+
+                        if ImGui.BeginTable("ItemDetails", 3, bit32.bor(ImGuiTableFlags.Borders)) then
+                            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch, 100)
+                            ImGui.TableSetupColumn("NoDrop", ImGuiTableColumnFlags.WidthFixed, 30)
+                            ImGui.TableSetupColumn("Lore", ImGuiTableColumnFlags.WidthFixed, 30)
+                            ImGui.TableHeadersRow()
+                            ImGui.TableNextRow()
+                            ImGui.TableNextColumn()
+                            ImGui.Text("%s", LNS.valueToCoins(itemData.Value) or "N/A") -- value
+                            ImGui.TableNextColumn()
+                            LNS.drawYesNo(itemData.NoDrop)
+                            ImGui.TableNextColumn()
+                            LNS.drawYesNo(itemData.Lore)
+                            ImGui.EndTable()
+                        end
+                        ImGui.TableNextColumn()
+
+                        if ImGui.SmallButton(Icons.MD_DELETE .. "##MLRemove" .. cID .. item) then
+                            Logger.Info(LNS.guiLoot.console, "Removing CorpseID %s Item %s from Master Loot List", cID, item)
+
+                            LNS.TempSettings.RemoveItemData = { action = 'item_gone', CorpseID = cID, item = item, }
+                            LNS.TempSettings.SendRemoveItem = true
+                        end
+
+                        ImGui.SameLine()
+
+                        if ImGui.SmallButton("Self Loot##" .. cID .. item) then
+                            Logger.Info(LNS.guiLoot.console, "Telling \atMySelf\ax to loot \ay%s\ax from CorpseID \ag%s", itemData.Link, cID)
+                            LNS.TempSettings.SendLootInfo = {}
+                            LNS.TempSettings.SendLootInfo =
+                            { who = MyName, action = 'loot_item', CorpseID = cID, item = item, }
+                            LNS.TempSettings.SendLoot = true
+                        end
+
+                        if ImGui.CollapsingHeader("Members##" .. cID .. item) then
+                            if ImGui.SmallButton("Refresh Counts##" .. cID .. item) then
+                                Logger.Info(LNS.guiLoot.console, "Refreshing Member Counts for CorpseID %s Item %s", cID, item)
+                                LNS.send({ who = MyName, action = 'recheck_item', CorpseID = cID, item = item, })
+                            end
+                            if itemData.Members ~= nil and next(itemData.Members) ~= nil then
+                                if ImGui.BeginTable('MemberCounts##List', 3, ImGuiTableFlags.Borders) then
+                                    ImGui.TableSetupColumn("Member", ImGuiTableColumnFlags.WidthFixed, 110)
+                                    ImGui.TableSetupColumn("Count", ImGuiTableColumnFlags.WidthFixed, 30)
+                                    ImGui.TableSetupColumn("Loot", ImGuiTableColumnFlags.WidthFixed, 80)
+                                    ImGui.TableHeadersRow()
+                                    for _, k in ipairs(LNS.BoxKeys) do
+                                        if itemData.Members[k] ~= nil then
+                                            local member = k
+                                            local count = itemData.Members[k]
+                                            ImGui.TableNextRow()
+                                            ImGui.TableNextColumn()
+
+                                            ImGui.Text(member)
+
+                                            ImGui.TableNextColumn()
+                                            if count and count > 0 then
+                                                ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(1.0, 1.0, 0.0, 1.0))
+                                            else
+                                                ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(1.0, 1, 1, 1.0))
+                                            end
+                                            ImGui.Text("%s", count)
+                                            ImGui.PopStyleColor()
+
+                                            ImGui.TableNextColumn()
+
+                                            if ImGui.SmallButton('Loot##' .. cID .. item .. member) then
+                                                Logger.Info(LNS.guiLoot.console, "Telling \at%s\ax to loot \ay%s\ax from CorpseID \ag%s", member, itemData.Link, cID)
+                                                LNS.TempSettings.SendLootInfo = {}
+                                                LNS.TempSettings.SendLootInfo =
+                                                { who = member, action = 'loot_item', CorpseID = cID, item = item, }
+                                                LNS.TempSettings.SendLoot = true
+                                            end
+                                        end
+                                    end
+                                    ImGui.EndTable()
+                                end
+                                -- for member, count in pairs(itemData.Members) do
+                                --     ImGui.Text("%s: %s", member, count)
+                                --     ImGui.SameLine()
+                                --     if ImGui.SmallButton('Loot##' .. cID .. item .. member) then
+                                --         Logger.Info(LNS.guiLoot.console, "Telling %s to loot %s from CorpseID %s", member, item, cID)
+                                --         LNS.send({ who = member, action = 'loot_item', CorpseID = cID, item = item, })
+                                --     end
+                                -- end
+                            end
+                        end
+                        ImGui.PopID()
+                    end
+                end
+            end
+            ImGui.EndTable()
+        end
+    end
+    ImGui.End()
+end
 
 function LNS.RenderModifyItemWindow()
     if not LNS.TempSettings.ModifyItemRule then
@@ -6710,6 +7099,9 @@ function LNS.RenderModifyItemWindow()
     end
     if LNS.TempSettings.ModifyItemTable == 'Personal_Items' then
         LNS.TempSettings.ModifyItemTable = LNS.PersonalTableName
+    end
+    if LNS.TempSettings.ModifyItemTable == nil then
+        LNS.TempSettings.ModifyItemTable = LNS.TempSettings.LastModTable or 'Normal_Items'
     end
     -- local missingTable = LNS.TempSettings.ModifyItemTable:gsub("_Items", "")
     local classes = LNS.TempSettings.ModifyClasses
@@ -6740,13 +7132,24 @@ function LNS.RenderModifyItemWindow()
         ImGui.SameLine()
         ImGui.TextColored(ImVec4(1, 1, 0, 1), "%s", LNS.TempSettings.ModifyItemID)
 
-        if ImGui.BeginCombo("Table", LNS.TempSettings.ModifyItemTable) then
-            for i, v in ipairs(tableList) do
-                if ImGui.Selectable(v, LNS.TempSettings.ModifyItemTable == v) then
-                    LNS.TempSettings.ModifyItemTable = v
-                end
-            end
-            ImGui.EndCombo()
+        -- if ImGui.BeginCombo("Table", LNS.TempSettings.ModifyItemTable) then
+        --     for i, v in ipairs(tableList) do
+        --         if ImGui.Selectable(v, LNS.TempSettings.ModifyItemTable == v) then
+        --             LNS.TempSettings.ModifyItemTable = v
+        --         end
+        --     end
+        --     ImGui.EndCombo()
+        -- end
+        if ImGui.RadioButton("Personal Items", LNS.TempSettings.ModifyItemTable == LNS.PersonalTableName) then
+            LNS.TempSettings.ModifyItemTable = LNS.PersonalTableName
+        end
+        ImGui.SameLine()
+        if ImGui.RadioButton("Global Items", LNS.TempSettings.ModifyItemTable == "Global_Items") then
+            LNS.TempSettings.ModifyItemTable = "Global_Items"
+        end
+        ImGui.SameLine()
+        if ImGui.RadioButton("Normal Items", LNS.TempSettings.ModifyItemTable == "Normal_Items") then
+            LNS.TempSettings.ModifyItemTable = "Normal_Items"
         end
 
         if tempValues.Classes == nil and classes ~= nil then
@@ -6801,6 +7204,7 @@ function LNS.RenderModifyItemWindow()
             -- loot.setNormalItem(loot.TempSettings.ModifyItemID, newRule,  tempValues.Classes, item.Link)
             LNS.TempSettings.ModifyItemRule = false
             LNS.TempSettings.ModifyItemID = nil
+            LNS.TempSettings.LastModTable = LNS.TempSettings.ModifyItemTable
             LNS.TempSettings.ModifyItemTable = nil
             LNS.TempSettings.ModifyItemClasses = 'All'
             LNS.TempSettings.ModifyItemName = nil
@@ -6830,6 +7234,7 @@ function LNS.RenderModifyItemWindow()
             LNS.TempSettings.ModifyItemMatches = nil
             LNS.TempSettings.ModifyItemName = nil
             LNS.TempSettings.LastModID = 0
+
             ImGui.PopStyleColor()
 
             ImGui.End()
@@ -7358,6 +7763,10 @@ function LNS.RenderUIs()
 
     LNS.renderCloneWindow()
 
+    if LNS.MasterLootList ~= nil and next(LNS.MasterLootList) ~= nil then
+        LNS.RenderMasterLooterWindow()
+    end
+
     LNS.renderHelpWindow()
 
     if LNS.TempSettings.PastHistory then
@@ -7502,10 +7911,11 @@ function LNS.MainLoop()
                 }, 'loot_module')
             end
             LNS.TempSettings.LastZone = LNS.Zone
+            LNS.MasterLootList = nil
         end
 
         if LNS.SafeZones[LNS.Zone] then
-            Logger.Warn(LNS.guiLoot.console, "You are in a safe zone: \at%s\ax \ayLooting Disabled", LNS.Zone)
+            Logger.Debug(LNS.guiLoot.console, "You are in a safe zone: \at%s\ax \ayLooting Disabled", LNS.Zone)
         end
 
         -- check if we need to import the old rules db.
@@ -7523,6 +7933,65 @@ function LNS.MainLoop()
             LNS.TempSettings.RemoveSafeZone = nil
         end
 
+        if LNS.GetTableSize(LNS.TempSettings.ItemsToLoot) > 0 then
+            local lootedIdx = {}
+            for idx, data in ipairs(LNS.TempSettings.ItemsToLoot or {}) do
+                if data ~= nil and data.corpseID ~= nil and data.itemName ~= nil then
+                    Logger.Info(LNS.guiLoot.console, "Looting Item: \ag%s\ax from Corpse: \ag%s\ax",
+                        data.itemName, data.corpseID)
+                    if LNS.LootItemML(data.itemName, data.corpseID) then
+                        lootedIdx[idx] = true
+                    end
+                end
+            end
+            -- remove looted items from the list
+            for idx, _ in pairs(lootedIdx) do
+                LNS.TempSettings.ItemsToLoot[idx] = nil
+            end
+        end
+
+        if LNS.TempSettings.RemoveMLItem then
+            if LNS.MasterLootList ~= nil then
+                local corpseID = LNS.TempSettings.RemoveMLItemInfo.corpseID or 0
+                local itemName = LNS.TempSettings.RemoveMLItemInfo.itemName or ''
+                if LNS.MasterLootList[corpseID] ~= nil then
+                    LNS.MasterLootList[corpseID].Items[itemName] = nil
+                    if LNS.GetTableSize(LNS.MasterLootList[corpseID].Items) == 0 then
+                        LNS.MasterLootList[corpseID] = nil
+                    end
+                end
+
+                if LNS.MasterLootList and LNS.GetTableSize(LNS.MasterLootList or {}) == 0 then
+                    LNS.MasterLootList = nil
+                end
+            end
+            LNS.TempSettings.RemoveMLItem = false
+            LNS.TempSettings.RemoveMLItemInfo = {}
+        end
+
+        if LNS.TempSettings.RemoveMLCorpse then
+            if LNS.MasterLootList ~= nil then
+                local corpseID = LNS.TempSettings.RemoveMLCorpseInfo.corpseID or 0
+                if LNS.MasterLootList[corpseID] ~= nil then
+                    LNS.MasterLootList[corpseID] = nil
+                end
+                if LNS.MasterLootList and LNS.GetTableSize(LNS.MasterLootList or {}) == 0 then
+                    LNS.MasterLootList = nil
+                end
+            end
+            LNS.TempSettings.RemoveMLCorpse = false
+            LNS.TempSettings.RemoveMLCorpseInfo = {}
+        end
+
+        if LNS.TempSettings.SendLoot then
+            LNS.send(LNS.TempSettings.SendLootInfo)
+            LNS.TempSettings.SendLoot = false
+        end
+
+        if LNS.TempSettings.SendRemoveItem then
+            LNS.send(LNS.TempSettings.RemoveItemData)
+            LNS.TempSettings.SendRemoveItem = false
+        end
 
         -- check shared settings
         if LNS.TempSettings.LastCombatSetting == nil then
@@ -7733,7 +8202,7 @@ function LNS.MainLoop()
         --     LNS.Settings.DoDestroy = false
         --     Logger.Warn(LNS.guiLoot.console, "\ayBard Detected\ax, \arDisabling\ax [\atDoDestroy\ax].")
         -- end
-        mq.delay(300)
+        mq.delay(100)
     end
     if LNS.Terminate then
         mq.unbind("/lootutils")
