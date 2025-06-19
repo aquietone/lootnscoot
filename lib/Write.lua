@@ -95,7 +95,12 @@ function Write.Debug(console, message, ...)
         Output('debug', console, message)
     end
     if type(message) == 'table' then
-        Output('debug', console, FormatTableOutput(message))
+        local dbgMessage = ''
+        for k, v in pairs(message) do
+            dbgMessage = string.format("%s \ao%s\ax: \at%s\ax", dbgMessage, k, tostring(v))
+        end
+        Output('debug', console, dbgMessage)
+        -- Output('debug', console, FormatTableOutput(message))
     end
 end
 
