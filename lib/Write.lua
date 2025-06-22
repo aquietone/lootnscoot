@@ -5,13 +5,13 @@ Write.loglevel = 'info'
 Write.prefix = ''
 
 Write.loglevels = {
-    ['debug'] = { level = 1, color = '\27[95m', mqcolor = '\am', abbreviation = 'DEBUG', },
-    ['info']  = { level = 2, color = '\27[92m', mqcolor = '\ag', abbreviation = 'INFO', },
-    ['warn']  = { level = 3, color = '\27[93m', mqcolor = '\ay', abbreviation = 'WARN', },
-    ['trace'] = { level = 4, color = '\27[36m', mqcolor = '\at', abbreviation = 'TRACE', },
-    ['error'] = { level = 5, color = '\27[31m', mqcolor = '\ao', abbreviation = 'ERROR', },
-    ['fatal'] = { level = 6, color = '\27[91m', mqcolor = '\ar', abbreviation = 'FATAL', },
-    ['help']  = { level = 7, color = '\27[97m', mqcolor = '\aw', abbreviation = 'HELP', },
+    ['debug'] = { level = 1, trace = true, color = '\27[95m', mqcolor = '\am', abbreviation = 'DEBUG', },
+    ['info']  = { level = 2, trace = false, color = '\27[92m', mqcolor = '\ag', abbreviation = 'INFO', },
+    ['warn']  = { level = 3, trace = true, color = '\27[93m', mqcolor = '\ay', abbreviation = 'WARN', },
+    ['trace'] = { level = 4, trace = true, color = '\27[36m', mqcolor = '\at', abbreviation = 'TRACE', },
+    ['error'] = { level = 5, trace = true, color = '\27[31m', mqcolor = '\ao', abbreviation = 'ERROR', },
+    ['fatal'] = { level = 6, trace = true, color = '\27[91m', mqcolor = '\ar', abbreviation = 'FATAL', },
+    ['help']  = { level = 7, trace = false, color = '\27[97m', mqcolor = '\aw', abbreviation = 'HELP', },
 }
 
 Write.callstringlevel = Write.loglevels['debug'].level
@@ -52,7 +52,7 @@ local function FormatTableOutput(message)
 end
 
 local function GetCallerString()
-    if Write.loglevels[Write.loglevel:lower()].level > Write.callstringlevel then
+    if not Write.loglevels[Write.loglevel:lower()].trace or (not Write.loglevels[Write.loglevel:lower()].trace and Write.loglevel ~= 'debug') then
         return ''
     end
 
