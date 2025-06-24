@@ -990,9 +990,10 @@ function LNS.commandHandler(...)
         local data = {}
         local count = 0
         if tonumber(args[2]) then
-            count, data = LNS.findItemInDb(nil, tonumber(args[2]))
-            if count then
-                Logger.Info(LNS.guiLoot.console, "Found item in DB: \ay%s\ax", data.Name)
+            local itemID = tonumber(args[2])
+            count, data = LNS.findItemInDb(nil, itemID)
+            if count > 0 then
+                Logger.Info(LNS.guiLoot.console, "Found item in DB: \ay%s\ax Link: %s", data[itemID].item_name, data[itemID].item_link)
             else
                 Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[2])
             end
@@ -1000,7 +1001,7 @@ function LNS.commandHandler(...)
             count, data = LNS.findItemInDb(args[2])
             if count > 0 then
                 for k, row in pairs(data) do
-                    Logger.Info(LNS.guiLoot.console, "Found item in DB: \ay%s\ax ID: \at%s", row.item_name, row.item_id)
+                    Logger.Info(LNS.guiLoot.console, "Found %s item in DB: \ay%s\ax ID: \at%s Link: \al%s", count, row.item_name, row.item_id, row.item_link)
                 end
             else
                 Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[2])
@@ -2263,13 +2264,15 @@ function LNS.findItemInDb(itemName, itemId, exact, maxResults)
 
     for row in stmt:nrows() do
         counter = counter + 1
-        retTable[row.item_id] = {
-            item_id      = row.item_id,
-            item_name    = row.name,
-            item_classes = row.item_rule_classes or 'All',
-            item_link    = row.link or 'NULL',
-        }
-        if counter >= maxResults then break end
+        if counter <= maxResults then
+            retTable[row.item_id] = {
+                item_id      = row.item_id,
+                item_name    = row.name,
+                item_classes = row.item_rule_classes or 'All',
+                item_link    = row.link or 'NULL',
+            }
+        end
+
         LNS.ItemLinks[row.item_id] = row.link or 'NULL'
     end
 
@@ -2941,11 +2944,13 @@ function LNS.checkClasses(decision, allowedClasses, fromFunction, new)
     local ret = decision
     if fromFunction ~= 'loot' then return ret end
     local tmpClasses = allowedClasses:lower() or 'all'
-    if ret:lower() == 'keep' and not new then
+    if (ret:lower() == 'keep' or ret:lower() == 'canuse') and not new then
         if not string.find(tmpClasses, LNS.MyClass) then
             ret = "Ignore"
-        end
-        if tmpClasses == 'all' then
+            if tmpClasses == 'all' then
+                ret = "Keep"
+            end
+        else
             ret = "Keep"
         end
     end
@@ -2964,7 +2969,7 @@ function LNS.checkWearable(isEqupiable, decision, ruletype, nodrop, newrule, isA
     local msgTbl = {}
     local iCanWear = false
     if isEqupiable then
-        if (LNS.Settings.CanWear and decision == 'Keep' and ruletype == 'Normal') or decision == 'CanUse' or (nodrop and newrule) then
+        if (LNS.Settings.CanWear and (decision == 'Keep' or decision == 'CanUse') and ruletype == 'Normal') or decision == 'CanUse' or (nodrop and newrule) then
             if not item.CanUse() then
                 decision = 'Ignore'
                 iCanWear = false
@@ -3301,14 +3306,14 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     if newRule and ruletype == 'Normal' and not isNoDrop then
-        if sellPrice > 0 then
-            lootDecision = 'Sell'
+        if sellPrice > 0 and not equpiable then
+            -- lootDecision = 'Sell'
             lootNewItemRule = 'Sell'
-        elseif tributeValue > 0 then
-            lootDecision = 'Tribute'
-            lootNewItemRule = 'Tribtue'
+        elseif tributeValue > 0 and not equpiable then
+            -- lootDecision = 'Tribute'
+            lootNewItemRule = 'Tribute'
         elseif equpiable then
-            lootDecision = 'Keep'
+            -- lootDecision = 'Keep'
             lootNewItemRule = 'Keep'
         else
             lootDecision = 'Ask'
