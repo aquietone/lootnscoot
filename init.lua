@@ -4276,7 +4276,7 @@ function LNS.lootMobs(limit)
 
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Entering lootMobs function.')
     local deadCount      = mq.TLO.SpawnCount(string.format('npccorpse radius %s zradius 50', LNS.Settings.CorpseRadius or 100))()
-    local mobsNearby     = mq.TLO.SpawnCount(string.format('xtarhater radius %s zradius 50', LNS.Settings.MobsTooClose + LNS.Settings.CorpseRadius))()
+    local mobsNearby     = mq.TLO.SpawnCount(string.format('npc xtarhater radius %s zradius 50', LNS.Settings.MobsTooClose + LNS.Settings.CorpseRadius))()
     local corpseList     = {}
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Found %s corpses in range.', deadCount)
 
