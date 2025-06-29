@@ -3696,6 +3696,8 @@ function LNS.RegisterActors()
             local corpseID = lootMessage.CorpseID
 
             local MyCount = mq.TLO.FindItemCount(string.format("=%s", itemName))() + mq.TLO.FindItemBankCount(string.format("=%s", itemName))()
+            lootedCorpses[lootMessage.CorpseID] = true
+
             if LNS.MasterLootList == nil then
                 LNS.MasterLootList = {}
             end
@@ -3742,7 +3744,6 @@ function LNS.RegisterActors()
                     Lore = lootMessage.Lore or false,
                 })
             end
-            lootedCorpses[lootMessage.CorpseID] = true
             return
         end
 
@@ -3762,7 +3763,7 @@ function LNS.RegisterActors()
             return
         end
 
-        if action == 'corpse_gone' then
+        if action == 'corpse_gone' and who ~= MyName then
             LNS.TempSettings.RemoveMLCorpseInfo = {
                 ['corpseID'] = lootMessage.CorpseID,
             }
@@ -4421,6 +4422,51 @@ function LNS.lootMobs(limit)
     return didLoot
 end
 
+function LNS.itemGone(itemName, corpseID)
+    if LNS.MasterLootList ~= nil then
+        if LNS.MasterLootList[corpseID] ~= nil then
+            LNS.MasterLootList[corpseID].Items[itemName] = nil
+            if LNS.GetTableSize(LNS.MasterLootList[corpseID].Items) == 0 then
+                LNS.MasterLootList[corpseID] = nil
+            end
+        end
+
+        -- if you were told to loot this and its gone remove it from your list of items to loot so we don't get stuck in a loop
+        for idx, data in ipairs(LNS.TempSettings.ItemsToLoot or {}) do
+            if data.corpseID == corpseID and data.itemName == itemName then
+                Logger.Debug(LNS.guiLoot.console, 'corpseGone(): Removing item %s from ItemsToLoot for corpse ID %d', data.ItemName, corpseID)
+                LNS.TempSettings.ItemsToLoot[idx] = nil
+            end
+        end
+
+        if LNS.MasterLootList and LNS.GetTableSize(LNS.MasterLootList or {}) == 0 then
+            LNS.MasterLootList = nil
+        end
+    end
+end
+
+function LNS.corpseGone(corpseID)
+    if corpseID == nil or corpseID <= 0 then
+        Logger.Warn(LNS.guiLoot.console, 'corpseGone(): Invalid corpse ID: %s', tostring(corpseID))
+        return
+    end
+    if LNS.MasterLootList ~= nil then
+        LNS.MasterLootList[corpseID] = nil
+
+        for idx, data in ipairs(LNS.TempSettings.ItemsToLoot or {}) do
+            if data.corpseID == corpseID then
+                Logger.Debug(LNS.guiLoot.console, 'corpseGone(): Removing item %s from ItemsToLoot for corpse ID %d', data.ItemName, corpseID)
+                LNS.TempSettings.ItemsToLoot[idx] = nil
+            end
+        end
+
+        Logger.Info(LNS.guiLoot.console, 'corpseGone(): Removed corpse ID %d from MasterLootList.', corpseID)
+        if LNS.MasterLootList and LNS.GetTableSize(LNS.MasterLootList or {}) == 0 then
+            LNS.MasterLootList = nil
+        end
+    end
+end
+
 function LNS.LootItemML(itemName, corpseID)
     local startCount = mq.TLO.FindItemCount(string.format("=%s", itemName))()
     local checkMore = false
@@ -4428,17 +4474,16 @@ function LNS.LootItemML(itemName, corpseID)
     Logger.Info(LNS.guiLoot.console, 'Looting item: %s from corpse ID: %s MyCount: %s', itemName, corpseID, startCount)
     if not mq.TLO.Spawn(corpseID)() then
         Logger.Warn(LNS.guiLoot.console, 'LootItemML(): Corpse ID %d does not exist.', corpseID)
-        LNS.send({ action = 'corpse_gone', CorpseID = corpseID, })
+        LNS.corpseGone(corpseID)
+        LNS.send({ who = MyName, action = 'corpse_gone', CorpseID = corpseID, })
         return false
     end
     LNS.navToID(corpseID)
-
-
-
     mq.TLO.Spawn(corpseID).DoTarget()
     mq.delay(1000, function() return mq.TLO.Target.ID() == corpseID end)
     mq.cmdf('/loot')
     mq.delay(4000, function() return mq.TLO.Window('LootWnd').Open() end)
+    local corpseName = mq.TLO.Corpse.CleanName() or 'none'
     local itemCount = mq.TLO.Corpse.Items() or 0
     for i = 1, itemCount do
         local item = mq.TLO.Corpse.Item(i)
@@ -4446,7 +4491,27 @@ function LNS.LootItemML(itemName, corpseID)
             Logger.Debug(LNS.guiLoot.console, 'Looting item: %s from corpse ID: %d', itemName, corpseID)
             LNS.lootItem(i, 'Keep', 'leftmouseup', 0, not false)
             mq.delay(4000, function() return mq.TLO.FindItemCount(string.format("=%s", itemName))() > startCount end)
+            LNS.checkCursor()
+            if mq.TLO.FindItemCount(string.format("=%s", itemName))() == startCount then
+                return false
+            end
             checkMore = mq.TLO.Corpse.Item(string.format("=%s", itemName))() ~= nil or false
+            LNS.send({
+                ID = corpseID,
+                Items = {
+                    Name = itemName,
+                    CorpseName = corpseName,
+                    Action = 'Keep',
+                    Link = item.ItemLink('CLICKABLE')(),
+                    Eval = 'Keep',
+                    cantWear = not item.CanUse(),
+                },
+                Zone = LNS.Zone,
+                Server = eqServer,
+                LootedAt = mq.TLO.Time(),
+                CorpseName = corpseName,
+                LootedBy = MyName,
+            }, 'looted')
             break
         end
     end
@@ -4454,7 +4519,6 @@ function LNS.LootItemML(itemName, corpseID)
     checkMore = mq.TLO.Corpse.Item(string.format("=%s", itemName))() ~= nil or false
 
     if not checkMore then
-        Logger.Warn(LNS.guiLoot.console, 'LootItemML(): Item %s not found on corpse ID: %d', itemName, corpseID)
         LNS.send({ action = 'item_gone', item = itemName, CorpseID = corpseID, })
     end
     mq.TLO.Window('LootWnd').DoClose()
@@ -7899,7 +7963,7 @@ function LNS.MainLoop()
 
         if LNS.TempSettings.LastZone ~= LNS.Zone then
             mq.delay(5000, function() return not mq.TLO.Me.Zoning() end) -- wait for zoning to finish.
-
+            LNS.TempSettings.ItemsToLoot = {}
             lootedCorpses = {}
 
             if Mode == 'directed' then
@@ -7938,7 +8002,19 @@ function LNS.MainLoop()
             LNS.TempSettings.RemoveSafeZone = nil
         end
 
-        if LNS.GetTableSize(LNS.TempSettings.ItemsToLoot) > 0 then
+        if LNS.TempSettings.RemoveMLItem then
+            LNS.itemGone(LNS.TempSettings.RemoveMLItemInfo.itemName, LNS.TempSettings.RemoveMLItemInfo.corpseID)
+            LNS.TempSettings.RemoveMLItem = false
+            LNS.TempSettings.RemoveMLItemInfo = {}
+        end
+
+        if LNS.TempSettings.RemoveMLCorpse then
+            LNS.corpseGone(LNS.TempSettings.RemoveMLCorpseInfo.corpseID)
+            LNS.TempSettings.RemoveMLCorpse = false
+            LNS.TempSettings.RemoveMLCorpseInfo = {}
+        end
+
+        if LNS.GetTableSize(LNS.TempSettings.ItemsToLoot) > 0 and (not mq.TLO.Me.Combat() or LNS.Settings.CombatLooting) then
             local lootedIdx = {}
             for idx, data in ipairs(LNS.TempSettings.ItemsToLoot or {}) do
                 if data ~= nil and data.corpseID ~= nil and data.itemName ~= nil then
@@ -7953,39 +8029,6 @@ function LNS.MainLoop()
             for idx, _ in pairs(lootedIdx) do
                 LNS.TempSettings.ItemsToLoot[idx] = nil
             end
-        end
-
-        if LNS.TempSettings.RemoveMLItem then
-            if LNS.MasterLootList ~= nil then
-                local corpseID = LNS.TempSettings.RemoveMLItemInfo.corpseID or 0
-                local itemName = LNS.TempSettings.RemoveMLItemInfo.itemName or ''
-                if LNS.MasterLootList[corpseID] ~= nil then
-                    LNS.MasterLootList[corpseID].Items[itemName] = nil
-                    if LNS.GetTableSize(LNS.MasterLootList[corpseID].Items) == 0 then
-                        LNS.MasterLootList[corpseID] = nil
-                    end
-                end
-
-                if LNS.MasterLootList and LNS.GetTableSize(LNS.MasterLootList or {}) == 0 then
-                    LNS.MasterLootList = nil
-                end
-            end
-            LNS.TempSettings.RemoveMLItem = false
-            LNS.TempSettings.RemoveMLItemInfo = {}
-        end
-
-        if LNS.TempSettings.RemoveMLCorpse then
-            if LNS.MasterLootList ~= nil then
-                local corpseID = LNS.TempSettings.RemoveMLCorpseInfo.corpseID or 0
-                if LNS.MasterLootList[corpseID] ~= nil then
-                    LNS.MasterLootList[corpseID] = nil
-                end
-                if LNS.MasterLootList and LNS.GetTableSize(LNS.MasterLootList or {}) == 0 then
-                    LNS.MasterLootList = nil
-                end
-            end
-            LNS.TempSettings.RemoveMLCorpse = false
-            LNS.TempSettings.RemoveMLCorpseInfo = {}
         end
 
         if LNS.TempSettings.SendLoot then
