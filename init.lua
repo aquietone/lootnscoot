@@ -100,6 +100,7 @@ local settingsEnum                      = {
     lootchannel = 'LootChannel',
     groupchannel = 'GroupChannel',
     reportloot = 'ReportLoot',
+    reportskippeditems = 'ReportSkippedItems',
     spamlootinfo = 'SpamLootInfo',
     lootforagespam = 'LootForageSpam',
     addnewsales = 'AddNewSales',
@@ -188,6 +189,7 @@ LNS.Settings    = {
     LootChannel         = "dgt",  -- Channel we report loot to.
     GroupChannel        = "dgze", -- Channel we use for Group Commands Default(dgze)
     ReportLoot          = true,   -- Report loot items to group or not.
+    ReportSkippedItems  = false,  -- Report skipped items to group or not.
     SpamLootInfo        = false,  -- Echo Spam for Looting
     LootForageSpam      = false,  -- Echo spam for Foraged Items
     AddNewSales         = true,   -- Adds 'Sell' Flag to items automatically if you sell them while the script is running.
@@ -244,6 +246,7 @@ REQUIRES DoDestroy set to true.]],
     LootChannel         = "Channel we report loot to. ex dgt",
     GroupChannel        = "Channel we use for Group Commands Default(dgze)",
     ReportLoot          = "Report loot items to group or not.",
+    ReportSkippedItems  = "Report skipped items to group or not.",
     SpamLootInfo        = "Echo Spam for Looting",
     LootForageSpam      = "Echo spam for Foraged Items",
     AddNewSales         = "Adds 'Sell' Flag to items automatically if you sell them while the script is running.",
@@ -892,9 +895,13 @@ end
 
 function LNS.report(message, ...)
     if LNS.Settings.ReportLoot then
-        local prefixWithChannel = reportPrefix:format(LNS.Settings.LootChannel, mq.TLO.Time())
-        mq.cmdf(prefixWithChannel .. message, ...)
+        LNS.doReport(message, ...)
     end
+end
+
+function LNS.doReport(message, ...)
+    local prefixWithChannel = reportPrefix:format(LNS.Settings.LootChannel, mq.TLO.Time())
+    mq.cmdf(prefixWithChannel .. message, ...)
 end
 
 function LNS.AreBagsOpen()
@@ -1202,11 +1209,17 @@ function LNS.reportSkippedItems(noDropItems, loreItems, corpseName, corpseID)
     if next(noDropItems) then
         Logger.Info(LNS.guiLoot.console, "\aySkipped NoDrop\ax items from corpse \at%s\ax (ID:\at %s\ax):\ay %s\ax",
             corpseName, tostring(corpseID), table.concat(noDropItems, ", "))
+        if LNS.Settings.ReportSkippedItems then
+            LNS.doReport("Skipped NoDrop: %s (%s): %s", corpseName, tostring(corpseID), table.concat(noDropItems, ", "))
+        end
     end
 
     if next(loreItems) then
         Logger.Info(LNS.guiLoot.console, "\aySkipped Lore\ax items from corpse \at%s\ax (ID:\at %s\ax):\ay %s\ax",
             corpseName, tostring(corpseID), table.concat(loreItems, ", "))
+        if LNS.Settings.ReportSkippedItems then
+            LNS.doReport("Skipped Lore: %s (%s): %s", corpseName, tostring(corpseID), table.concat(loreItems, ", "))
+        end
     end
 end
 
