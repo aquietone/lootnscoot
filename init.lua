@@ -1285,7 +1285,7 @@ function LNS.enterNewItemRuleInfo(data_table)
         noChange = false,
         Server   = eqServer,
     }
-    if (classes == LNS.NormalItemsClasses[itemID] and rule == LNS.NormalItemsRules[itemID]) then
+    if (classes == LNS.NormalItemsClasses[itemID] and rule == LNS.NormalItemsRules[itemID] and rule ~= 'Ignore' and rule ~= 'Ask') then
         modMessage.noChange = true
         dbgTbl = {
             Check = 'loot.enterNewItemRuleInfo() \ax\agNo Changes Made to Item:',
@@ -1297,7 +1297,7 @@ function LNS.enterNewItemRuleInfo(data_table)
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
     else
         dbgTbl = {
-            Check   = "oloot.enterNewItemRuleInfo() \axSending \agENTERED ITEM",
+            Check   = "loot.enterNewItemRuleInfo() \axSending \agENTERED ITEM",
             MailBox = 'lootnscoot',
             Item    = item,
             ID      = itemID,
@@ -3924,7 +3924,7 @@ function LNS.RegisterActors()
             Logger.Info(LNS.guiLoot.console, infoMsg)
 
             if lootMessage.entered then
-                if lootedCorpses[lootMessage.corpse] then
+                if lootedCorpses[lootMessage.corpse] and not lootMessage.noChange then
                     lootedCorpses[lootMessage.corpse] = nil
                 end
 
@@ -4073,6 +4073,10 @@ function LNS.lootItem(index, doWhat, button, qKeep, cantWear)
             LNS.insertIntoHistory(itemName, corpseName, actionToTake,
                 os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear)
         end
+        if LNS.Settings.ReportSkippedItems then
+            LNS.report('%sing \ay%s\ax', eval, itemLink)
+        end
+
         return
     end
 
@@ -7708,11 +7712,12 @@ function LNS.RenderMainUI()
                 end
                 ImGui.SameLine()
 
-                LNS.TempSettings.ShowHelp, clicked = LNS.DrawToggle("Help##Toggle",
-                    LNS.TempSettings.ShowHelp,
-                    ImVec4(0.4, 1.0, 0.4, 0.4),
-                    ImVec4(1.0, 0.4, 0.4, 0.4),
-                    16, 36)
+                if ImGui.SmallButton(Icons.MD_HELP_OUTLINE) then
+                    LNS.TempSettings.ShowHelp = not LNS.TempSettings.ShowHelp
+                end
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Show/Hide Help Window")
+                end
 
                 ImGui.SameLine()
                 if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
