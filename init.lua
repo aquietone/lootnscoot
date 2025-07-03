@@ -24,8 +24,10 @@ local zoneID                            = 0
 local lootedCorpses                     = {}
 local tmpRules, tmpClasses, tmpLinks    = {}, {}, {}
 local ProcessItemsState                 = nil
+local reportPrefixEQChat                = '/%s '
 local reportPrefix                      = '/%s \a-t[\at%s\a-t][\ax\ayLootUtils\ax\a-t]\ax '
 Logger.prefix                           = "[\atLootnScoot\ax] "
+local eqChatChannels                    = { g = true, gu = true, rs = true, say = true, }
 local newItem                           = nil
 local debugPrint                        = false
 local iconAnimation                     = mq.FindTextureAnimation('A_DragItem')
@@ -900,7 +902,7 @@ function LNS.report(message, ...)
 end
 
 function LNS.doReport(message, ...)
-    local prefixWithChannel = reportPrefix:format(LNS.Settings.LootChannel, mq.TLO.Time())
+    local prefixWithChannel = not eqChatChannels[LNS.Settings.LootChannel] and reportPrefix:format(LNS.Settings.LootChannel, mq.TLO.Time()) or reportPrefixEQChat:format(LNS.Settings.LootChannel)
     mq.cmdf(prefixWithChannel .. message, ...)
 end
 
