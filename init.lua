@@ -3863,26 +3863,6 @@ function LNS.RegisterActors()
         end
         -- -- Handle actions
 
-        if lootMessage.entered then
-            if lootedCorpses[lootMessage.corpse] then
-                lootedCorpses[lootMessage.corpse] = nil
-            end
-        end
-        -- if lootMessage.noChange then
-        --     LNS.NewItems[itemID] = nil
-        --     if LNS.TempSettings.NewItemIDs ~= nil then
-        --         for idx, id in ipairs(LNS.TempSettings.NewItemIDs) do
-        --             if id == itemID then
-        --                 table.remove(LNS.TempSettings.NewItemIDs, idx)
-        --                 break
-        --             end
-        --         end
-        --     end
-        --     LNS.NewItemsCount = LNS.NewItemsCount - 1
-        --     Logger.Info(LNS.guiLoot.console, "loot.RegisterActors: \atNew Item Rule \ax\agConfirmed:\ax [\ay%s\ax] NewItemCount Remaining \ag%s\ax", itemLink, LNS.NewItemsCount)
-        --     return
-        -- end
-
         if action == 'addrule' or action == 'modifyitem' then
             Logger.Debug(LNS.guiLoot.console, dbgTbl)
 
@@ -3926,7 +3906,7 @@ function LNS.RegisterActors()
             Logger.Info(LNS.guiLoot.console, infoMsg)
 
             if lootMessage.entered then
-                if lootedCorpses[lootMessage.corpse] and not lootMessage.noChange then
+                if lootedCorpses[lootMessage.corpse] and not lootMessage.noChange and rule ~= 'Ignore' then
                     lootedCorpses[lootMessage.corpse] = nil
                 end
 
@@ -4076,7 +4056,11 @@ function LNS.lootItem(index, doWhat, button, qKeep, cantWear)
                 os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear)
         end
         if LNS.Settings.ReportSkippedItems then
-            LNS.report('%sing \ay%s\ax', eval, itemLink)
+            if eval ~= 'Left' then
+                LNS.report('%sing \ay%s\ax', eval, itemLink)
+            else
+                LNS.report('Left \ay%s\ax', itemLink)
+            end
         end
 
         return
