@@ -468,6 +468,7 @@ function LNS.InsertMasterLootList(item_name, corpseID, item_id, itemLink, item_i
             item = item_name,
             link = LNS.ItemLinks[item_id],
             Count = myCount,
+            Server = eqServer,
             CorpseID = corpseID,
             Value = item_value,
             NoDrop = item_is_nodrop,
@@ -902,7 +903,8 @@ function LNS.report(message, ...)
 end
 
 function LNS.doReport(message, ...)
-    local prefixWithChannel = not eqChatChannels[LNS.Settings.LootChannel] and reportPrefix:format(LNS.Settings.LootChannel, mq.TLO.Time()) or reportPrefixEQChat:format(LNS.Settings.LootChannel)
+    local prefixWithChannel = not eqChatChannels[LNS.Settings.LootChannel] and reportPrefix:format(LNS.Settings.LootChannel, mq.TLO.Time()) or
+        reportPrefixEQChat:format(LNS.Settings.LootChannel)
     mq.cmdf(prefixWithChannel .. message, ...)
 end
 
@@ -962,7 +964,12 @@ function LNS.commandHandler(...)
             if type(LNS.Settings[settingName]) == 'boolean' then
                 LNS.Settings[settingName] = settingVal == 'on'
                 if settingName == 'MasterLooting' then
-                    LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, })
+                    LNS.send({
+                        who = MyName,
+                        action = 'master_looter',
+                        Server = eqServer,
+                        select = LNS.Settings.MasterLooting,
+                    })
                 end
             elseif type(LNS.Settings[settingName]) == 'number' then
                 LNS.Settings[settingName] = tonumber(settingVal)
@@ -1582,6 +1589,7 @@ function LNS.AddSafeZone(zoneName)
     LNS.send({
         who = MyName,
         action = 'addsafezone',
+        Server = eqServer,
         zone = zoneName,
     })
     if LNS.SafeZones[LNS.Zone] then
@@ -1608,6 +1616,7 @@ function LNS.RemoveSafeZone(zoneName)
     LNS.SafeZones[zoneName] = nil
     LNS.send({
         who = MyName,
+        Server = eqServer,
         action = 'removesafezone',
         zone = zoneName,
     })
@@ -1957,7 +1966,11 @@ function LNS.addMyInventoryToDB()
     end
     Logger.Info(LNS.guiLoot.console, "\at%s \axImported \ag%d\ax items from \aoInventory\ax, and \ag%d\ax items from the \ayBank\ax, into the DB", MyName, counter, counterBank)
     LNS.report(string.format("%s Imported %d items from Inventory, and %d items from the Bank, into the DB", MyName, counter, counterBank))
-    LNS.send({ who = MyName, Server = eqServer, action = 'ItemsDB_UPDATE', })
+    LNS.send({
+        who = MyName,
+        Server = eqServer,
+        action = 'ItemsDB_UPDATE',
+    })
 end
 
 function LNS.addToItemDB(item)
@@ -2628,6 +2641,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID)
         maxStacks  = corpseItem.StackSize() or 0,
         sellPrice  = LNS.valueToCoins(corpseItem.Value()),
         corpse     = corpseID,
+
     }
 
     Logger.Info(LNS.guiLoot.console, "\agAdding 1 \ayNEW\ax item: \at%s \ay(\axID: \at%s\at) \axwith rule: \ag%s", itemName, itemID, itemRule)
@@ -3546,7 +3560,7 @@ function LNS.sendMySettings()
         CorpseRadius    = LNS.Settings.CorpseRadius,
         LootMyCorpse    = LNS.Settings.LootMyCorpse,
         IgnoreNearby    = LNS.Settings.IgnoreMyNearCorpses,
-
+        Server          = eqServer,
     })
 
     LNS.Boxes[MyName] = LNS.Settings
@@ -3577,6 +3591,7 @@ function LNS.informProcessing()
             Subject = "processing",
             Who = MyName,
             LNSSettings = LNS.Settings,
+            Server = eqServer,
             CorpsesToIgnore = lootedCorpses or {},
             CombatLooting = LNS.Settings.CombatLooting,
             CorpseRadius = LNS.Settings.CorpseRadius,
@@ -3592,6 +3607,7 @@ function LNS.doneProcessing()
         LNS.send({
             Subject = "done_processing",
             Who = MyName,
+            Server = eqServer,
             LNSSettings = LNS.Settings,
             CorpsesToIgnore = lootedCorpses or {},
             CombatLooting = LNS.Settings.CombatLooting,
@@ -3613,13 +3629,15 @@ end
 
 function LNS.RegisterActors()
     LNS.lootActor = Actors.register('lootnscoot', function(message)
-        local lootMessage   = message()
+        local lootMessage = message()
+        local server      = lootMessage.Server or 'NULL'
+        if server ~= eqServer and server ~= 'NULL' then return end -- if they sent the server name then only answer if it matches our server
+
         local who           = lootMessage.who or ''
         local action        = lootMessage.action or ''
         local itemID        = lootMessage.itemID or 0
         local rule          = lootMessage.rule or 'NULL'
         local section       = lootMessage.section or 'NormalItems'
-        local server        = lootMessage.Server or 'NULL'
         local itemName      = lootMessage.item or 'NULL'
         local itemLink      = lootMessage.link or 'NULL'
         local itemClasses   = lootMessage.classes or 'All'
@@ -3688,6 +3706,7 @@ function LNS.RegisterActors()
                 LNS.send({
                     Subject = 'mysetting',
                     Who = MyName,
+                    Server = eqServer,
                     LNSSettings = LNS.Settings,
                     CorpsesToIgnore = lootedCorpses or {},
                 }, 'loot_module')
@@ -3753,6 +3772,7 @@ function LNS.RegisterActors()
                     item = itemName,
                     link = itemLink,
                     Count = MyCount,
+                    Server = eqServer,
                     CorpseID = corpseID,
                     Value = lootMessage.Value or 0,
                     NoDrop = lootMessage.NoDrop or false,
@@ -3765,7 +3785,15 @@ function LNS.RegisterActors()
         if action == 'recheck_item' and who ~= MyName then
             local MyCount = mq.TLO.FindItemCount(string.format("=%s", itemName))() + mq.TLO.FindItemBankCount(string.format("=%s", itemName))()
             local corpseID = lootMessage.CorpseID
-            LNS.send({ who = MyName, action = 'check_item', item = itemName, link = itemLink, Count = MyCount, CorpseID = corpseID, })
+            LNS.send({
+                who = MyName,
+                action = 'check_item',
+                item = itemName,
+                link = itemLink,
+                Count = MyCount,
+                CorpseID = corpseID,
+                Server = eqServer,
+            })
             return
         end
 
@@ -4478,7 +4506,7 @@ function LNS.LootItemML(itemName, corpseID)
     if not mq.TLO.Spawn(corpseID)() then
         Logger.Warn(LNS.guiLoot.console, 'LootItemML(): Corpse ID %d does not exist.', corpseID)
         LNS.corpseGone(corpseID)
-        LNS.send({ who = MyName, action = 'corpse_gone', CorpseID = corpseID, })
+        LNS.send({ who = MyName, action = 'corpse_gone', Server = eqServer, CorpseID = corpseID, })
         return false
     end
     LNS.navToID(corpseID)
@@ -4522,12 +4550,12 @@ function LNS.LootItemML(itemName, corpseID)
     checkMore = mq.TLO.Corpse.Item(string.format("=%s", itemName))() ~= nil or false
 
     if not checkMore then
-        LNS.send({ action = 'item_gone', item = itemName, CorpseID = corpseID, })
+        LNS.send({ action = 'item_gone', item = itemName, CorpseID = corpseID, Server = eqServer, })
     end
     mq.TLO.Window('LootWnd').DoClose()
     mq.delay(1000, function() return not mq.TLO.Window('LootWnd').Open() end)
     if not mq.TLO.Spawn(corpseID)() then
-        LNS.send({ action = 'corpse_gone', CorpseID = corpseID, })
+        LNS.send({ action = 'corpse_gone', CorpseID = corpseID, Server = eqServer, })
     end
 
     return mq.TLO.FindItemCount(string.format("=%s", itemName))() > startCount
@@ -6655,7 +6683,7 @@ function LNS.drawSwitch(settingName, who)
                 end
             end
             if settingName == 'MasterLooting' then
-                LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, })
+                LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, Server = eqServer, })
             end
         end
     end
@@ -6785,7 +6813,7 @@ function LNS.renderSettingsTables(who)
                                 end
                             end
                             if settingName == 'MasterLooting' then
-                                LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, })
+                                LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, Server = eqServer, })
                             end
                         end
                         if ImGui.IsItemHovered() then
@@ -6863,6 +6891,7 @@ function LNS.renderCloneWindow()
                     action = 'updatesettings',
                     who = LNS.TempSettings.CloneTo,
                     settings = tmpSet,
+                    Server = eqServer,
                 })
                 -- LNS.TempSettings.CloneWho = nil
                 LNS.TempSettings.CloneTo = nil
@@ -6947,6 +6976,7 @@ function LNS.renderSettingsSection(who)
             action = 'updatesettings',
             who = who,
             settings = LNS.Boxes[who],
+            Server = eqServer,
         })
     end
 
@@ -7084,7 +7114,7 @@ function LNS.RenderMasterLooterWindow()
                         if ImGui.SmallButton(Icons.MD_DELETE .. "##MLRemove" .. cID .. item) then
                             Logger.Info(LNS.guiLoot.console, "Removing CorpseID %s Item %s from Master Loot List", cID, item)
 
-                            LNS.TempSettings.RemoveItemData = { action = 'item_gone', CorpseID = cID, item = item, }
+                            LNS.TempSettings.RemoveItemData = { action = 'item_gone', CorpseID = cID, item = item, Server = eqServer, }
                             LNS.TempSettings.SendRemoveItem = true
                         end
 
@@ -7094,14 +7124,14 @@ function LNS.RenderMasterLooterWindow()
                             Logger.Info(LNS.guiLoot.console, "Telling \atMySelf\ax to loot \ay%s\ax from CorpseID \ag%s", itemData.Link, cID)
                             LNS.TempSettings.SendLootInfo = {}
                             LNS.TempSettings.SendLootInfo =
-                            { who = MyName, action = 'loot_item', CorpseID = cID, item = item, }
+                            { who = MyName, action = 'loot_item', CorpseID = cID, item = item, Server = eqServer, }
                             LNS.TempSettings.SendLoot = true
                         end
 
                         if ImGui.CollapsingHeader("Members##" .. cID .. item) then
                             if ImGui.SmallButton("Refresh Counts##" .. cID .. item) then
                                 Logger.Info(LNS.guiLoot.console, "Refreshing Member Counts for CorpseID %s Item %s", cID, item)
-                                LNS.send({ who = MyName, action = 'recheck_item', CorpseID = cID, item = item, })
+                                LNS.send({ who = MyName, action = 'recheck_item', CorpseID = cID, item = item, Server = eqServer, })
                             end
                             if itemData.Members ~= nil and next(itemData.Members) ~= nil then
                                 if ImGui.BeginTable('MemberCounts##List', 3, ImGuiTableFlags.Borders) then
@@ -7133,7 +7163,7 @@ function LNS.RenderMasterLooterWindow()
                                                 Logger.Info(LNS.guiLoot.console, "Telling \at%s\ax to loot \ay%s\ax from CorpseID \ag%s", member, itemData.Link, cID)
                                                 LNS.TempSettings.SendLootInfo = {}
                                                 LNS.TempSettings.SendLootInfo =
-                                                { who = member, action = 'loot_item', CorpseID = cID, item = item, }
+                                                { who = member, action = 'loot_item', Server = eqServer, CorpseID = cID, item = item, }
                                                 LNS.TempSettings.SendLoot = true
                                             end
                                         end
@@ -7937,7 +7967,7 @@ function LNS.init(args)
             LootMyCorpse = LNS.Settings.LootMyCorpse,
             IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
             CorpsesToIgnore = lootedCorpses or {},
-
+            Server = eqServer,
         }, 'loot_module')
     end
     return needsSave
@@ -7980,7 +8010,7 @@ function LNS.MainLoop()
                     LootMyCorpse = LNS.Settings.LootMyCorpse,
                     IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                     CorpsesToIgnore = lootedCorpses or {},
-
+                    Server = eqServer,
                 }, 'loot_module')
             end
             LNS.TempSettings.LastZone = LNS.Zone
@@ -8081,6 +8111,7 @@ function LNS.MainLoop()
                     IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                     CorpsesToIgnore = lootedCorpses or {},
                     LNSSettings = LNS.Settings,
+                    Server = eqServer,
                 }, 'loot_module')
             end
         end
