@@ -906,6 +906,9 @@ function LNS.doReport(message, ...)
     local prefixWithChannel = not eqChatChannels[LNS.Settings.LootChannel] and reportPrefix:format(LNS.Settings.LootChannel, mq.TLO.Time()) or
         reportPrefixEQChat:format(LNS.Settings.LootChannel)
     mq.cmdf(prefixWithChannel .. message, ...)
+    if LNS.guiLoot.console ~= nil then
+        LNS.guiLoot.console:AppendText(string.format(message, ...))
+    end
 end
 
 function LNS.AreBagsOpen()
@@ -1730,7 +1733,8 @@ end
 ---@param zone string the zone the item was looted in (ShortName)
 ---@param items_table table items table sent to looted.
 ---@param cantWear boolean|nil if the item can be worn
-function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, link, looter, zone, items_table, cantWear)
+---@@param rule string|nil the rule applied to the item
+function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, link, looter, zone, items_table, cantWear, rule)
     if itemName == nil then return end
     local db = SQLite3.open(HistoryDB)
     if not db then
@@ -1798,6 +1802,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             Action = actLabel,
             Link = link,
             Eval = eval,
+            Rule = rule or eval,
             cantWear = cantWear,
         })
 end
@@ -3056,13 +3061,15 @@ function LNS.checkClasses(decision, allowedClasses, fromFunction, new)
     if (ret:lower() == 'keep' or ret:lower() == 'canuse') and not new then
         if not string.find(tmpClasses, LNS.MyClass) then
             ret = "Ignore"
-            if tmpClasses == 'all' then
-                ret = "Keep"
-            end
         else
             ret = "Keep"
         end
+
+        if tmpClasses == 'all' then
+            ret = "Keep"
+        end
     end
+
     local dbgTbl = {
         Lookup = '\ax\ag Check for \ayClass Rules',
         OldDecision = decision,
@@ -3252,6 +3259,15 @@ function LNS.getRule(item, fromFunction, index)
 
     local lootRule, lootClasses, lootLink, ruletype = LNS.lookupLootRule(itemID)
 
+    -- bypass checks if rule is Ignore
+    if lootRule == "Ignore" and not (LNS.Settings.AlwaysEval and ruletype == 'Normal') then
+        lootDecision = "Ignore"
+        goto skip_checks
+    end
+    if lootRule == 'Keep' and not (LNS.Settings.AlwaysEval and ruletype == 'Normal') then
+        lootDecision = LNS.checkClasses(lootRule, lootClasses, 'loot', newRule)
+        goto skip_checks
+    end
 
     Logger.Info(LNS.guiLoot.console, "\aoLookup Rule\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, ID: \ay%s\ax, \atLink: %s", lootRule, lootClasses, itemName, itemID,
         lootLink)
@@ -3545,6 +3561,13 @@ function LNS.getRule(item, fromFunction, index)
             -- LNS.lootItem(index, lootDecision, 'leftmouseup', qKeep, not iCanUse)
         end
     end
+
+    if lootDecision == 'Keep' or lootDecision == 'CanUse' and ruletype ~= 'Personal' then
+        lootDecision = LNS.checkClasses(lootDecision, lootClasses, 'loot', newRule)
+    end
+
+    ::skip_checks::
+
     if type(lootDecision) ~= 'string' then
         Logger.Warn(LNS.guiLoot.console, "Invalid lootDecision type: %s for item: %s", type(lootDecision), itemName)
         lootDecision = 'Ignore'
@@ -3710,7 +3733,7 @@ end
 function LNS.RegisterActors()
     LNS.lootActor = Actors.register('lootnscoot', function(message)
         local lootMessage = message()
-        local server      = lootMessage.Server or 'NULL'
+        local server      = lootMessage.Server and lootMessage.Server or (lootMessage.server or 'NULL')
         if server ~= eqServer and server ~= 'NULL' then return end -- if they sent the server name then only answer if it matches our server
 
         local who           = lootMessage.who or ''
@@ -4036,6 +4059,7 @@ function LNS.RegisterActors()
                     Lookup = 'loot.RegisterActors()',
                     Action = 'New Item Rule',
                     Updated = lootMessage.entered,
+                    Changed = lootMessage.noChange,
                     NewItemCountRemaining = LNS.NewItemsCount,
                     Item = itemName,
                 }
@@ -4135,6 +4159,8 @@ function LNS.lootItem(index, doWhat, button, qKeep, cantWear)
     corpseName           = tmpLabel
     local eval           = type(actionToTake) == 'string' and actionToTake or '?'
     local dbgTbl         = {}
+    local rule           = isGlobalItem and LNS.GlobalItemsRules[corpseItemID] or
+        (isPersonalItem and LNS.PersonalItemsRules[corpseItemID] or LNS.NormalItemsRules[corpseItemID])
     if allItems == nil then allItems = {} end
     dbgTbl = {
         Lookup = 'loot.lootItem()',
@@ -4161,7 +4187,7 @@ function LNS.lootItem(index, doWhat, button, qKeep, cantWear)
             Logger.Debug(LNS.guiLoot.console, dbgTbl)
 
             LNS.insertIntoHistory(itemName, corpseName, actionToTake,
-                os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear)
+                os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear, rule)
         end
         if LNS.Settings.ReportSkippedItems then
             if eval ~= 'Left' then
