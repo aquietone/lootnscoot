@@ -1025,6 +1025,106 @@ function LNS.commandHandler(...)
             -- LNS.findItemInDb(args[2])
         end
     end
+
+    if args[1] == 'personalitem' then
+        if validActions[args[2]] then
+            local rule = validActions[args[2]]
+            if args[2] == 'quest' then
+                if not item() then
+                    if args[4] then
+                        rule = 'Quest|' .. args[4]
+                    end
+                else
+                    if args[3] then
+                        rule = 'Quest|' .. args[3]
+                    end
+                end
+            end
+
+            if not item() and args[3] then
+                local itemID = LNS.resolveItemIDbyName(args[3], false)
+                if itemID then
+                    LNS.addRule(itemID, 'PersonalItems', rule, 'All', 'NULL')
+                    Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", args[3], rule)
+                else
+                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[3])
+                end
+            end
+            if item() then
+                local itemID = item.ID()
+                LNS.addRule(itemID, 'PersonalItems', rule, 'All', item.ItemLink('CLICKABLE')())
+                Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", item.Name(), rule)
+            end
+            return
+        end
+    end
+
+    if args[1] == 'globalitem' then
+        if validActions[args[2]] then
+            local rule = validActions[args[2]]
+            if args[2] == 'quest' then
+                if not item() then
+                    if args[4] then
+                        rule = 'Quest|' .. args[4]
+                    end
+                else
+                    if args[3] then
+                        rule = 'Quest|' .. args[3]
+                    end
+                end
+            end
+
+            if not item() and args[3] then
+                local itemID = LNS.resolveItemIDbyName(args[3], false)
+                if itemID then
+                    LNS.addRule(itemID, 'GlobalItems', rule, 'All', 'NULL')
+                    Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", args[3], rule)
+                else
+                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[3])
+                end
+            end
+            if item() then
+                local itemID = item.ID()
+                LNS.addRule(itemID, 'GlobalItems', rule, 'All', item.ItemLink('CLICKABLE')())
+                Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", item.Name(), rule)
+            end
+            return
+        end
+    end
+
+    if args[1] == 'normalitem' then
+        if validActions[args[2]] then
+            local rule = validActions[args[2]]
+            if args[2] == 'quest' then
+                if not item() then
+                    if args[4] then
+                        rule = 'Quest|' .. args[4]
+                    end
+                else
+                    if args[3] then
+                        rule = 'Quest|' .. args[3]
+                    end
+                end
+            end
+
+            if not item() and args[3] then
+                local itemID = LNS.resolveItemIDbyName(args[3], false)
+                if itemID then
+                    LNS.addRule(itemID, 'NormalItems', rule, 'All', 'NULL')
+                    Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", args[3], rule)
+                else
+                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[3])
+                end
+            end
+            if item() then
+                local itemID = item.ID()
+                LNS.addRule(itemID, 'NormalItems', rule, 'All', item.ItemLink('CLICKABLE')())
+                Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", item.Name(), rule)
+            end
+            return
+        end
+    end
+
     if #args == 1 then
         local command = args[1]
         if command == 'sellstuff' then
@@ -1152,33 +1252,13 @@ function LNS.commandHandler(...)
 
             Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", item_name)
         end
-    elseif #args == 3 or args[1] == 'globalitem' or args[1] == 'buy' then
-        if args[1] == 'globalitem' and args[2] == 'quest' and item() then
-            local itemID = item.ID()
-            LNS.addRule(itemID, 'GlobalItems', 'Quest|' .. args[3], 'All', item.ItemLink('CLICKABLE')())
-            Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agGlobal Item \ayQuest|%s\ax", item.Name(), args[3], item.ItemLink('CLICKABLE')())
-        elseif args[1] == 'globalitem' and validActions[args[2]] and item() then
-            LNS.addRule(item.ID(), 'GlobalItems', validActions[args[2]], args[3] or 'All', item.ItemLink('CLICKABLE')())
-            Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agGlobal Item \ay%s \ax(\at%s\ax)", item.Name(), item.ID(), validActions[args[2]])
-        elseif args[1] == 'globalitem' and validActions[args[2]] and args[3] ~= nil then
-            local itemName = args[3]
-            local itemID   = LNS.resolveItemIDbyName(itemName, false)
-            if itemID then
-                if LNS.ALLITEMS[itemID] then
-                    LNS.addRule(itemID, 'GlobalItems', validActions[args[2]], 'All', LNS.ALLITEMS[itemID].Link)
-                    Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agGlobal Item \ay%s|%s\ax", LNS.ALLITEMS[itemID].Name, validActions[args[2]], args[3])
-                end
-            else
-                Logger.Warn(LNS.guiLoot.console, "Item \ay%s\ax ID: %s\ax not found in loot.ALLITEMS.", itemName, itemID)
-            end
-        elseif args[1] == 'buy' then
-            LNS.BuyItemsTable[args[2]] = args[3]
-            LNS.setBuyItem(args[2], args[3])
-            LNS.TempSettings.NeedSave = true
-            LNS.TempSettings.NewBuyItem = ""
-            LNS.TempSettings.NewBuyQty = tonumber(args[3]) or 0
-            Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", args[2])
-        end
+    elseif args[1] == 'buy' then
+        LNS.BuyItemsTable[args[2]] = args[3]
+        LNS.setBuyItem(args[2], args[3])
+        LNS.TempSettings.NeedSave = true
+        LNS.TempSettings.NewBuyItem = ""
+        LNS.TempSettings.NewBuyQty = tonumber(args[3]) or 0
+        Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", args[2])
     end
     if LNS.TempSettings.NeedSave then
         LNS.writeSettings("CommandHandler:args")
@@ -5245,6 +5325,14 @@ If the item is already in the table, it will update the quantity.]])
                 ImGui.TextWrapped('/lns quest|#')
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('Set the item on your cursor to the Quest rule with the specified quantity. If no quantity is specified.')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped("/lns [personalitem|globalitem|normalitem] rule itemname [qty]")
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped(
+                    [[Add an item rule to the Items database.
+The item will be added to the proper database table based on which is issued normalitem, personalitem, or globalitem.
+Qty is only applied if the rule is quest. if an item is on the cursor you can omitt the item name and it will use the item on the cursor.
+If the item is already in the database, it will update the quantity.]])
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('/lns find itemName')
                 ImGui.TableNextColumn()
