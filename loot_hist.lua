@@ -599,11 +599,11 @@ function guiLoot.lootedReport_GUI()
 			local itemName = key
 			local itemLink = data["Link"]
 			local itemCount = data["Count"]
-			local itemEval = data["Eval"] or 'Unknown'
+			local itemEval = data["Rule"] or 'Unknown'
 			local itemNewEval = data["NewEval"] or 'NONE'
 			local globalItem = false
 			local globalNew = false
-
+			itemEval = string.find(itemEval, "Quest") and 'Quest' or itemEval
 			globalItem = string.find(itemEval, 'Global') ~= nil
 			if globalItem then
 				itemName = string.gsub(itemName, 'Global ', '')
@@ -836,19 +836,20 @@ function guiLoot.lootedConf_GUI()
 	ImGui.End()
 end
 
-local function addRule(who, what, link, eval)
+local function addRule(who, what, link, eval, rule)
 	if type(eval) ~= 'string' then eval = 'Unknown' end
 	if lootTable[what] == nil then
 		lootTable[what] = {}
-		lootTable[what] = { Count = 0, Who = who, Link = link, Eval = eval or 'Unknown', }
+		lootTable[what] = { Count = 0, Who = who, Link = link, Eval = eval or 'Unknown', Rule = rule or 'Unknown', }
 	end
 	local looters = lootTable[what]['Who']
 	if not string.find(looters, who) then
 		lootTable[what]['Who'] = looters .. ', ' .. who
 	end
 	lootTable[what]["Link"] = link
-	lootTable[what]["Eval"] = eval or 'Unknown'
+	lootTable[what]["Eval"] = (rule and rule:find('Quest')) and rule or (eval or 'Unknown')
 	lootTable[what]["Count"] = (lootTable[what]["Count"] or 0) + 1
+	lootTable[what]['Rule'] = rule or 'Unknown'
 end
 
 ---comment -- Checks for the last ID number in the table passed. returns the NextID
@@ -878,6 +879,7 @@ function guiLoot.RegisterActor()
 			local link = item.Link
 			local what = item.Name
 			local eval = item.Eval
+			local rule = item.Rule
 			local corpseName = trimCorpseName(item.CorpseName) or 'unknown'
 			local who = lootEntry.LootedBy
 			local cantWear = item.cantWear or false
@@ -887,7 +889,7 @@ function guiLoot.RegisterActor()
 				if who ~= mq.TLO.Me.Name() then who = mq.TLO.Spawn(string.format("%s", who)).Class.ShortName() else who = MyClass end
 			end
 			if guiLoot.recordData and item.Action == ('Looted' or 'Destroyed') then
-				addRule(who, what, link, eval)
+				addRule(who, what, link, eval, rule)
 			end
 			if cantWear then
 				consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
@@ -912,6 +914,7 @@ function guiLoot.RegisterActor()
 				Item = item.Name,
 				Link = link,
 				Action = cantWear and 'Cant Wear' or item.Action,
+				Rule = rule,
 			})
 		end
 	end)
@@ -955,7 +958,7 @@ function guiLoot.EventLoot(line, who, what)
 		end
 		-- do we want to record loot data?
 		if not guiLoot.recordData then return end
-		addRule(who, what, link, "Keep")
+		addRule(who, what, link, "Keep", 'Keep')
 	end
 end
 
