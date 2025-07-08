@@ -3562,11 +3562,14 @@ function LNS.getRule(item, fromFunction, index)
         end
     end
 
-    if lootDecision == 'Keep' or lootDecision == 'CanUse' and ruletype ~= 'Personal' then
-        lootDecision = LNS.checkClasses(lootDecision, lootClasses, 'loot', newRule)
-    end
-
     ::skip_checks::
+
+    if (lootDecision == 'Keep' or lootDecision == 'CanUse') and ruletype ~= 'Personal' then
+        lootDecision = LNS.checkClasses(lootDecision, lootClasses, 'loot', newRule)
+        lootDecision = LNS.checkLore(itemName, itemLink, lootDecision, countHave, isLore)
+        Logger.Info(LNS.guiLoot.console, "\aoFinal Decision\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, ID: \ay%s\ax, \atLink: %s",
+            lootDecision, lootClasses, itemName, itemID, lootLink)
+    end
 
     if type(lootDecision) ~= 'string' then
         Logger.Warn(LNS.guiLoot.console, "Invalid lootDecision type: %s for item: %s", type(lootDecision), itemName)
