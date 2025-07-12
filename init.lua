@@ -40,7 +40,7 @@ local allItems                          = {}
 local foragingLoot                      = false
 -- Constants
 local spawnSearch                       = '%s radius %d zradius 50'
-local shouldLootActions                 = { Ask = false, CanUse = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, }
+local shouldLootActions                 = { Ask = false, CanUse = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, Quest = false, }
 local validActions                      = {
     ask = "Ask",
     canuse = "CanUse",
@@ -428,40 +428,24 @@ LNS.AllItemColumnListIndex          = {
 ---@param item_is_lore boolean
 ---@param item_is_nodrop boolean
 ---@param item_value string|number
-function LNS.InsertMasterLootList(item_name, corpseID, item_id, itemLink, item_is_lore, item_is_nodrop, item_value, lootRule, ruletype, lootDecision)
+function LNS.InsertMasterLootList(item_name, corpseID, item_id, itemLink, item_is_lore, item_is_nodrop, item_value)
     if not item_name then return end
     if itemLink == nil then
         itemLink = LNS.ItemLinks[item_id] or 'NULL'
     end
-    if (lootRule == 'Ignore' and ruletype ~= 'Personal') or lootDecision == 'Destroy' then
-        LNS.send({
-            who = MyName,
-            Server = eqServer,
-            action = 'check_item',
-            CorpseID = corpseID,
-        })
-        return
-    end
+
     local myCount = mq.TLO.FindItemCount(string.format("=%s", item_name))() + mq.TLO.FindItemBankCount(string.format("=%s", item_name))()
     if LNS.MasterLootList == nil then
         LNS.MasterLootList = {}
     end
     if LNS.MasterLootList[corpseID] == nil then
         LNS.MasterLootList[corpseID] = {}
-        LNS.MasterLootList[corpseID].Items = {}
-        LNS.MasterLootList[corpseID].Items[item_name] = {
-            Members = {},
-        }
     end
     if LNS.MasterLootList[corpseID].Items == nil then
         LNS.MasterLootList[corpseID].Items = {}
     end
     if LNS.MasterLootList[corpseID].Items[item_name] == nil then
         LNS.MasterLootList[corpseID].Items[item_name] = {
-            Link = LNS.ItemLinks[item_id] or itemLink,
-            Value = item_value,
-            NoDrop = item_is_nodrop,
-            IsLore = item_is_lore,
             Members = {},
         }
     end
@@ -740,6 +724,7 @@ function LNS.loadSettings(firstRun)
 
     shouldLootActions.Destroy = tmpSettings.DoDestroy
     shouldLootActions.Tribute = tmpSettings.TributeKeep
+    shouldLootActions.Quest   = tmpSettings.LootQuest
     LNS.BuyItemsTable         = tmpSettings.BuyItemsTable
 
     if firstRun then
@@ -981,6 +966,7 @@ function LNS.commandHandler(...)
                         Server = eqServer,
                         select = LNS.Settings.MasterLooting,
                     })
+                    Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ag%s\ax", settingName, settingVal)
                 end
             elseif type(LNS.Settings[settingName]) == 'number' then
                 LNS.Settings[settingName] = tonumber(settingVal)
@@ -1334,7 +1320,7 @@ end
 
 function LNS.corpseLocked(corpseID)
     if not cantLootList[corpseID] then return false end
-    if os.difftime(os.clock(), cantLootList[corpseID]) > (LNS.Settings.LootCheckDelay > 0 and LNS.Settings.LootCheckDelay or 1) then
+    if os.difftime(os.clock(), cantLootList[corpseID]) > ((LNS.Settings.LootCheckDelay or 0) > 0 and LNS.Settings.LootCheckDelay or 0.25) then
         cantLootList[corpseID] = nil
         return false
     end
@@ -1381,27 +1367,29 @@ function LNS.enterNewItemRuleInfo(data_table)
     local link       = data_table.Link
     local corpse     = data_table.CorpseID
     local modMessage = {
-        who      = MyName,
-        action   = 'modifyitem',
-        section  = "NormalItems",
-        item     = item,
-        itemID   = itemID,
-        rule     = rule,
-        link     = link,
-        classes  = classes,
-        entered  = true,
-        corpse   = corpse,
-        noChange = false,
-        Server   = eqServer,
+        who        = MyName,
+        action     = 'modifyitem',
+        section    = "NormalItems",
+        item       = item,
+        itemID     = itemID,
+        rule       = rule,
+        link       = link,
+        classes    = classes,
+        entered    = true,
+        corpse     = corpse,
+        hasChanged = false,
+        Server     = eqServer,
     }
-    if (classes == LNS.NormalItemsClasses[itemID] and rule == LNS.NormalItemsRules[itemID] or (rule == 'Ignore' and rule == 'Ask')) then
-        modMessage.noChange = true
+    if (classes ~= (LNS.NormalItemsClasses[itemID] or 'new') or rule ~= (LNS.NormalItemsRules[itemID] or 'new')) and rule ~= 'Ignore' and rule ~= 'Ask' then
+        modMessage.hasChanged = true
         dbgTbl = {
-            Check = 'loot.enterNewItemRuleInfo() \ax\agNo Changes Made to Item:',
-            Item  = item,
-            ID    = itemID,
-            Rule  = rule,
-            Class = classes,
+            Check  = 'loot.enterNewItemRuleInfo() \ax\agChanges Made to Item:',
+            Item   = item,
+            ID     = itemID,
+            Rule   = rule,
+            Class  = classes,
+            Link   = link,
+            Corpse = corpse,
         }
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
     else
@@ -2711,7 +2699,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
     return rule, classes, lookupLink, which_table
 end
 
-function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID)
+function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
     if corpseItem == nil or itemRule == nil then
         Logger.Warn(LNS.guiLoot.console, "\aoInvalid parameters for addNewItem:\ax corpseItem=\at%s\ax, itemRule=\ag%s",
             tostring(corpseItem), tostring(itemRule))
@@ -2785,7 +2773,9 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID)
 
     Logger.Info(LNS.guiLoot.console, "\agAdding 1 \ayNEW\ax item: \at%s \ay(\axID: \at%s\at) \axwith rule: \ag%s", itemName, itemID, itemRule)
     -- LNS.actorAddRule(itemID, itemName, 'Normal', itemRule, LNS.TempItemClasses, itemLink)
-    LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink)
+    if addDB then
+        LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink)
+    end
     -- if LNS.Settings.AlwaysGlobal then
     --     LNS.addRule(itemID, 'GlobalItems', itemRule, LNS.TempItemClasses, itemLink)
     -- end
@@ -3099,6 +3089,9 @@ function LNS.checkDecision(item, lootDecision)
             newDecision = "Sell"
         end
     end
+    Logger.Debug(LNS.guiLoot.console,
+        "\aoCheck Decision\ax (\ay%s\ax) Old: (\at%s\ax) SellPrice: (\ag%.2f\ax) Stackable: (\ag%s\ax) StackSize: (\ag%d\ax) TributeValue: (\ag%d\ax) \agNEW Decision\ax: (\at%s\ax)",
+        item.Name(), lootDecision, sellPrice, tostring(stackable), stackSize, tributeValue, newDecision)
     return newDecision
 end
 
@@ -3176,29 +3169,45 @@ end
 ---@return string tmpDecision The new decision
 ---@return number qKeep The number of items to keep
 function LNS.checkQuest(curRule, onhand, curClasses)
-    local tmpDecision = "Ignore"
+    if not LNS.Settings.LootQuest then
+        Logger.Warn(LNS.guiLoot.console, "\aoQuest Item\ax Rule: (\ay%s\ax) is (\ardDISABLED\ax) in settings. Ignoring.", curRule)
+        return 'Ignore', 0
+    end
+
+    local tmpDecision = "Quest"
     local qKeep = LNS.Settings.QuestKeep or 1
+    local _, position = string.find(curRule, "|")
+    if position then
+        qKeep = tonumber(curRule:sub(position + 1)) or qKeep
+    end
     local dbgTbl = {}
-    if LNS.Settings.LootQuest then
-        local _, position = string.find(curRule, "|")
-        if position then
-            qKeep = tonumber(curRule:sub(position + 1)) or qKeep
-        end
-        if onhand < qKeep then
-            tmpDecision = LNS.checkClasses("Keep", curClasses, 'loot', false)
-        else
-            tmpDecision = "Ignore"
-        end
-        dbgTbl = {
-            Lookup = '\ax\ag Check for QUEST',
-            Decision = tmpDecision,
-            Rule = curRule,
-        }
-        Logger.Debug(LNS.guiLoot.console, dbgTbl)
-        tmpDecision = LNS.checkClasses('Keep', curClasses, 'loot', false)
-    else
+
+    if onhand >= qKeep then
         tmpDecision = "Ignore"
     end
+    dbgTbl = {
+        Lookup = '\ax\ag Check for QUEST',
+        Decision = tmpDecision,
+        Rule = curRule,
+    }
+    Logger.Debug(LNS.guiLoot.console, dbgTbl)
+    if tmpDecision == "Ignore" then
+        Logger.Info(LNS.guiLoot.console, "\aoQuest Item\ax Rule: (\ay%s\ax), Decision\ax: (\ao%s)\ax Status\ax: (\agHave Enough\ax)",
+            curRule, tmpDecision, onhand, qKeep)
+        return tmpDecision, qKeep
+    end
+
+    tmpDecision = LNS.checkClasses('Keep', curClasses, 'loot', false)
+    if tmpDecision == 'Ignore' then
+        Logger.Info(LNS.guiLoot.console, "\aoQuest Item\ax Rule: (\ay%s\ax), Decision\ax: (\ao%s)\ax Status\ax: (\aoWrong Class\ax)",
+            curRule, tmpDecision)
+        return tmpDecision, qKeep
+    end
+
+    if tmpDecision == 'Keep' then
+        tmpDecision = 'Quest'
+    end
+
     dbgTbl = {
         Lookup = '\ax\ag Check for QUEST CLASSES',
         Decision = tmpDecision,
@@ -3206,6 +3215,8 @@ function LNS.checkQuest(curRule, onhand, curClasses)
         Rule = curRule,
     }
     Logger.Debug(LNS.guiLoot.console, dbgTbl)
+    Logger.Info(LNS.guiLoot.console, "\aoQuest Item\ax Rule: (\ay%s\ax), Decision\ax: (\ao%s)\ax Status\ax: (\ay%s\ax / \at%s\ax)",
+        curRule, tmpDecision, onhand, qKeep)
     return tmpDecision, qKeep
 end
 
@@ -3223,16 +3234,10 @@ function LNS.checkLore(itemName, itemLink, decision, countHave, isLore)
     end
     if countHave > 0 then
         Logger.Warn(LNS.guiLoot.console, "Item is \ayLORE\ax and I \arHAVE\ax it. Ignoring.")
+        table.insert(loreItems, itemLink)
         return 'Ignore', false
     end
     local ret = decision
-    local lootable = true
-    local freeSpace = mq.TLO.Me.FreeInventory()
-    if freeSpace <= LNS.Settings.SaveBagSlots then
-        table.insert(loreItems, itemLink)
-        ret = 'Ignore'
-        lootable = false
-    end
     local dbgTbl = {
         Lookup = '\ax\ag Check for LORE',
         IsLore = isLore,
@@ -3242,7 +3247,7 @@ function LNS.checkLore(itemName, itemLink, decision, countHave, isLore)
         Link = itemLink,
     }
     Logger.Debug(LNS.guiLoot.console, dbgTbl)
-    return ret, lootable
+    return ret, true
 end
 
 --- Evaluate and return the rule for an item.
@@ -3258,32 +3263,26 @@ function LNS.getRule(item, fromFunction, index)
     if itemID == 0 then return 'NULL', 0, false, true end
 
     -- Initialize values
-    local lootDecision        = 'Ignore'
-    local sellPrice           = (item.Value() or 0) / 1000
-    local stackable           = item.Stackable()
-    local isAug               = item.Type() == 'Augmentation'
-    local tributeValue        = item.Tribute() or 0
+    local lootDecision = 'Ignore'
+    local sellPrice    = (item.Value() or 0) / 1000
+    local stackable    = item.Stackable()
+    local isAug        = item.Type() == 'Augmentation'
+    local tributeValue = item.Tribute() or 0
 
-    local countHave           = mq.TLO.FindItemCount(item.Name())() + mq.TLO.FindItemBankCount(item.Name())()
-    local itemName            = item.Name()
-    local newRule             = false
-    local NewItemRule         = 'NULL'
-    local alwaysAsk           = LNS.Settings.AlwaysAsk
-    local qKeep
-    local iCanUse             = true
-    local freeSpace           = mq.TLO.Me.FreeInventory()
-    local lootActionPreformed = "Looted"
-    local equpiable           = (item.WornSlots() or 0) > 0
-    local newNoDrop           = false
-    local itemLink            = item.ItemLink('CLICKABLE')() or 'NULL'
-    local lootNewItemRule     = 'NULL'
-    local dbgTbl              = {}
-    local freeStack           = item.FreeStack()
-    local isLore              = item.Lore()
-    local isNoDrop            = item.NoDrop() or item.NoTrade()
-    local tsCheck             = false
-    local retries             = 0
-    local lootLore            = true -- i don't have item and its lore so i can loot it
+    local countHave    = mq.TLO.FindItemCount(item.Name())() + mq.TLO.FindItemBankCount(item.Name())()
+    local itemName     = item.Name()
+    local newRule      = false
+    local alwaysAsk    = LNS.Settings.AlwaysAsk
+    local qKeep        = 0
+    local iCanUse      = true
+    local freeSpace    = mq.TLO.Me.FreeInventory()
+    local isEquippable = (item.WornSlots() or 0) > 0
+    local itemLink     = item.ItemLink('CLICKABLE')() or 'NULL'
+    local dbgTbl       = {}
+    local freeStack    = item.FreeStack()
+    local isLore       = item.Lore()
+    local isNoDrop     = item.NoDrop() or item.NoTrade()
+    local lootLore     = true -- i don't have item and its lore so i can loot it
 
     -- check imported items missing ID's if there is a matching name and only 1 or less items in the db update the rule with the items ID.
     if LNS.GlobalMissingNames[itemName] then
@@ -3319,132 +3318,69 @@ function LNS.getRule(item, fromFunction, index)
     -- Lookup existing rule in the databases
 
     local lootRule, lootClasses, lootLink, ruletype = LNS.lookupLootRule(item, itemID, nil, itemLink)
-    newRule = lootRule == 'NULL' or false
-
-    if newRule then
-        lootClasses = LNS.retrieveClassList(item)
-    end
-
-    -- bypass checks if rule is Ignore
-    if lootRule == "Ignore" and not (LNS.Settings.AlwaysEval and ruletype == 'Normal') then
-        lootDecision = "Ignore"
-        goto ignore_skip
-    end
-
-    lootDecision = LNS.checkClasses(lootRule, lootClasses, 'loot', newRule)
-
-    if (lootRule == 'Keep' or lootRule == 'CanUse') and ruletype ~= 'Personal' and not (LNS.Settings.AlwaysEval and ruletype == 'Normal') then
-        local tmpDec = ''
-        tmpDec = LNS.checkClasses(LNS.checkLore(itemName, itemLink, lootDecision, countHave, isLore), lootClasses, 'loot', newRule)
-        Logger.Info(LNS.guiLoot.console, "\aoEnter Overrides Decision\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, ID: \ay%s\ax, \atLink: %s",
-            tmpDec, lootClasses, itemName, itemID, lootLink)
-        if tmpDec == 'Keep' or tmpDec == 'CanUse' then
-            lootDecision = tmpDec
-            goto skip_checks
-        end
-    end
-
-    Logger.Info(LNS.guiLoot.console, "\aoLookup Rule\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, ID: \ay%s\ax, \atLink: %s", lootRule, lootClasses, itemName, itemID,
-        lootLink)
-
-    lootDecision = lootRule
-
-    if lootRule == 'NULL' and isNoDrop then
-        if not equpiable then
-            lootRule = "Ask"
-            ruletype = 'Normal'
-            lootNewItemRule = "Ask"
-            lootDecision = "Ask"
-        else
-            lootRule = "CanUse"
-            ruletype = 'Normal'
-            lootNewItemRule = "CanUse"
-            lootDecision = "CanUse"
-            lootDecision = LNS.checkClasses(lootDecision, lootClasses, 'loot', true)
-        end
-        newRule = true
-        goto skip_new_rule
-    end
-
-    if (ruletype == 'Global' or ruletype == 'Normal') and lootRule ~= 'Sell' and lootRule ~= 'Ask' then
-        lootDecision = LNS.checkClasses(lootRule, lootClasses, fromFunction, newRule)
-    end
-
-    Logger.Info(LNS.guiLoot.console, 'RuleType: %s', ruletype)
-
-    ::retry_check::
-
-    -- we changed settings and this item is marked bank. lets reset and reassess as a new rule only for Normal Rules.
-    -- if tradeskill and not LNS.Settings.BankTradeskills and lootRule == "Bank" and ruletype == 'Normal' then
-    --     lootRule = "NULL"
-    -- elseif tradeskill and LNS.Settings.BankTradeskills and ruletype == 'Normal' then
-    --     lootRule = "Bank"
-    --     LNS.modifyItemRule(itemID, lootRule, 'Normal_Rules', lootClasses, lootLink)
-    -- end
-
-    -- Re-evaluate settings if AlwaysEval is enabled
+    Logger.Info(LNS.guiLoot.console, "\ax\ao Lookup Rule \axItem: (\at%s\ax) ID: (\ag%s\ax) Rule: (\ay%s\ax) Classes: (\at%s\ax)",
+        itemName, itemID, lootRule, lootClasses)
+    -- check for always eval
     if LNS.Settings.AlwaysEval and ruletype == 'Normal' then
         if lootRule ~= "Quest" and lootRule ~= "Keep" and lootRule ~= "Destroy" and lootRule ~= 'CanUse' and lootRule ~= 'Ask' and lootRule ~= 'Bank' then
             lootRule = 'NULL'
         end
     end
 
-    -- if tradeskill and ruletype == 'Normal' and not newRule then
-    --     local checkVal, checkRule, checkDecision = LNS.checkTS(lootRule, lootDecision, tradeskill)
-    --     if checkVal then
-    --         lootRule = checkRule
-    --         lootDecision = checkDecision
-    --         tsCheck = true
-    --     end
-    -- end
+    newRule = lootRule == 'NULL' or false
 
-    -- Evaluate new rules if no valid rule exists
-    if (lootRule == "NULL" or newRule) and ruletype == 'Normal' and lootDecision ~= 'Ask' then
-        lootRule = 'Ignore'
-        lootDecision = LNS.checkDecision(item, lootRule)
+    ---- NEW RULES ----
 
-        if sellPrice > 0 then
-            lootRule = 'Sell'
-        elseif tributeValue > 0 then
-            lootRule = 'Tribute'
-        end
-        lootDecision = LNS.checkClasses(lootDecision, lootClasses, 'loot', false)
-        -- local checkVal, checkRule, checkDecision = LNS.checkTS(lootRule, lootDecision, tradeskill)
-        -- if checkVal and ruletype == 'Normal' then
-        --     lootRule = checkRule
-        --     tsCheck = true
-        -- else
-        --     lootRule = lootDecision
-        -- end
-        newRule = true
-        -- end
-    end
-    ::skip_new_rule::
-    lootNewItemRule = lootRule
-
-    if (lootRule == 'Sell' or lootRule == 'Tribute') and ruletype == 'Normal' and not newRule then
-        lootDecision = LNS.checkDecision(item, lootRule)
-        lootNewItemRule = lootDecision
-    end
-
-    if string.find(lootRule, "Quest") then
-        local lootableItem = false
-        _, lootableItem = LNS.checkLore(itemName, lootLink, lootDecision, countHave, isLore)
-        if lootableItem then
-            lootDecision, qKeep = LNS.checkQuest(lootRule, countHave, lootClasses)
-            if countHave >= qKeep then
-                lootDecision = "Ignore"
+    if newRule then
+        Logger.Info(LNS.guiLoot.console, "\ax\ag NEW RULE Detected!\ax Item: (\at%s\ax)", itemName, lootRule)
+        lootClasses = LNS.retrieveClassList(item)
+        ruletype = 'Normal'
+        local addToDB = true
+        -- NODROP
+        if isNoDrop then
+            if not isEquippable then
+                lootRule = "Ask"
+            else
+                lootRule = "CanUse"
             end
-            qKeep = lootDecision == "Ignore" and 0 or qKeep
+            addToDB = (LNS.Settings.LootNoDropNew and LNS.Settings.LootNoDrop) or false
+
+            if not addToDB then
+                lootRule = 'Ask'
+                lootDecision = 'Ask'
+                -- Logger.Info(LNS.guiLoot.console, "\ax\ag New Rule for \ayNODROP\ax Item: (\at%s\ax) Rule: (\ag%s\ax)",
+                --     itemName, lootRule)
+                return lootRule, 0, newRule, isEquippable
+            else
+                Logger.Info(LNS.guiLoot.console, "\ax\ag Setting New Rule\ax \ayNODROP\ax Item: (\at%s\ax) Rule: (\ag%s\ax)",
+                    itemName, lootRule)
+            end
+            LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, addToDB)
+        else
+            if not isEquippable then
+                if sellPrice > 0 then
+                    lootRule = 'Sell'
+                elseif tributeValue > 0 then
+                    lootRule = 'Tribute'
+                else
+                    lootRule = 'Ask'
+                end
+            else
+                lootRule = 'Keep'
+            end
+            Logger.Info(LNS.guiLoot.console, "\ax\agSetting NEW RULE\ax Item: (\at%s\ax) Rule: (\ag%s\ax)",
+                itemName, lootRule)
+
+            LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, addToDB)
         end
-        goto quest_override
     end
+
+    lootDecision = lootRule
 
     -- Handle AlwaysAsk setting
     if alwaysAsk then
         newRule = true
         lootDecision = "Ask"
-        lootNewItemRule = lootDecision
         dbgTbl = {
             Lookup = '\ax\ag Check for ALWAYSASK',
             Decision = lootDecision,
@@ -3453,145 +3389,81 @@ function LNS.getRule(item, fromFunction, index)
             Link = lootLink,
         }
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
+        LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, false)
+        return lootDecision, 0, newRule, isEquippable
     end
 
-    Logger.Debug(LNS.guiLoot.console, "\aoLookup Decision \ax\ay Start\ax\ao FINAL CHECKS\ax: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", lootDecision,
-        lootClasses,
-        itemName,
-        lootLink)
+    -- handle ignore and destroy rules
+    if lootRule == 'Ignore' and not (LNS.Settings.DoDestroy and LNS.Settings.AlwaysDestroy) then
+        Logger.Info(LNS.guiLoot.console, "\ax\aoRule\ax: (\ayIGNORE\ax) \aoSkipping\ax (\at%s\ax)", itemName)
+        return 'Ignore', 0, newRule, isEquippable
+    elseif lootRule == 'Ignore' and LNS.Settings.DoDestroy and LNS.Settings.AlwaysDestroy then
+        Logger.Info(LNS.guiLoot.console, "\ax\ao Rule\ax: (\ayIGNORE\ax) and (\ayALWAYS DESTROY\ax) \at%s\ax", itemName)
 
-    lootDecision, lootLore = LNS.checkLore(itemName, lootLink, lootDecision, countHave, isLore)
+        return 'Destroy', 0, newRule, isEquippable
+    end
 
-    if isNoDrop and (ruletype == 'Normal' or newRule) and lootDecision ~= 'Ask' then
-        -- iCanUse, lootDecision = LNS.checkWearable(equpiable, lootDecision, ruletype, isNoDrop, newRule, isAug, item)
+    if lootRule == 'Destroy' then
+        Logger.Info(LNS.guiLoot.console, "\ax\ao Rule\ax: (\arDESTROY\ax) \at%s\ax", itemName)
+        return 'Destroy', 0, newRule, isEquippable
+    end
 
-        if not LNS.Settings.LootNoDrop then
-            table.insert(noDropItems, itemLink)
-            lootDecision = 'Ignore'
-        else
-            if (newRule and LNS.Settings.LootNoDropNew) and not equpiable then
-                table.insert(noDropItems, itemLink)
-                lootNewItemRule = 'Ask'
-                lootDecision = 'Ask'
-            elseif (newRule and LNS.Settings.LootNoDropNew) and equpiable then
-                lootNewItemRule = 'CanUse'
-                lootDecision = 'CanUse'
-            end
+    if LNS.Settings.StackableOnly and not stackable then
+        Logger.Info(LNS.guiLoot.console, "\ax\ao Rule\ax: \aySTACKABLE ONLY\ax and item is \arNOT stackable \at%s\ax", itemName)
+        return 'Ignore', 0, newRule, isEquippable
+    end
+
+    ---check lore
+    if isLore then
+        lootLore = countHave == 0
+        if not lootLore then
+            table.insert(loreItems, itemLink)
+            Logger.Info(LNS.guiLoot.console, "\aoItem \ax(\at%s\ax) is \ayLORE\ax and I \aoHAVE\ax it. Ignoring.", itemName)
+            return 'Ignore', 0, newRule, isEquippable
+        end
+    end
+
+    --handle NoDrop
+    if isNoDrop and not LNS.Settings.LootNoDrop then
+        Logger.Info(LNS.guiLoot.console, "\axItem is \aoNODROP\ax \at%s\ax and LootNoDrop is \arNOT \axenabled\ax", itemName)
+        table.insert(noDropItems, itemLink)
+        return 'Ignore', 0, newRule, isEquippable
+    end
+
+    -- check Classes that can loot
+    if ruletype ~= 'Personal' and lootRule ~= 'Sell' and lootRule ~= 'Ask' and lootRule ~= 'Tribute' and not (lootRule:find('Quest')) then
+        Logger.Debug(LNS.guiLoot.console, "\ax\ag Checking Classes for Rule: \at%s\ax", lootRule)
+
+        lootDecision = LNS.checkClasses(lootRule, lootClasses, fromFunction, newRule)
+
+        if lootDecision == 'Ignore' then
+            Logger.Info(LNS.guiLoot.console, "\ax\aoItem\ax (\ag%s\ax) Classes: (\at%s)\ax MyClass: (\ay%s\ax) Decision: (\at%s\ax)",
+                itemName, lootClasses, LNS.MyClass, lootDecision)
+            return lootDecision, qKeep, newRule, isEquippable
         end
 
-        if lootDecision ~= 'Ask' and lootDecision ~= 'Ignore' then
-            lootDecision = LNS.checkClasses(LNS.checkLore(itemName, lootLink, lootDecision, countHave, isLore), lootClasses, 'loot', newRule)
-        end
+        Logger.Info(LNS.guiLoot.console, "\ax\aoItem\ax (\ag%s\ax) Classes: (\at%s)\ax MyClass: (\ay%s\ax) Decision: (\at%s\ax)",
+            itemName, lootClasses, LNS.MyClass, lootDecision)
+    end
 
-        if LNS.Settings.KeepSpells and LNS.checkSpells(itemName) then
-            lootDecision = "Ask"
-            lootNewItemRule = 'Ask'
+    if ((lootRule == 'Sell' or lootRule == 'Tribute') and ruletype == 'Normal') then
+        Logger.Debug(LNS.guiLoot.console, "\ax\ag Checking Decision for \aySELL\ax or \ayTRIBUTE\ax: \at%s\ax", lootRule)
+        lootDecision = LNS.checkDecision(item, lootRule)
+    end
 
-            dbgTbl = {
-                Lookup = '\ax\ag Check for SPELLS NODROP',
-                Decision = lootDecision,
-                Classes = lootClasses,
-                Item = itemName,
-                Link = lootLink,
-            }
-            Logger.Debug(LNS.guiLoot.console, dbgTbl)
-        end
-
+    -- check bag space
+    if not (freeSpace > LNS.Settings.SaveBagSlots or (stackable and freeStack > 0)) then
         dbgTbl = {
-            Lookup = '\ax\ag Check for NODROP',
-            CanWear = iCanUse,
+            Lookup = '\ax\ag Check for BAGSPACE',
             Decision = lootDecision,
             Classes = lootClasses,
             Item = itemName,
             Link = lootLink,
         }
+        Logger.Warn(LNS.guiLoot.console, "You are \arOUT OF BAG SPACE\ax. \aoIgnoring.")
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
-    end
-
-    if newRule and ruletype == 'Normal' and not isNoDrop and lootDecision ~= 'Ask' then
-        if sellPrice > 0 and not equpiable then
-            -- lootDecision = 'Sell'
-            lootNewItemRule = 'Sell'
-        elseif tributeValue > 0 and not equpiable then
-            -- lootDecision = 'Tribute'
-            lootNewItemRule = 'Tribute'
-        elseif equpiable then
-            -- lootDecision = 'Keep'
-            lootNewItemRule = 'Keep'
-        else
-            lootDecision = 'Ask'
-            lootNewItemRule = 'Ask'
-        end
-
-        -- if tradeskill and LNS.Settings.BankTradeskills then
-        --     lootDecision = 'Bank'
-        --     lootNewItemRule = 'Bank'
-        -- end
-        if lootDecision ~= 'Ask' and lootDecision ~= 'Ignore' then
-            lootDecision = LNS.checkClasses(LNS.checkLore(itemName, lootLink, lootDecision, countHave, isLore), lootClasses, 'loot', newRule)
-        end
-        -- tsCheck, lootNewItemRule, lootDecision = LNS.checkTS(lootNewItemRule, lootDecision, tradeskill)
-    end
-
-    -- OVERRIDES DECISIONS
-
-    ::skip_checks::
-
-    if lootDecision == 'NULL' then
-        Logger.Warn(LNS.guiLoot.console, "Invalid decision \at%s\ax for item: \ay%s", lootDecision, itemName)
-        lootDecision = 'Ignore'
-        Logger.Warn(LNS.guiLoot.console, "\ayRetrying the checks...\ax")
-        retries = retries + 1
-        if retries < 3 then
-            goto retry_check
-        end
-        lootNewItemRule = lootDecision
-    end
-
-    -- Handle Spell Drops
-    if LNS.Settings.KeepSpells and LNS.checkSpells(itemName) and ruletype == 'Normal' then
-        lootDecision = "Keep"
-        lootNewItemRule = 'Keep'
-        if isNoDrop then
-            lootDecision = "Ask"
-            lootNewItemRule = 'Ask'
-        end
-        dbgTbl = {
-            Lookup = '\ax\ag Check for SPELLS',
-            Decision = lootDecision,
-            Classes = lootClasses,
-            Item = itemName,
-            Link = lootLink,
-        }
-        Logger.Debug(LNS.guiLoot.console, dbgTbl)
-    end
-
-    -- Handle LootStackableOnly setting incase this was changed after the first check.
-    if not stackable and LNS.Settings.StackableOnly and lootDecision ~= 'Ask' then
-        lootDecision = "Ignore"
-        Logger.Warn(LNS.console, "You have \ayStackableOnly\ax \atenabled\ax and this item is \arNOT\ax stackable. \aoIgnoring.")
-        dbgTbl = {
-            Lookup = '\ax\ag Check for STACKABLE_ONLY',
-            Decision = lootDecision,
-            Classes = lootClasses,
-            Item = itemName,
-            Link = lootLink,
-        }
-        Logger.Debug(LNS.guiLoot.console, dbgTbl)
-    end
-
-    -- Handle AlwaysDestroy setting
-    if LNS.Settings.AlwaysDestroy and lootDecision == "Ignore" and ruletype == 'Normal' then
-        lootNewItemRule = lootDecision
-        lootDecision = "Destroy"
-        dbgTbl = {
-            Lookup = '\ax\ag Check for ALWAYSDESTROY',
-            Decision = lootDecision,
-            Classes = lootClasses,
-            Item = itemName,
-            Link = lootLink,
-        }
-        Logger.Debug(LNS.guiLoot.console, dbgTbl)
+        -- loot.lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
+        return 'Ignore', 0, newRule, isEquippable
     end
 
     -- Handle augments
@@ -3605,47 +3477,53 @@ function LNS.getRule(item, fromFunction, index)
             Link = lootLink,
         }
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
-        Logger.Info(LNS.guiLoot.console, "\at%s\ax\ax is an \agAUG\ax", itemName)
+        Logger.Info(LNS.guiLoot.console, "\at%s\ax is an \agAUG\ax", itemName)
     end
 
-    if not (freeSpace > LNS.Settings.SaveBagSlots or (stackable and freeStack > 0)) then
+    -- Handle Spell Drops
+    if LNS.Settings.KeepSpells and LNS.checkSpells(itemName) and ruletype == 'Normal' then
+        lootDecision = "Keep"
         dbgTbl = {
-            Lookup = '\ax\ag Check for BAGSPACE',
+            Lookup = '\ax\ag Check for SPELLS',
             Decision = lootDecision,
             Classes = lootClasses,
             Item = itemName,
             Link = lootLink,
         }
-        Logger.Warn(LNS.guiLoot.console, "You are \arOUT OF BAG SPACE\ax. \aoIgnoring.")
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
-        -- loot.lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
-        lootDecision = 'Ignore'
+        Logger.Info(LNS.guiLoot.console, "\at%s\ax is a \agSPELL\ax", itemName)
     end
 
-    if newRule then
-        LNS.addNewItem(item, lootNewItemRule, itemLink, mq.TLO.Corpse.ID() or 0)
+    -- check Quests
+    if string.find(lootRule, "Quest") then
+        Logger.Debug(LNS.guiLoot.console, "\ag Checking for QUEST Rule: \at%s\ax", lootRule)
+        lootDecision, qKeep = LNS.checkQuest(lootRule, countHave, lootClasses)
+        if lootDecision == 'Ignore' then
+            return lootDecision, qKeep, newRule, isEquippable
+        end
     end
-
-    if lootRule == 'Destroy' then
-        lootDecision = 'Destroy'
-    end
-
-    ::quest_override::
-
-    if not lootLore then
-        lootDecision = 'Ignore'
-    end
-
-    ::ignore_skip::
 
     if type(lootDecision) ~= 'string' then
         Logger.Warn(LNS.guiLoot.console, "Invalid lootDecision type: %s for item: %s", type(lootDecision), itemName)
         lootDecision = 'Ignore'
     end
 
-    if LNS.Settings.MasterLooting then
+    if LNS.Settings.MasterLooting and ((lootRule == 'Ignore' and ruletype ~= 'Personal') or lootDecision == 'Destroy') then
+        LNS.send({
+            who = MyName,
+            Server = eqServer,
+            action = 'check_item',
+            CorpseID = mq.TLO.Corpse.ID() or 0,
+        })
+        mq.delay(5)
+
+        return 'Ignore', qKeep, newRule, isEquippable
+    elseif LNS.Settings.MasterLooting then
         local cID = mq.TLO.Corpse.ID() or 0
-        LNS.InsertMasterLootList(itemName, cID, itemID, LNS.ItemLinks[itemID], isLore, isNoDrop, item.Value(), lootRule, ruletype, lootDecision)
+        LNS.InsertMasterLootList(itemName, cID, itemID, LNS.ItemLinks[itemID],
+            isLore, isNoDrop, item.Value())
+
+        mq.delay(5)
         return 'MasterLooter', qKeep, newRule, iCanUse
     end
 
@@ -3714,6 +3592,7 @@ end
 ------------------------------------
 
 function LNS.send(message, mailbox)
+    message.Server = eqServer
     if mailbox == 'loot_module' then
         LNS.lootActor:send({ mailbox = mailbox, script = LNS.DirectorScript, }, message)
     elseif mailbox == 'looted' then
@@ -3902,8 +3781,7 @@ function LNS.RegisterActors()
 
         if action == 'check_item' and who ~= MyName then
             local corpseID = lootMessage.CorpseID
-            lootedCorpses[lootMessage.CorpseID] = true
-
+            lootedCorpses[corpseID] = true
 
             if itemName ~= 'NULL' then
                 local MyCount = mq.TLO.FindItemCount(string.format("=%s", itemName))() + mq.TLO.FindItemBankCount(string.format("=%s", itemName))()
@@ -3913,14 +3791,6 @@ function LNS.RegisterActors()
                 end
                 if LNS.MasterLootList[corpseID] == nil then
                     LNS.MasterLootList[corpseID] = {}
-                    LNS.MasterLootList[corpseID].Items = {}
-                    LNS.MasterLootList[corpseID].Items[itemName] = {
-                        Link = itemLink,
-                        Value = lootMessage.Value or 0,
-                        NoDrop = lootMessage.NoDrop or false,
-                        Lore = lootMessage.Lore or false,
-                        Members = {},
-                    }
                 end
                 if LNS.MasterLootList[corpseID].Items == nil then
                     LNS.MasterLootList[corpseID].Items = {}
@@ -3931,7 +3801,6 @@ function LNS.RegisterActors()
                         Value = lootMessage.Value or 0,
                         NoDrop = lootMessage.NoDrop or false,
                         Lore = lootMessage.Lore or false,
-                        Members = {},
                     }
                 end
                 if LNS.MasterLootList[corpseID].Items[itemName].Members == nil then
@@ -4000,6 +3869,8 @@ function LNS.RegisterActors()
             LNS.TempSettings.NeedSave           = true
             LNS.TempSettings.UpdateSettings     = true
             Logger.Debug(LNS.guiLoot.console, dbgTbl)
+            Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ag%s\ax", 'MasterLooting', lootMessage.select)
+
             return
         end
 
@@ -4115,7 +3986,7 @@ function LNS.RegisterActors()
             Logger.Info(LNS.guiLoot.console, infoMsg)
 
             if lootMessage.entered and action ~= 'deleteitem' then
-                if lootedCorpses[lootMessage.corpse] and not lootMessage.noChange and rule ~= 'Ignore' then
+                if lootedCorpses[lootMessage.corpse] and lootMessage.hasChanged and rule ~= 'Ignore' and rule ~= 'Ask' then
                     lootedCorpses[lootMessage.corpse] = nil
                 end
 
@@ -4137,9 +4008,11 @@ function LNS.RegisterActors()
                     Lookup = 'loot.RegisterActors()',
                     Action = 'New Item Rule',
                     Updated = lootMessage.entered,
-                    Changed = lootMessage.noChange,
+                    Changed = lootMessage.hasChanged,
                     NewItemCountRemaining = LNS.NewItemsCount,
                     Item = itemName,
+                    CorpseID = lootMessage.corpse,
+                    CorpseLooted = lootedCorpses[lootMessage.corpse] or false,
                 }
                 Logger.Info(LNS.guiLoot.console, infoMsg)
             end
@@ -4225,26 +4098,26 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
     local actionToTake = doWhat:gsub("%s$", "")
     local actionLower = actionToTake:lower()
     local corpseName = mq.TLO.Corpse.CleanName() or 'none'
-    local corpseItem = mq.TLO.Corpse.Item(index)
-    if not corpseItem then return end
-    local corpseItemID = corpseItem.ID() or 0
+    local cItem = mq.TLO.Corpse.Item(index)
+    if not cItem then return end
+    local cItemID = cItem.ID() or 0
 
-    if corpseItemID == 0 or (mq_item and mq_item() and mq_item.ID() ~= corpseItemID) then
+    if cItemID == 0 or (mq_item and mq_item() and mq_item.ID() ~= cItemID) then
         Logger.Warn(LNS.guiLoot.console, "lootItem(): ID does not match corpse item ID.")
         return
     end
 
-    local itemName       = corpseItem.Name() or 'none'
-    local itemLink       = corpseItem.ItemLink('CLICKABLE')()
-    local isGlobalItem   = LNS.Settings.GlobalLootOn and (LNS.GlobalItemsRules[corpseItemID] ~= nil or LNS.BuyItemsTable[corpseItemID] ~= nil)
-    local isPersonalItem = LNS.PersonalItemsRules[corpseItemID] ~= nil
+    local itemName       = cItem.Name() or 'none'
+    local itemLink       = cItem.ItemLink('CLICKABLE')()
+    local isGlobalItem   = LNS.Settings.GlobalLootOn and (LNS.GlobalItemsRules[cItemID] ~= nil or LNS.BuyItemsTable[cItemID] ~= nil)
+    local isPersonalItem = LNS.PersonalItemsRules[cItemID] ~= nil
     local corpsePos      = corpseName:find("corpse")
     local tmpLabel       = corpsePos and corpseName:sub(1, corpsePos - 4) or corpseName
     corpseName           = tmpLabel
     local eval           = type(actionToTake) == 'string' and actionToTake or '?'
     local dbgTbl         = {}
-    local rule           = isGlobalItem and LNS.GlobalItemsRules[corpseItemID] or
-        (isPersonalItem and LNS.PersonalItemsRules[corpseItemID] or LNS.NormalItemsRules[corpseItemID])
+    local rule           = isGlobalItem and LNS.GlobalItemsRules[cItemID] or
+        (isPersonalItem and LNS.PersonalItemsRules[cItemID] or LNS.NormalItemsRules[cItemID])
     if allItems == nil then allItems = {} end
     dbgTbl = {
         Lookup = 'loot.lootItem()',
@@ -4253,9 +4126,13 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         Item = itemName,
         Link = itemLink,
         Action = actionToTake,
+        Index = index,
+        Corpse = corpseName,
     }
     Logger.Debug(LNS.guiLoot.console, dbgTbl)
-    if corpseItem and not shouldLootActions[actionToTake] then
+    if cItem and not shouldLootActions[actionToTake] then
+        Logger.Warn(LNS.guiLoot.console, "lootItem():\ay We Don't Belong here!!,\ax either the item is \arMissing\ax or the Action [\at%s\ax] is \arNot\ax a valid loot action.",
+            actionToTake)
         return
     end
 
@@ -4266,7 +4143,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
             mq.TLO.Window('ConfirmationDialogBox').DoClose()
             mq.delay(1000, function() return not mq.TLO.Window('ConfirmationDialogBox').Open() end)
         end
-
+        Logger.Info(LNS.guiLoot.console, "lootItem(): \agLooting\ax item: \at%s\ax with action: \ay%s", itemName, actionToTake)
         mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)
         mq.delay(1) -- Small delay to ensure command execution.
 
@@ -4292,7 +4169,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         end
         Logger.Debug(LNS.guiLoot.console, string.format("eval = %s", eval))
         if actionLower == 'destroy' then
-            mq.delay(10000, function() return mq.TLO.Cursor.ID() == corpseItemID end)
+            mq.delay(10000, function() return mq.TLO.Cursor.ID() == cItemID end)
             eval = isGlobalItem == true and 'Global Destroy' or 'Destroy'
             eval = isPersonalItem == true and 'Personal Destroy' or eval
             Logger.Debug(LNS.guiLoot.console, string.format("eval = %s", eval))
@@ -4312,7 +4189,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
 
         -- Handle quest item logic
         if qKeep == nil then qKeep = 0 end
-        if qKeep > 0 and actionLower == 'keep' then
+        if qKeep > 0 and actionLower == 'quest' then
             eval = isGlobalItem == true and 'Global Quest' or 'Quest'
             eval = isPersonalItem == true and 'Personal Quest' or eval
             if type(eval) == 'boolean' then eval = 'Ask' end
@@ -4358,6 +4235,7 @@ function LNS.lootCorpse(corpseID)
     Logger.Debug(LNS.guiLoot.console, 'Enter lootCorpse')
     shouldLootActions.Destroy = LNS.Settings.DoDestroy
     shouldLootActions.Tribute = LNS.Settings.TributeKeep
+    shouldLootActions.Quest   = LNS.Settings.QuestKeep
     if corpseID == nil then
         Logger.Warn(LNS.guiLoot.console, "lootCorpse(): No corpseID provided.")
         return false
@@ -4397,7 +4275,6 @@ function LNS.lootCorpse(corpseID)
         return true
     end
 
-
     if mq.TLO.Window('LootWnd').Open() and numItems > 0 then
         if (mq.TLO.Corpse.DisplayName():lower() == mq.TLO.Me.DisplayName():lower() .. "'s corpse") then
             if LNS.Settings.LootMyCorpse then
@@ -4407,22 +4284,34 @@ function LNS.lootCorpse(corpseID)
             return false
         end
 
+        local iList = ""
+        local corpseItems = {}
         for i = 1, numItems do
             local corpseItem = mq.TLO.Corpse.Item(i)
-            mq.delay(1)
             if corpseItem() then
                 local corpseItemID = corpseItem.ID() or 0
-                local isNoDrop     = corpseItem.NoDrop() or corpseItem.NoTrade()
-                LNS.addToItemDB(corpseItem)
+                local itemName = corpseItem.Name() or 'none'
+                local itemLink = corpseItem.ItemLink('CLICKABLE')() or 'NULL'
                 local itemRule, qKeep, newRule, iCanUse = LNS.getRule(corpseItem, 'loot', i)
-                Logger.Debug(LNS.guiLoot.console, "Got Rule: \at%s\ax", itemRule)
-                mq.delay(1)
-                if (itemRule == 'Ignore' or itemRule == 'Ask' or itemRule == 'NULL') then
-                    local itemName = corpseItem.Name() or 'none'
-                    local itemLink = corpseItem.ItemLink('CLICKABLE')()
+                LNS.addToItemDB(corpseItem)
+                iList = string.format("%s (\at%s\ax [\ay%s\ax])", iList, corpseItem.Name() or 'none', itemRule)
+                if itemRule ~= 'MasterLooter' and not (itemRule == 'Ignore' or itemRule == 'Ask' or itemRule == 'NULL') then
+                    table.insert(corpseItems, {
+                        Name = itemName,
+                        ID = corpseItemID,
+                        ItemLink = itemLink,
+                        Index = i,
+                        itemRule = itemRule,
+                        qKeep = qKeep,
+                        newRule = newRule,
+                        iCanUse = iCanUse,
+                        CorpseID = corpseID,
+                        mq_item = corpseItem,
+                    })
+                elseif (itemRule == 'Ignore' or itemRule == 'Ask' or itemRule == 'NULL') then
                     local eval = itemRule == 'Ignore' and 'Left' or 'Ask'
                     local dbgTbl = {
-                        Lookup = 'loot.lootItem()',
+                        Lookup = 'loot.lootCorpse()',
                         Check = 'Skipping Item',
                         Evaluation = itemRule,
                         Item = itemName,
@@ -4432,6 +4321,7 @@ function LNS.lootCorpse(corpseID)
 
                     LNS.insertIntoHistory(itemName, corpseName, eval,
                         os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, not iCanUse, itemRule)
+
                     if LNS.Settings.ReportSkippedItems then
                         if eval ~= 'Left' then
                             LNS.report('%sing \ay%s\ax', eval, itemLink)
@@ -4439,36 +4329,33 @@ function LNS.lootCorpse(corpseID)
                             LNS.report('Left \ay%s\ax', itemLink)
                         end
                     end
-                    goto next_item
-                elseif itemRule ~= 'MasterLooter' and not (itemRule == 'Ignore' or itemRule == 'Ask' or itemRule == 'NULL') then
-                    Logger.Debug(LNS.guiLoot.console, "\agLooting Corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
-                        corpseItemID, i, itemRule, qKeep, newRule)
-                    LNS.lootItem(nil, i, itemRule, 'leftmouseup', qKeep, not iCanUse)
-                    mq.delay(1)
-                elseif itemRule == 'MasterLooter' then
-                    goto next_item
                 end
             end
+        end
+
+        Logger.Info(LNS.guiLoot.console, "lootCorpse(): Looting \at%s\ax Found (\ay%s\ax) Items:%s", corpseName, numItems, iList)
+
+        for _, item in ipairs(corpseItems) do
+            if not item then break end
+            local itemRule = item.itemRule
+
+            Logger.Debug(LNS.guiLoot.console, "\agLooting Corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
+                item.ID, item.Index, itemRule, item.qKeep, item.newRule)
+
+            LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
 
             mq.delay(1)
             if mq.TLO.Cursor() then LNS.checkCursor() end
 
-            ::next_item::
-
             mq.delay(1)
             if not mq.TLO.Window('LootWnd').Open() then break end
         end
+
+        mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
+        mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
     end
-    mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
-
-    mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
-
-    if mq.TLO.Spawn(('corpse id %s'):format(corpseID))() then
-        cantLootList[corpseID] = os.clock()
-    end
-
     LNS.reportSkippedItems(noDropItems, loreItems, corpseName, corpseID)
 
     return true
@@ -4496,7 +4383,7 @@ function LNS.lootMobs(limit)
     end
 
     if mq.TLO.Window('LootWnd').Open() then
-        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Already Looting, Aborting!.')
+        Logger.Warn(LNS.guiLoot.console, 'lootMobs(): Already Looting, Aborting!.')
         return false
     end
 
@@ -4548,8 +4435,11 @@ function LNS.lootMobs(limit)
     if (myCorpseCount == 0 or (myCorpseCount > 0 and LNS.Settings.IgnoreMyNearCorpses)) and LNS.Settings.DoLoot then
         for i = 1, deadCount do
             local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', LNS.Settings.CorpseRadius))
-            if corpse() and (not lootedCorpses[corpse.ID()] or not LNS.Settings.CheckCorpseOnce) then
-                table.insert(corpseList, corpse)
+            if corpse() and (not lootedCorpses[corpse.ID()] and LNS.Settings.CheckCorpseOnce) then
+                if not LNS.corpseLocked(corpse.ID()) or
+                    (mq.TLO.Navigation.PathLength('spawn id ' .. corpse.ID())() or 100) > LNS.Settings.CorpseRadius then
+                    table.insert(corpseList, corpse)
+                end
             end
         end
     else
@@ -4571,25 +4461,8 @@ function LNS.lootMobs(limit)
             local check = false
             local corpseID = corpse.ID() or 0
 
-            -- if mq.TLO.Window('LootWnd').Open() then
-            --     mq.TLO.Window('LootWnd').DoClose()
-            --     mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
-            -- end
-
             if not mq.TLO.Spawn(corpseID)() then
                 Logger.Info(LNS.guiLoot.console, 'lootMobs(): Corpse ID \ay%d \axis \arNO Longer Valid.\ax \atMoving to Next Corpse...', corpseID)
-                goto continue
-            end
-
-            if lootedCorpses[corpseID] and LNS.Settings.CheckCorpseOnce then
-                Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Corpse ID \ay%d\ax has already been looted. Skipping.', corpseID)
-                goto continue
-            end
-
-            if LNS.corpseLocked(corpseID) or
-                (mq.TLO.Navigation.PathLength('spawn id ' .. corpseID)() or 100) > LNS.Settings.CorpseRadius then
-                Logger.Debug(LNS.guiLoot.console, 'lootMobs(): \atCorpse Locked\ax Skipping corpse ID: \ay%d.', corpseID)
-                table.remove(corpseList, _)
                 goto continue
             end
 
@@ -4603,9 +4476,11 @@ function LNS.lootMobs(limit)
             end
 
             Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Navigating to corpse ID\at %d.', corpseID)
+
             if mq.TLO.Me.Casting() ~= nil then
                 goto continue
             end
+
             LNS.navToID(corpseID)
 
             if mobsNearby > 0 and not LNS.Settings.CombatLooting then
@@ -4631,13 +4506,16 @@ function LNS.lootMobs(limit)
                 }, 'looted')
                 allItems = nil
             end
+
             ::continue::
             counter = check and counter + 1 or counter
+
             if counter >= limit then
                 Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Reached loot limit of \at%d\ax corpses.', limit)
                 goto limit_reached
             end
         end
+
         ::limit_reached::
         didLoot = true
         -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Finished processing corpse list.')
@@ -4715,7 +4593,7 @@ function LNS.LootItemML(itemName, corpseID)
         local item = mq.TLO.Corpse.Item(i)
         if item() and item.Name() == itemName then
             Logger.Debug(LNS.guiLoot.console, 'Looting item: %s from corpse ID: %d', itemName, corpseID)
-            LNS.lootItem(i, 'Keep', 'leftmouseup', 0, not false)
+            LNS.lootItem(nil, i, 'Keep', 'leftmouseup', 0, not false)
             mq.delay(4000, function() return mq.TLO.FindItemCount(string.format("=%s", itemName))() > startCount end)
             LNS.checkCursor()
             if mq.TLO.FindItemCount(string.format("=%s", itemName))() == startCount then
@@ -5762,7 +5640,6 @@ function LNS.drawNewItemsTable()
                 if ImGui.Button('Save Rule') then
                     local classes = LNS.tempLootAll[itemID] and "All" or tmpClasses[itemID]
                     local ruleTable = LNS.tempGlobalRule[itemID] and "GlobalItems" or "NormalItems"
-                    LNS.addRule(itemID, ruleTable, tmpRules[itemID], classes, item.Link)
                     LNS.enterNewItemRuleInfo({
                         ID = itemID,
                         RuleType = ruleTable,
@@ -5772,6 +5649,8 @@ function LNS.drawNewItemsTable()
                         Link = item.Link,
                         CorpseID = item.CorpseID,
                     })
+                    LNS.addRule(itemID, ruleTable, tmpRules[itemID], classes, item.Link)
+
                     table.remove(LNS.TempSettings.NewItemIDs, idx)
                     table.insert(itemsToRemove, itemID)
                     Logger.Debug(LNS.guiLoot.console, "\agSaving\ax --\ayNEW ITEM RULE\ax-- Item: \at%s \ax(ID:\ag %s\ax) with rule: \at%s\ax, classes: \at%s\ax, link: \at%s\ax",
@@ -7013,6 +6892,7 @@ function LNS.renderSettingsTables(who)
                                 if who == MyName then
                                     LNS.Settings[settingName] = LNS.Boxes[who][settingName]
                                     LNS.TempSettings.NeedSave = true
+                                    Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ag%s\ax", settingName, LNS.Settings[settingName])
                                 end
                             end
                             if settingName == 'MasterLooting' then
@@ -7325,10 +7205,10 @@ function LNS.RenderMasterLooterWindow()
 
                         if ImGui.SmallButton("Self Loot##" .. cID .. item) then
                             Logger.Info(LNS.guiLoot.console, "Telling \atMySelf\ax to loot \ay%s\ax from CorpseID \ag%s", itemData.Link, cID)
-                            LNS.TempSettings.SendLootInfo = {}
-                            LNS.TempSettings.SendLootInfo =
-                            { who = MyName, action = 'loot_item', CorpseID = cID, item = item, Server = eqServer, }
-                            LNS.TempSettings.SendLoot = true
+                            -- LNS.TempSettings.SendLootInfo = {}
+                            -- LNS.TempSettings.SendLootInfo =
+                            LNS.send({ who = MyName, action = 'loot_item', CorpseID = cID, item = item, Server = eqServer, })
+                            -- LNS.TempSettings.SendLoot = true
                         end
 
                         if ImGui.CollapsingHeader("Members##" .. cID .. item) then
@@ -7349,8 +7229,10 @@ function LNS.RenderMasterLooterWindow()
                                             ImGui.TableNextRow()
                                             ImGui.TableNextColumn()
 
-                                            ImGui.Text(member)
-
+                                            if ImGui.Selectable(string.format("%s##%s", member, cID .. item)) then
+                                                Logger.Info(LNS.guiLoot.console, "Selected member %s for CorpseID %s Item %s", member, cID, item)
+                                                LNS.send({ who = member, action = 'loot_item', Server = eqServer, CorpseID = cID, item = item, })
+                                            end
                                             ImGui.TableNextColumn()
                                             if count and count > 0 then
                                                 ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(1.0, 1.0, 0.0, 1.0))
@@ -7364,10 +7246,10 @@ function LNS.RenderMasterLooterWindow()
 
                                             if ImGui.SmallButton('Loot##' .. cID .. item .. member) then
                                                 Logger.Info(LNS.guiLoot.console, "Telling \at%s\ax to loot \ay%s\ax from CorpseID \ag%s", member, itemData.Link, cID)
-                                                LNS.TempSettings.SendLootInfo = {}
-                                                LNS.TempSettings.SendLootInfo =
-                                                { who = member, action = 'loot_item', Server = eqServer, CorpseID = cID, item = item, }
-                                                LNS.TempSettings.SendLoot = true
+                                                -- LNS.TempSettings.SendLootInfo = {}
+                                                -- LNS.TempSettings.SendLootInfo =
+                                                LNS.send({ who = member, action = 'loot_item', Server = eqServer, CorpseID = cID, item = item, })
+                                                -- LNS.TempSettings.SendLoot = true
                                             end
                                         end
                                     end
@@ -8334,8 +8216,8 @@ function LNS.MainLoop()
             if checkDif > LNS.Settings.LootCheckDelay then
                 LNS.lootMobs(LNS.Settings.MaxCorpsesPerCycle or 1)
             else
-                Logger.Debug(LNS.guiLoot.console, "\atToo Soon\ax CheckDelay: \ag%s\ax seconds, LastCheck: \ag%0.2f\ax seconds ago",
-                    LNS.Settings.LootCheckDelay, checkDif)
+                -- Logger.Debug(LNS.guiLoot.console, "\atToo Soon\ax CheckDelay: \ag%s\ax seconds, LastCheck: \ag%0.2f\ax seconds ago",
+                -- LNS.Settings.LootCheckDelay, checkDif)
             end
         elseif LNS.LootNow and Mode == 'directed' then
             if checkDif > LNS.Settings.LootCheckDelay then
