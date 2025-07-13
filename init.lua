@@ -1930,7 +1930,8 @@ end
 ---@return string|nil op string the operator to use for comparison
 ---@return string|nil value string the value to compare against
 local function parseSearchString(search)
-    local field, op, value = search:match("^([%w_]+)%s*([><=]=?)%s*(.+)$")
+    -- Supports: =, >, >=, <, <=, ~ (for fuzzy match)
+    local field, op, value = search:match("^([%w_]+)%s*([><=~]=?)%s*(.+)$")
     if field and op and value then
         return field:lower(), op, value
     end
@@ -1964,18 +1965,31 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
         local SubSearches = itemName:sub(2, -2) -- trim {}
         for sub_search in SubSearches:gmatch("[^,%s]+") do
             local field, op, value = parseSearchString(sub_search)
-            if field and op and value then
-                if tonumber(value) then
-                    table.insert(conditions, string.format("%s %s %s", field, op, value))
-                    orderBy = string.format("ORDER BY %s DESC, name ASC", field)
-                else
-                    value = value:gsub("'", "''")
-                    if op == "=" then
-                        table.insert(conditions, string.format("%s = '%s'", field, value))
-                    else
-                        table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
-                    end
-                end
+            -- if field and op and value then
+            --     if tonumber(value) then
+            --         table.insert(conditions, string.format("%s %s %s", field, op, value))
+            --         orderBy = string.format("ORDER BY %s DESC, name ASC", field)
+            --     else
+            --         value = value:gsub("'", "''")
+            --         if op == "=" then
+            --             table.insert(conditions, string.format("%s = '%s'", field, value))
+            --         else
+            --             table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+            --         end
+            --     end
+            -- end
+            if op == "~" then
+                value = value:gsub("'", "''")
+                table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+            elseif tonumber(value) then
+                table.insert(conditions, string.format("%s %s %s", field, op, value))
+                orderBy = string.format("ORDER BY %s DESC, name ASC", field)
+            elseif op == "=" then
+                table.insert(conditions, string.format("%s = '%s'", field, value:gsub("'", "''")))
+            else
+                -- fallback: treat as LIKE with %value%
+                value = value:gsub("'", "''")
+                table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
             end
         end
 
