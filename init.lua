@@ -281,7 +281,14 @@ LNS.MyRace      = mq.TLO.Me.Race.Name()
 LNS.guiLoot     = require('loot_hist')
 if LNS.guiLoot ~= nil then
     LNS.UseActors = true
-    LNS.guiLoot.GetSettings(LNS.Settings.HideNames, LNS.Settings.LookupLinks, true, true, 'lootnscoot', false)
+    LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
+        LNS.Settings.RecordData,
+        true,
+        true,
+        'lootnscoot',
+        false,
+        false
+    )
 end
 
 LNS.DirectorScript                  = 'none'
@@ -632,6 +639,11 @@ end
 
 function LNS.writeSettings(caller)
     mq.cmdf("/squelch /mapfilter CastRadius %d", LNS.Settings.CorpseRadius)
+
+    LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
+        LNS.Settings.RecordData,
+        true, true, 'lootnscoot',
+        LNS.Settings.ShowReport, LNS.Settings.ReportSkippedItems)
 
     LNS.Settings.BuyItemsTable = LNS.FixBuyQty(LNS.BuyItemsTable)
     mq.pickle(SettingsFile, LNS.Settings)
@@ -1144,7 +1156,8 @@ function LNS.commandHandler(...)
                     LNS.Settings.RecordData,
                     true,
                     LNS.Settings.UseActors,
-                    'lootnscoot', false
+                    'lootnscoot', LNS.Settings.ShowReport,
+                    LNS.Settings.ReportSkippedItems
                 )
             end
             Logger.Info(LNS.guiLoot.console, "\ayReloaded Settings \axand \atLoot Files")
@@ -1156,7 +1169,8 @@ function LNS.commandHandler(...)
                     LNS.Settings.RecordData,
                     true,
                     LNS.Settings.UseActors,
-                    'lootnscoot', false
+                    'lootnscoot', LNS.Settings.ShowReport,
+                    LNS.Settings.ReportSkippedItems
                 )
             end
             LNS.UpdateDB()
@@ -1737,7 +1751,7 @@ end
 ---@param zone string the zone the item was looted in (ShortName)
 ---@param items_table table items table sent to looted.
 ---@param cantWear boolean|nil if the item can be worn
----@@param rule string|nil the rule applied to the item
+---@param rule string|nil the rule applied to the item
 function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, link, looter, zone, items_table, cantWear, rule)
     if itemName == nil then return end
     local db = SQLite3.open(HistoryDB)
@@ -1745,7 +1759,7 @@ function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, li
         print("Error: Failed to open database.")
         return
     end
-    local eval = action == 'Ignore' and 'Left' or action
+    local eval = action:find('Ignore') and 'Left' or action
 
     db:exec("PRAGMA journal_mode=WAL;")
 
@@ -1753,7 +1767,7 @@ function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, li
     local currentTime = convertTimestamp(timestamp)
 
     -- Skip if a duplicate "Ignore" or "Left" action exists within the last minute
-    if action == "Ignore" or action == "Left" then
+    if action:find("Ignore") or action:find("Left") then
         local checkStmt = db:prepare([[
 SELECT Date, TimeStamp FROM LootHistory
 WHERE Item = ? AND CorpseName = ? AND Action = ? AND Date = ?
@@ -1794,9 +1808,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     db:exec("COMMIT")
     db:close()
 
-    local actLabel = action == 'Destroy' and 'Destroyed' or action
-    if action ~= 'Destroy' and action ~= 'Ignore' then
+    local actLabel = action:find('Destroy') and 'Destroyed' or action
+    if not action:find('Destroy') and not action:find('Ignore') and not action:find('Left') then
         actLabel = 'Looted'
+    end
+    if LNS.guiLoot.ReportLeft and (action:find('Left') or action:find('Ignore')) then
+        actLabel = 'Left'
     end
 
     table.insert(items_table,
@@ -1859,6 +1876,7 @@ zone TEXT PRIMARY KEY NOT NULL UNIQUE
 ]], charTableName))
 
     local function processRules(stmt, ruleTable, classTable, linkTable, missingItemTable, missingNames)
+        if not db then db = SQLite3.open(RulesDB) end
         for row in stmt:nrows() do
             local id = row.item_id
             local classes = row.item_rule_classes
@@ -1881,9 +1899,11 @@ zone TEXT PRIMARY KEY NOT NULL UNIQUE
         local stmt = db:prepare("SELECT * FROM " .. tbl)
         local lbl = tbl:gsub("_Rules", "")
         if tbl == charTableName then lbl = 'Personal' end
-        processRules(stmt, LNS[lbl .. "ItemsRules"], LNS[lbl .. "ItemsClasses"],
-            LNS.ItemLinks, LNS[lbl .. 'ItemsMissing'], LNS[lbl .. 'MissingNames'])
-        stmt:finalize()
+        if stmt then
+            processRules(stmt, LNS[lbl .. "ItemsRules"], LNS[lbl .. "ItemsClasses"],
+                LNS.ItemLinks, LNS[lbl .. 'ItemsMissing'], LNS[lbl .. 'MissingNames'])
+            stmt:finalize()
+        end
     end
 
     LNS.SafeZones = {}
@@ -1903,7 +1923,21 @@ zone TEXT PRIMARY KEY NOT NULL UNIQUE
     LNS.LoadIcons()
 end
 
----comment Retrieve item data from the DB
+--- check for field>=value or some other operation using < > = <= >=
+--- split the field, operator, and values to create the query from.
+---@param search string search string to parse
+---@return string|nil field string the field to search in
+---@return string|nil op string the operator to use for comparison
+---@return string|nil value string the value to compare against
+local function parseSearchString(search)
+    local field, op, value = search:match("^([%w_]+)%s*([><=]=?)%s*(.+)$")
+    if field and op and value then
+        return field:lower(), op, value
+    end
+    return nil, nil, nil
+end
+
+--- Retrieve item data from the DB
 ---@param itemName string|nil The name of the item to retrieve. [string]
 ---@param itemID integer|nil The ID of the item to retrieve. [integer] [optional]
 ---@param rules boolean|nil If true, only load items with rules (exact name matches) [boolean] [optional]
@@ -1911,18 +1945,77 @@ end
 ---@return integer Quantity of items found
 function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
     if not itemID and not itemName then return 0 end
-    local noDBConnection = db == nil
     itemID = itemID or 0
     itemName = itemName or 'NULL'
     db = db or LNS.OpenItemsSQL()
+    local noDBConnection = db == nil
+    LNS.TempSettings.SearchResults = nil
+    -- --===============================
 
-    local query = rules and "SELECT * FROM Items WHERE item_id = ? ORDER BY name"
-        or "SELECT * FROM Items WHERE item_id = ? OR name LIKE ? ORDER BY name"
-    if exact then query = "SELECT * FROM Items WHERE item_id = ? OR name = ? ORDER BY name" end
+    local conditions = {}
+    local orderBy = "ORDER BY name ASC"
+    local query = ""
+    local stmt
 
-    local stmt = db:prepare(query)
-    stmt:bind(1, itemID)
-    if not rules then stmt:bind(2, "%" .. itemName .. "%") end
+    if itemID > 0 then
+        query = string.format("SELECT * FROM Items WHERE item_id = %d %s", itemID, orderBy)
+    elseif itemName:match("^%b{}$") then
+        -- Handle multiple conditions: {hp>=1000, mana>=500}
+        local SubSearches = itemName:sub(2, -2) -- trim {}
+        for sub_search in SubSearches:gmatch("[^,%s]+") do
+            local field, op, value = parseSearchString(sub_search)
+            if field and op and value then
+                if tonumber(value) then
+                    table.insert(conditions, string.format("%s %s %s", field, op, value))
+                    orderBy = string.format("ORDER BY %s DESC, name ASC", field)
+                else
+                    value = value:gsub("'", "''")
+                    if op == "=" then
+                        table.insert(conditions, string.format("%s = '%s'", field, value))
+                    else
+                        table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+                    end
+                end
+            end
+        end
+
+        if #conditions > 0 then
+            query = string.format("SELECT * FROM Items WHERE %s %s", table.concat(conditions, " AND "), orderBy)
+        else
+            query = string.format("SELECT * FROM Items WHERE 1=0 %s", orderBy) -- no valid clauses
+        end
+    else
+        -- Handle single condition or default to name search
+        local field, op, value = parseSearchString(itemName)
+        if field and op and value then
+            if tonumber(value) then
+                orderBy = string.format("ORDER BY %s DESC, name ASC", field)
+                query = string.format("SELECT * FROM Items WHERE %s %s %s %s", field, op, value, orderBy)
+            else
+                value = value:gsub("'", "''")
+                if op == "=" then
+                    query = string.format("SELECT * FROM Items WHERE %s = '%s' %s", field, value, orderBy)
+                else
+                    query = string.format("SELECT * FROM Items WHERE %s LIKE '%%%s%%' %s", field, value, orderBy)
+                end
+            end
+        else
+            -- Default to name search
+            query = string.format("SELECT * FROM Items WHERE name LIKE '%%%s%%' %s", itemName:gsub("'", "''"), orderBy)
+        end
+    end
+
+    stmt = db:prepare(query)
+    if not stmt then
+        Logger.Error(LNS.guiLoot.console, "Failed to prepare SQL statement: %s", db:errmsg())
+        if noDBConnection then
+            db:close()
+        end
+        return 0
+    end
+    Logger.Debug(LNS.guiLoot.console, "SQL Query: \ay%s\ax ", query)
+
+    --===========================
 
     local rowsFetched = 0
     for row in stmt:nrows() do
@@ -1942,7 +2035,7 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
                 StackSize = row.stack_size,
                 Clicky = row.clickable or 'None',
                 AugType = row.augtype,
-                STR = row.strength,
+                strength = row.strength,
                 DEX = row.dexterity,
                 AGI = row.agility,
                 STA = row.stamina,
@@ -1995,8 +2088,13 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
             LNS.ItemIcons[id] = row.icon
             LNS.ItemLinks[id] = row.link
             rowsFetched = rowsFetched + 1
+            if LNS.TempSettings.SearchResults == nil then
+                LNS.TempSettings.SearchResults = {}
+            end
+            table.insert(LNS.TempSettings.SearchResults, { id = id, data = itemData, })
         end
     end
+    Logger.Info(LNS.guiLoot.console, "loot.GetItemFromDB() \agFound \ay%d\ax items matching the query: \ay%s\ax", rowsFetched, query)
     stmt:finalize()
     if noDBConnection then
         db:close()
@@ -2092,7 +2190,7 @@ function LNS.addToItemDB(item)
     LNS.ALLITEMS[itemID].StackSize          = item.StackSize() or 0
     LNS.ALLITEMS[itemID].Clicky             = item.Clicky() or nil
     LNS.ALLITEMS[itemID].AugType            = item.AugType() or 0
-    LNS.ALLITEMS[itemID].STR                = item.STR() or 0
+    LNS.ALLITEMS[itemID].strength           = item.STR() or 0
     LNS.ALLITEMS[itemID].DEX                = item.DEX() or 0
     LNS.ALLITEMS[itemID].AGI                = item.AGI() or 0
     LNS.ALLITEMS[itemID].STA                = item.STA() or 0
@@ -2254,7 +2352,7 @@ heroicwis                                    = excluded.heroicwis
             LNS.ALLITEMS[itemID].StackSize,
             LNS.ALLITEMS[itemID].Clicky,
             LNS.ALLITEMS[itemID].AugType,
-            LNS.ALLITEMS[itemID].STR,
+            LNS.ALLITEMS[itemID].strength,
             LNS.ALLITEMS[itemID].DEX,
             LNS.ALLITEMS[itemID].AGI,
             LNS.ALLITEMS[itemID].STA,
@@ -3431,7 +3529,10 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     -- check Classes that can loot
-    if ruletype ~= 'Personal' and lootRule ~= 'Sell' and lootRule ~= 'Ask' and lootRule ~= 'Tribute' and not (lootRule:find('Quest')) then
+    if ruletype ~= 'Personal' and lootRule ~= 'Sell' and
+        lootRule ~= 'Ask' and lootRule ~= 'Tribute' and not (lootRule:find('Quest'))
+        and not (LNS.Settings.KeepSpells and (itemName:find('Spell:') or itemName:find('Song:'))) and
+        not (LNS.Settings.LootAugments and isAug) then
         Logger.Debug(LNS.guiLoot.console, "\ax\ag Checking Classes for Rule: \at%s\ax", lootRule)
 
         lootDecision = LNS.checkClasses(lootRule, lootClasses, fromFunction, newRule)
@@ -4098,7 +4199,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
     local actionToTake = doWhat:gsub("%s$", "")
     local actionLower = actionToTake:lower()
     local corpseName = mq.TLO.Corpse.CleanName() or 'none'
-    local cItem = mq.TLO.Corpse.Item(index)
+    local cItem = mq_item or mq.TLO.Corpse.Item(index)
     if not cItem then return end
     local cItemID = cItem.ID() or 0
 
@@ -4109,7 +4210,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
 
     local itemName       = cItem.Name() or 'none'
     local itemLink       = cItem.ItemLink('CLICKABLE')()
-    local isGlobalItem   = LNS.Settings.GlobalLootOn and (LNS.GlobalItemsRules[cItemID] ~= nil or LNS.BuyItemsTable[cItemID] ~= nil)
+    local isGlobalItem   = LNS.Settings.GlobalLootOn and (LNS.GlobalItemsRules[cItemID] ~= nil) --or LNS.BuyItemsTable[itemName] ~= nil)
     local isPersonalItem = LNS.PersonalItemsRules[cItemID] ~= nil
     local corpsePos      = corpseName:find("corpse")
     local tmpLabel       = corpsePos and corpseName:sub(1, corpsePos - 4) or corpseName
@@ -4117,7 +4218,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
     local eval           = type(actionToTake) == 'string' and actionToTake or '?'
     local dbgTbl         = {}
     local rule           = isGlobalItem and LNS.GlobalItemsRules[cItemID] or
-        (isPersonalItem and LNS.PersonalItemsRules[cItemID] or LNS.NormalItemsRules[cItemID])
+        (isPersonalItem and LNS.PersonalItemsRules[cItemID] or (LNS.NormalItemsRules[cItemID] or nil))
     if allItems == nil then allItems = {} end
     dbgTbl = {
         Lookup = 'loot.lootItem()',
@@ -4172,8 +4273,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
             mq.delay(10000, function() return mq.TLO.Cursor.ID() == cItemID end)
             eval = isGlobalItem == true and 'Global Destroy' or 'Destroy'
             eval = isPersonalItem == true and 'Personal Destroy' or eval
-            Logger.Debug(LNS.guiLoot.console, string.format("eval = %s", eval))
-
+            Logger.Debug(LNS.guiLoot.console, string.format("Destroying (\ay%s\ax) Eval (\ao%s\ax)", itemName, eval))
             mq.cmdf('/destroy')
             dbgTbl = {
                 Lookup = 'loot.lootItem()',
@@ -4226,8 +4326,8 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         end
 
         Logger.Debug(LNS.guiLoot.console, "\aoINSERT HISTORY CHECK 4\ax: \ayAction\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", eval, itemName, itemLink)
-        LNS.insertIntoHistory(itemName, corpseName, actionToTake,
-            os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear)
+        LNS.insertIntoHistory(itemName, corpseName, eval,
+            os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear, rule)
     end
 end
 
@@ -4404,7 +4504,6 @@ function LNS.lootMobs(limit)
         LNS.finishedLooting()
         return false
     end
-
 
     if LNS.Settings.LootMyCorpse and not LNS.Settings.IgnoreMyNearCorpses and foundMine then
         Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Found my own corpse, attempting to loot it.')
@@ -6227,6 +6326,7 @@ function LNS.drawItemsTables()
 
                 if ImGui.SmallButton(Icons.MD_DELETE_SWEEP) then
                     LNS.TempSettings.SearchItems = nil
+                    LNS.TempSettings.SearchResults = nil
                 end
                 if ImGui.IsItemHovered() then ImGui.SetTooltip("Clear Search") end
 
@@ -6240,14 +6340,22 @@ function LNS.drawItemsTables()
                 if ImGui.IsItemHovered() then ImGui.SetTooltip("Lookup Item in DB") end
 
                 -- setup the filteredItems for sorting
+
                 local filteredItems = {}
-                for id, item in pairs(LNS.ALLITEMS) do
-                    if LNS.SearchLootTable(LNS.TempSettings.SearchItems, item.Name, item.ClassList) or
-                        LNS.SearchLootTable(LNS.TempSettings.SearchItems, id, item.ClassList) then
-                        table.insert(filteredItems, { id = id, data = item, })
+                if LNS.TempSettings.SearchResults == nil then
+                    for id, item in pairs(LNS.ALLITEMS) do
+                        if LNS.SearchLootTable(LNS.TempSettings.SearchItems, item.Name, item.ClassList) or
+                            LNS.SearchLootTable(LNS.TempSettings.SearchItems, id, item.ClassList) then
+                            table.insert(filteredItems, { id = id, data = item, })
+                        end
                     end
+                    table.sort(filteredItems, function(a, b) return a.data.Name < b.data.Name end)
+                else
+                    filteredItems = LNS.TempSettings.SearchResults
+                    -- for k, v in pairs(LNS.TempSettings.SearchResults) do
+                    --     table.insert(filteredItems, { id = k, data = v, })
+                    -- end
                 end
-                table.sort(filteredItems, function(a, b) return a.data.Name < b.data.Name end)
                 -- Calculate total pages
                 local totalItems = #filteredItems
                 local totalPages = math.ceil(totalItems / ITEMS_PER_PAGE)
@@ -6447,7 +6555,7 @@ function LNS.drawItemsTables()
                         ImGui.TableNextColumn()
                         LNS.SafeText(item.Damage)    -- damage
                         ImGui.TableNextColumn()
-                        LNS.SafeText(item.STR)       -- strength
+                        LNS.SafeText(item.strength)  -- strength
                         ImGui.TableNextColumn()
                         LNS.SafeText(item.DEX)       -- dexterity
                         ImGui.TableNextColumn()
@@ -7708,7 +7816,13 @@ function LNS.DrawRecord(tableToDraw)
                     ImGui.TableNextColumn()
                     ImGui.TextColored(ImVec4(1.000, 0.557, 0.000, 1.000), item.Looter)
                     ImGui.TableNextColumn()
-                    ImGui.Text(item.Action == 'Looted' and 'Keep' or item.Action)
+                    if item.Action:find('Global') then
+                        ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.523, 0.797, 0.944, 1.000))
+                        ImGui.Text(Icons.FA_GLOBE)
+                        ImGui.PopStyleColor()
+                        ImGui.SameLine()
+                    end
+                    ImGui.Text(item.Action == 'Looted' and 'Keep' or item.Action:gsub('Global ', ''))
                     ImGui.TableNextColumn()
                     ImGui.TextColored(ImVec4(0.976, 0.518, 0.844, 1.000), item.CorpseName)
                     ImGui.TableNextColumn()
@@ -7823,14 +7937,15 @@ function LNS.RenderMainUI()
                 ImGui.SameLine()
                 if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
                     -- loot.guiLoot.showReport = not loot.guiLoot.showReport
+                    LNS.Settings.ShowReport = not LNS.Settings.ShowReport
                     LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
 
                         LNS.Settings.RecordData,
                         true,
                         LNS.Settings.UseActors,
                         'lootnscoot',
-                        true)
-                    LNS.Settings.ShowReport = LNS.guiLoot.showReport
+                        LNS.Settings.ShowReport,
+                        LNS.Settings.ReportSkippedItems)
                     LNS.TempSettings.NeedSave = true
                 end
                 if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Report Window") end
@@ -7981,7 +8096,8 @@ function LNS.processArgs(args)
                 true,
                 LNS.Settings.UseActors,
                 'lootnscoot',
-                false)
+                LNS.Settings.ShowReport,
+                LNS.Settings.ReportSkippedItems)
         end
         LNS.DirectorScript = args[2]
         if args[3] ~= nil then
@@ -8007,7 +8123,8 @@ function LNS.processArgs(args)
                 true,
                 LNS.Settings.UseActors,
                 'lootnscoot',
-                false)
+                LNS.Settings.ShowReport,
+                LNS.Settings.ReportSkippedItems)
         end
         Mode = 'standalone'
         LNS.Terminate = false
@@ -8039,7 +8156,8 @@ function LNS.init(args)
         true,
         LNS.UseActors,
         'lootnscoot',
-        LNS.Settings.ShowReport)
+        LNS.Settings.ShowReport,
+        LNS.Settings.ReportSkippedItems)
 
     if needsSave then LNS.writeSettings("Init()") end
     if Mode == 'directed' then
@@ -8065,7 +8183,9 @@ if LNS.guiLoot ~= nil then
         true,
         LNS.Settings.UseActors,
         'lootnscoot',
-        LNS.Settings.ShowReport)
+        LNS.Settings.ShowReport,
+        LNS.Settings.ReportSkippedItems
+    )
     LNS.guiLoot.init(true, true, 'lootnscoot')
     LNS.guiExport()
 end
