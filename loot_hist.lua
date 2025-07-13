@@ -134,6 +134,8 @@ local lootTable                                              = {}
 guiLoot.TempSettings                                         = {}
 guiLoot.SessionLootRecord                                    = {}
 guiLoot.TempSettings.FilterHistory                           = ''
+guiLoot.ReportLeft                                           = false
+
 local fontSizes                                              = {}
 for i = 10, 40 do
 	if i % 2 == 0 then
@@ -146,30 +148,23 @@ end
 
 --
 
----@param names boolean
----@param record boolean
----@param imported boolean
----@param useactors boolean
----@param caller string
----@param report boolean|nil
-function guiLoot.GetSettings(names, record, imported, useactors, caller, report)
-	local repVal = report and not guiLoot.showReport
+---@param names boolean -- hide names or not, used for lootnscoot
+---@param record boolean -- record data or not, used for lootnscoot
+---@param imported boolean -- imported or not, used for lootnscoot
+---@param useactors boolean -- use actors or not, used for lootnscoot
+---@param caller string -- caller of the function, used for logging and debugging
+---@param report boolean|nil -- report if we are showing the report or not
+---@param report_left boolean|nil report skipped items
+function guiLoot.GetSettings(names, record, imported, useactors, caller, report, report_left)
+	local repVal = report and report or false
 	guiLoot.imported = imported
 	guiLoot.hideNames = names
 	guiLoot.recordData = record
 	guiLoot.UseActors = useactors
 	guiLoot.caller = caller
 	guiLoot.showReport = repVal
+	guiLoot.ReportLeft = report_left or (guiLoot.ReportLeft or false)
 end
-
--- function guiLoot.loadLDB()
--- 	if guiLoot.linkdb or guiLoot.UseActors then return end
--- 	local sWarn = "MQ2LinkDB not loaded, Can't lookup links.\n Attempting to Load MQ2LinkDB"
--- 	guiLoot.console:AppendText(sWarn)
--- 	print(sWarn)
--- 	mq.cmdf("/plugin mq2linkdb noauto")
--- 	guiLoot.linkdb = mq.TLO.Plugin('mq2linkdb').IsLoaded()
--- end
 
 -- draw any imported menus from outside this script.
 local function drawImportedMenu()
@@ -599,16 +594,16 @@ function guiLoot.lootedReport_GUI()
 			local itemName = key
 			local itemLink = data["Link"]
 			local itemCount = data["Count"]
-			local itemEval = data["Rule"] or 'Unknown'
+			local itemEval = data.Eval or 'Unknown'
 			local itemNewEval = data["NewEval"] or 'NONE'
 			local globalItem = false
 			local globalNew = false
-			itemEval = string.find(itemEval, "Quest") and 'Quest' or itemEval
 			globalItem = string.find(itemEval, 'Global') ~= nil
 			if globalItem then
 				itemName = string.gsub(itemName, 'Global ', '')
 			end
 			globalNew = string.find(itemNewEval, 'Global') ~= nil
+			itemEval = string.find(itemEval, "Quest") and 'Quest' or itemEval
 			local rowID = string.format("%s_%d", item, row)
 			ImGui.PushID(rowID)
 
@@ -842,12 +837,12 @@ local function addRule(who, what, link, eval, rule)
 		lootTable[what] = {}
 		lootTable[what] = { Count = 0, Who = who, Link = link, Eval = eval or 'Unknown', Rule = rule or 'Unknown', }
 	end
-	local looters = lootTable[what]['Who']
+	local looters = lootTable[what]['Who'] or ''
 	if not string.find(looters, who) then
 		lootTable[what]['Who'] = looters .. ', ' .. who
 	end
 	lootTable[what]["Link"] = link
-	lootTable[what]["Eval"] = (rule and rule:find('Quest')) and rule or (eval or 'Unknown')
+	lootTable[what]["Eval"] = eval
 	lootTable[what]["Count"] = (lootTable[what]["Count"] or 0) + 1
 	lootTable[what]['Rule'] = rule or 'Unknown'
 end
@@ -885,10 +880,12 @@ function guiLoot.RegisterActor()
 			local cantWear = item.cantWear or false
 			local actionLabel = item.Eval
 			local consoleAction = item.Eval
+			--printf("[\ayLOOTED DEBUG\ax] :: \agRecieved Message\ax: Item (\at%s\ax) Action (\at%s\ax) From (\at%s\ax) Eval (\at%s\ax) Rule (\at%s\ax)", what, item.Action, who,item.Eval,item.Rule)
+
 			if guiLoot.hideNames then
 				if who ~= mq.TLO.Me.Name() then who = mq.TLO.Spawn(string.format("%s", who)).Class.ShortName() else who = MyClass end
 			end
-			if guiLoot.recordData and item.Action == ('Looted' or 'Destroyed') then
+			if guiLoot.recordData and ((item.Action:find('Looted') or item.Action:find('Destroyed')) and ((not item.Action:find('Left') and not item.Action:find("Ask")) or guiLoot.ReportLeft)) then
 				addRule(who, what, link, eval, rule)
 			end
 			if cantWear then
@@ -913,7 +910,7 @@ function guiLoot.RegisterActor()
 				Looter = who,
 				Item = item.Name,
 				Link = link,
-				Action = cantWear and 'Cant Wear' or item.Action,
+				Action = eval and eval or item.Action,
 				Rule = rule,
 			})
 		end
