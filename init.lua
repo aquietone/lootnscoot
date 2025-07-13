@@ -995,6 +995,13 @@ function LNS.commandHandler(...)
         LNS.sendMySettings()
         return
     end
+    if args[1] == 'corpsereset' then
+        local numCorpses = lootedCorpses ~= nil and LNS.GetTableSize(lootedCorpses) or 0
+        lootedCorpses = {}
+        Logger.Info(LNS.guiLoot.console, "Corpses (\ay%s\ax) have been \agReset\ax", numCorpses)
+        LNS.send({ Who = MyName, CorpsesToIgnore = lootedCorpses, Server = eqServer, LNSSettings = LNS.Settings, }, 'loot_module')
+        return
+    end
     if args[1] == 'pause' then
         LNS.PauseLooting = true
         Logger.Info(LNS.guiLoot.console, "\ayLooting\ax is now \aoPaused\ax")
@@ -1965,31 +1972,23 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
         local SubSearches = itemName:sub(2, -2) -- trim {}
         for sub_search in SubSearches:gmatch("[^,%s]+") do
             local field, op, value = parseSearchString(sub_search)
-            -- if field and op and value then
-            --     if tonumber(value) then
-            --         table.insert(conditions, string.format("%s %s %s", field, op, value))
-            --         orderBy = string.format("ORDER BY %s DESC, name ASC", field)
-            --     else
-            --         value = value:gsub("'", "''")
-            --         if op == "=" then
-            --             table.insert(conditions, string.format("%s = '%s'", field, value))
-            --         else
-            --             table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
-            --         end
-            --     end
-            -- end
-            if op == "~" then
-                value = value:gsub("'", "''")
-                table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
-            elseif tonumber(value) then
-                table.insert(conditions, string.format("%s %s %s", field, op, value))
-                orderBy = string.format("ORDER BY %s DESC, name ASC", field)
-            elseif op == "=" then
-                table.insert(conditions, string.format("%s = '%s'", field, value:gsub("'", "''")))
-            else
-                -- fallback: treat as LIKE with %value%
-                value = value:gsub("'", "''")
-                table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+            if field and op and value then
+                if op == "~" then
+                    value = value:gsub("'", "''")
+                    table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+                elseif tonumber(value) then
+                    table.insert(conditions, string.format("%s %s %s", field, op, value))
+                    orderBy = string.format("ORDER BY %s DESC, name ASC", field)
+                elseif op == "=" then
+                    table.insert(conditions, string.format("%s = '%s'", field, value:gsub("'", "''")))
+                else
+                    -- fallback: treat as LIKE with %value%
+                    value = value:gsub("'", "''")
+                    if field ~= 'name' then
+                        orderBy = string.format("ORDER BY %s, name ASC", field)
+                    end
+                    table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+                end
             end
         end
 
@@ -5391,6 +5390,10 @@ function LNS.renderHelpWindow()
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('Resume LNS after it has been paused.')
                 ImGui.TableNextColumn()
+                ImGui.TextWrapped('/lns resetcorpses')
+                ImGui.TableNextColumn()
+                ImGui.TextWrapped('Reset the list of Already Looted Corpses in the current zone.')
+                ImGui.TableNextColumn()
                 ImGui.TextWrapped('/lns help')
                 ImGui.TableNextColumn()
                 ImGui.TextWrapped('Show this help window.')
@@ -6352,7 +6355,19 @@ function LNS.drawItemsTables()
                 end
                 ImGui.PopStyleColor()
                 if ImGui.IsItemHovered() then ImGui.SetTooltip("Lookup Item in DB") end
+                ImGui.SameLine()
+                ImGui.HelpMarker([[
+Search items by Name or Class directly
 
+Advanced Searches can also be done with (<,>,=,<=, >=, and ~) operators
+example: hp>=500   this will return items with hp values of 500 and up
+
+You can also do multi searches by placing them in { } curly braces and comma separated
+example: {hp>=500, ac<=100} this will return items with hp values of 500 and up, and ac values of 100 and below
+
+The ~ symbol can be used on the name field for partial searches.
+example {hp>=500, name~robe} this will return items with 500 + Hp and has robe in the name
+                ]])
                 -- setup the filteredItems for sorting
 
                 local filteredItems = {}
