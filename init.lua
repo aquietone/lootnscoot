@@ -4651,7 +4651,7 @@ function LNS.lootMobs(limit)
     if (myCorpseCount == 0 or (myCorpseCount > 0 and LNS.Settings.IgnoreMyNearCorpses)) and LNS.Settings.DoLoot then
         for i = 1, deadCount do
             local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', LNS.Settings.CorpseRadius))
-            if corpse() and (not lootedCorpses[corpse.ID()] and LNS.Settings.CheckCorpseOnce) then
+            if corpse() and not (lootedCorpses[corpse.ID()] and LNS.Settings.CheckCorpseOnce) then
                 if not LNS.corpseLocked(corpse.ID()) or
                     (mq.TLO.Navigation.PathLength('spawn id ' .. corpse.ID())() or 100) > LNS.Settings.CorpseRadius then
                     table.insert(corpseList, corpse)
