@@ -3420,32 +3420,36 @@ function LNS.getRule(item, fromFunction, index)
     -- check imported items missing ID's if there is a matching name and only 1 or less items in the db update the rule with the items ID.
     if LNS.GlobalMissingNames[itemName] then
         if LNS.findItemInDb(itemName) == 1 then
-            local negID = LNS.GlobalMissingNames[itemName]
-            LNS.modifyItemRule(itemID,
-                LNS.GlobalItemsMissing[negID].item_rule,
-                'Global_Rules',
-                LNS.GlobalItemsMissing[negID].item_classes,
-                itemLink)
+            local negID = LNS.GlobalMissingNames[itemName] or 0
+            if negID < 0 then
+                LNS.modifyItemRule(itemID,
+                    LNS.GlobalItemsMissing[negID].item_rule,
+                    'Global_Rules',
+                    LNS.GlobalItemsMissing[negID].item_classes,
+                    itemLink)
 
-            Logger.Info(LNS.guiLoot.console, "\arItem \ax%s\ar is missing from the database. Re-adding with \ayImported rule\ax: \ag%s\ax",
-                itemName, LNS.GlobalItemsMissing[negID].item_rule)
-            LNS.GlobalMissingNames[itemName] = nil
-            LNS.GlobalItemsMissing[negID] = nil
+                Logger.Info(LNS.guiLoot.console, "\arItem \ax%s\ar is missing from the database. Re-adding with \ayImported rule\ax: \ag%s\ax",
+                    itemName, LNS.GlobalItemsMissing[negID].item_rule)
+                LNS.GlobalMissingNames[itemName] = nil
+                LNS.GlobalItemsMissing[negID] = nil
+            end
         end
     end
     if LNS.NormalMissingNames[itemName] then
         if LNS.findItemInDb(itemName) == 1 then
-            local negID = LNS.NormalMissingNames[itemName]
-            LNS.modifyItemRule(itemID,
-                LNS.NormalItemsMissing[negID].item_rule,
-                'Normal_Rules',
-                LNS.NormalItemsMissing[negID].item_classes,
-                itemLink)
+            local negID = LNS.NormalMissingNames[itemName] or 0
+            if negID < 0 then
+                LNS.modifyItemRule(itemID,
+                    LNS.NormalItemsMissing[negID].item_rule,
+                    'Normal_Rules',
+                    LNS.NormalItemsMissing[negID].item_classes,
+                    itemLink)
 
-            Logger.Info(LNS.guiLoot.console, "\arItem \ax%s\ar is missing from the database. Re-adding with \ayImported rule\ax: \ag%s\ax",
-                itemName, LNS.NormalItemsMissing[negID].item_rule)
-            LNS.NormalMissingNames[itemName] = nil
-            LNS.NormalItemsMissing[negID] = nil
+                Logger.Info(LNS.guiLoot.console, "\arItem \ax%s\ar is missing from the database. Re-adding with \ayImported rule\ax: \ag%s\ax",
+                    itemName, LNS.NormalItemsMissing[negID].item_rule)
+                LNS.NormalMissingNames[itemName] = nil
+                LNS.NormalItemsMissing[negID] = nil
+            end
         end
     end
     -- Lookup existing rule in the databases
