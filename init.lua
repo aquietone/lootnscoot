@@ -1959,11 +1959,18 @@ end
 ---@return string|nil op string the operator to use for comparison
 ---@return string|nil value string the value to compare against
 local function parseSearchString(search)
-    -- Supports: =, >, >=, <, <=, ~ (for fuzzy match)
-    local field, op, value = search:match("^([%w_]+)%s*([><=~]=?)%s*(.+)$")
+    -- check for values with Quotes
+    local field, op, quoted_value = search:match("^([%w_]+)%s*([><=~]=?)%s*\"([^\"]+)\"$")
+    if field and op and quoted_value then
+        return field:lower(), op, quoted_value
+    end
+    local value
+    -- no quoted values
+    field, op, value = search:match("^([%w_]+)%s*([><=~]=?)%s*(.+)$")
     if field and op and value then
         return field:lower(), op, value
     end
+
     return nil, nil, nil
 end
 
@@ -1990,26 +1997,47 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
     if itemID > 0 then
         query = string.format("SELECT * FROM Items WHERE item_id = %d %s", itemID, orderBy)
     elseif itemName:match("^%b{}$") then
-        -- Handle multiple conditions: {hp>=1000, mana>=500}
-        local SubSearches = itemName:sub(2, -2) -- trim {}
-        for sub_search in SubSearches:gmatch("[^,%s]+") do
-            local field, op, value = parseSearchString(sub_search)
-            if field and op and value then
-                if op == "~" then
-                    value = value:gsub("'", "''")
-                    table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
-                elseif tonumber(value) then
-                    table.insert(conditions, string.format("%s %s %s", field, op, value))
-                    orderBy = string.format("ORDER BY %s DESC, name ASC", field)
-                elseif op == "=" then
-                    table.insert(conditions, string.format("%s = '%s'", field, value:gsub("'", "''")))
-                else
-                    -- fallback: treat as LIKE with %value%
-                    value = value:gsub("'", "''")
-                    if field ~= 'name' then
-                        orderBy = string.format("ORDER BY %s, name ASC", field)
+        local ConditionalClauses = itemName:sub(2, -2)
+
+        -- Handles multiple conditions {hp>=1000, name~"words of" | name~"rune of" | name~"pg."} treates pipes as OR and comma's as AND for compiling the query
+        for clause in ConditionalClauses:gmatch("[^,]+") do
+            clause = clause:match("^%s*(.-)%s*$") -- trim spaces
+            if clause:find("|") then
+                local orGroup = {}
+                for or_clause in clause:gmatch("[^|]+") do
+                    local field, op, value = parseSearchString(or_clause:match("^%s*(.-)%s*$"))
+                    if field and op and value then
+                        if op == "~" then
+                            value = value:gsub("'", "''")
+                            table.insert(orGroup, string.format("%s LIKE '%%%s%%'", field, value))
+                        elseif tonumber(value) then
+                            table.insert(orGroup, string.format("%s %s %s", field, op, value))
+                        elseif op == "=" then
+                            table.insert(orGroup, string.format("%s = '%s'", field, value:gsub("'", "''")))
+                        else
+                            value = value:gsub("'", "''")
+                            table.insert(orGroup, string.format("%s LIKE '%%%s%%'", field, value))
+                        end
                     end
-                    table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+                end
+                if #orGroup > 0 then
+                    table.insert(conditions, "(" .. table.concat(orGroup, " OR ") .. ")")
+                end
+            else
+                local field, op, value = parseSearchString(clause)
+                if field and op and value then
+                    if op == "~" then
+                        value = value:gsub("'", "''")
+                        table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+                    elseif tonumber(value) then
+                        table.insert(conditions, string.format("%s %s %s", field, op, value))
+                        orderBy = string.format("ORDER BY %s DESC, name ASC", field)
+                    elseif op == "=" then
+                        table.insert(conditions, string.format("%s = '%s'", field, value:gsub("'", "''")))
+                    else
+                        value = value:gsub("'", "''")
+                        table.insert(conditions, string.format("%s LIKE '%%%s%%'", field, value))
+                    end
                 end
             end
         end
@@ -3416,6 +3444,7 @@ function LNS.getRule(item, fromFunction, index)
     local isLore       = item.Lore()
     local isNoDrop     = item.NoDrop() or item.NoTrade()
     local lootLore     = true -- i don't have item and its lore so i can loot it
+    local cID          = mq.TLO.Corpse.ID() or 0
 
     -- check imported items missing ID's if there is a matching name and only 1 or less items in the db update the rule with the items ID.
     if LNS.GlobalMissingNames[itemName] then
@@ -3527,33 +3556,69 @@ function LNS.getRule(item, fromFunction, index)
         }
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
         LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, false)
+        if LNS.Settings.MasterLooting and ruletype ~= 'Personal' then
+            LNS.send({
+                who = MyName,
+                Server = eqServer,
+                action = 'check_item',
+                CorpseID = cID or 0,
+            })
+            mq.delay(5)
+        end
         return lootDecision, 0, newRule, isEquippable
     end
 
     -- handle ignore and destroy rules
     if lootRule == 'Ignore' and not (LNS.Settings.DoDestroy and LNS.Settings.AlwaysDestroy) then
         Logger.Info(LNS.guiLoot.console, "\ax\aoRule\ax: (\ayIGNORE\ax) \aoSkipping\ax (\at%s\ax)", itemName)
+        if LNS.Settings.MasterLooting and ruletype ~= 'Personal' then
+            LNS.send({
+                who = MyName,
+                Server = eqServer,
+                action = 'check_item',
+                CorpseID = mq.TLO.Corpse.ID() or 0,
+            })
+            mq.delay(5)
+        end
         return 'Ignore', 0, newRule, isEquippable
     elseif lootRule == 'Ignore' and LNS.Settings.DoDestroy and LNS.Settings.AlwaysDestroy then
         Logger.Info(LNS.guiLoot.console, "\ax\ao Rule\ax: (\ayIGNORE\ax) and (\ayALWAYS DESTROY\ax) \at%s\ax", itemName)
-
+        if LNS.Settings.MasterLooting and ruletype ~= 'Personal' then
+            LNS.send({
+                who = MyName,
+                Server = eqServer,
+                action = 'check_item',
+                CorpseID = mq.TLO.Corpse.ID() or 0,
+            })
+            mq.delay(5)
+        end
         return 'Destroy', 0, newRule, isEquippable
     end
 
     if lootRule == 'Destroy' then
         Logger.Info(LNS.guiLoot.console, "\ax\ao Rule\ax: (\arDESTROY\ax) \at%s\ax", itemName)
+        if LNS.Settings.MasterLooting and ruletype ~= 'Personal' then
+            LNS.send({
+                who = MyName,
+                Server = eqServer,
+                action = 'check_item',
+                CorpseID = mq.TLO.Corpse.ID() or 0,
+            })
+            mq.delay(5)
+        end
         return 'Destroy', 0, newRule, isEquippable
     end
 
-    if LNS.Settings.StackableOnly and not stackable then
+    if LNS.Settings.StackableOnly and not stackable and not LNS.Settings.MasterLooting then
         Logger.Info(LNS.guiLoot.console, "\ax\ao Rule\ax: \aySTACKABLE ONLY\ax and item is \arNOT stackable \at%s\ax", itemName)
+
         return 'Ignore', 0, newRule, isEquippable
     end
 
     ---check lore
     if isLore then
         lootLore = countHave == 0
-        if not lootLore then
+        if not lootLore and not LNS.Settings.MasterLooting then
             table.insert(loreItems, itemLink)
             Logger.Info(LNS.guiLoot.console, "\aoItem \ax(\at%s\ax) is \ayLORE\ax and I \aoHAVE\ax it. Ignoring.", itemName)
             return 'Ignore', 0, newRule, isEquippable
@@ -3561,7 +3626,7 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     --handle NoDrop
-    if isNoDrop and not LNS.Settings.LootNoDrop then
+    if isNoDrop and not LNS.Settings.LootNoDrop and not LNS.Settings.MasterLooting then
         Logger.Info(LNS.guiLoot.console, "\axItem is \aoNODROP\ax \at%s\ax and LootNoDrop is \arNOT \axenabled\ax", itemName)
         table.insert(noDropItems, itemLink)
         return 'Ignore', 0, newRule, isEquippable
@@ -3571,7 +3636,7 @@ function LNS.getRule(item, fromFunction, index)
     if ruletype ~= 'Personal' and lootRule ~= 'Sell' and
         lootRule ~= 'Ask' and lootRule ~= 'Tribute' and not (lootRule:find('Quest'))
         and not (LNS.Settings.KeepSpells and (itemName:find('Spell:') or itemName:find('Song:'))) and
-        not (LNS.Settings.LootAugments and isAug) then
+        not (LNS.Settings.LootAugments and isAug) and not LNS.Settings.MasterLooting then
         Logger.Debug(LNS.guiLoot.console, "\ax\ag Checking Classes for Rule: \at%s\ax", lootRule)
 
         lootDecision = LNS.checkClasses(lootRule, lootClasses, fromFunction, newRule)
@@ -3579,6 +3644,7 @@ function LNS.getRule(item, fromFunction, index)
         if lootDecision == 'Ignore' then
             Logger.Info(LNS.guiLoot.console, "\ax\aoItem\ax (\ag%s\ax) Classes: (\at%s)\ax MyClass: (\ay%s\ax) Decision: (\at%s\ax)",
                 itemName, lootClasses, LNS.MyClass, lootDecision)
+
             return lootDecision, qKeep, newRule, isEquippable
         end
 
@@ -3592,7 +3658,7 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     -- check bag space
-    if not (freeSpace > LNS.Settings.SaveBagSlots or (stackable and freeStack > 0)) then
+    if not (freeSpace > LNS.Settings.SaveBagSlots or (stackable and freeStack > 0)) and not LNS.Settings.MasterLooting then
         dbgTbl = {
             Lookup = '\ax\ag Check for BAGSPACE',
             Decision = lootDecision,
@@ -3603,11 +3669,12 @@ function LNS.getRule(item, fromFunction, index)
         Logger.Warn(LNS.guiLoot.console, "You are \arOUT OF BAG SPACE\ax. \aoIgnoring.")
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
         -- loot.lootItem(i, itemRule, 'leftmouseup', qKeep, allItems)
+
         return 'Ignore', 0, newRule, isEquippable
     end
 
     -- Handle augments
-    if LNS.Settings.LootAugments and isAug and ruletype == 'Normal' then
+    if LNS.Settings.LootAugments and isAug and ruletype == 'Normal' and not LNS.Settings.MasterLooting then
         lootDecision = "Keep"
         dbgTbl = {
             Lookup = '\ax\ag Check for AUGMENTS',
@@ -3621,7 +3688,7 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     -- Handle Spell Drops
-    if LNS.Settings.KeepSpells and LNS.checkSpells(itemName) and ruletype == 'Normal' then
+    if LNS.Settings.KeepSpells and LNS.checkSpells(itemName) and ruletype == 'Normal' and not LNS.Settings.MasterLooting then
         lootDecision = "Keep"
         dbgTbl = {
             Lookup = '\ax\ag Check for SPELLS',
@@ -3635,7 +3702,7 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     -- check Quests
-    if string.find(lootRule, "Quest") then
+    if string.find(lootRule, "Quest") and not LNS.Settings.MasterLooting then
         Logger.Debug(LNS.guiLoot.console, "\ag Checking for QUEST Rule: \at%s\ax", lootRule)
         lootDecision, qKeep = LNS.checkQuest(lootRule, countHave, lootClasses)
         if lootDecision == 'Ignore' then
@@ -3659,7 +3726,6 @@ function LNS.getRule(item, fromFunction, index)
 
         return 'Ignore', qKeep, newRule, isEquippable
     elseif LNS.Settings.MasterLooting then
-        local cID = mq.TLO.Corpse.ID() or 0
         LNS.InsertMasterLootList(itemName, cID, itemID, LNS.ItemLinks[itemID],
             isLore, isNoDrop, item.Value())
 
@@ -3850,8 +3916,8 @@ function LNS.RegisterActors()
         if lootmycorpse == nil then
             lootmycorpse = LNS.Settings.LootMyCorpse
         end
-        local dbgTbl  = {}
-        dbgTbl        = {
+        local dbgTbl = {}
+        dbgTbl       = {
             Lookup = 'loot.RegisterActors()',
             Event = '\ax\agReceived\ax message',
             Action = action,
@@ -3863,9 +3929,34 @@ function LNS.RegisterActors()
             Link = itemLink,
             LNS_Mode = Mode,
         }
-        local infoMsg = {}
+
+        ------- DEBUG MESSAGES PER SECOND ---------
+        -- keep a running Average of the Total MPS (Messages Per Second)
+        local now    = os.clock()
+        if LNS.TempSettings.MPS == nil then
+            LNS.TempSettings.MPS = 0
+            LNS.TempSettings.MPSStart = now
+            LNS.TempSettings.MPSCount = 0
+            LNS.TempSettings.LastMsg = now
+        end
+
+        if now - LNS.TempSettings.LastMsg >= 10 then
+            LNS.TempSettings.MPSStart = now
+            LNS.TempSettings.MPSCount = 0
+        end
+
+        LNS.TempSettings.MPSCount = LNS.TempSettings.MPSCount + 1
+
+        if now - LNS.TempSettings.MPSStart >= 1 then
+            LNS.TempSettings.MPS = LNS.TempSettings.MPSCount / (now - LNS.TempSettings.MPSStart)
+        else
+            LNS.TempSettings.MPS = LNS.TempSettings.MPSCount
+        end
+
+        LNS.TempSettings.LastMsg = now
 
         if debugPrint then
+            -- reset after 10 seconds of inactivity
             if LNS.TempSettings.MailBox == nil then
                 LNS.TempSettings.MailBox = {}
             end
@@ -3886,6 +3977,8 @@ function LNS.RegisterActors()
                 return a.Time > b.Time
             end)
         end
+        ------------------------------------------
+
 
         if Mode == 'directed' and who == MyName then
             if directions == 'doloot' and (LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse) and not LNS.LootNow then
@@ -6454,11 +6547,17 @@ function LNS.drawItemsTables()
 
                 -- search field
                 ImGui.PushID("DBLookupSearch")
-                ImGui.SetNextItemWidth(180)
+                ImGui.SetNextItemWidth(250)
 
-                LNS.TempSettings.SearchItems = ImGui.InputTextWithHint("Search Items##AllItems", "Lookup Name or Filter Class",
-                    LNS.TempSettings.SearchItems) or nil
+                local changed = false
+                LNS.TempSettings.SearchItems, changed = ImGui.InputTextWithHint("Search Items##AllItems", "Lookup Name or Filter Class",
+                    LNS.TempSettings.SearchItems, ImGuiInputTextFlags.EnterReturnsTrue)
+
                 ImGui.PopID()
+                if changed and LNS.TempSettings.SearchItems and LNS.TempSettings.SearchItems ~= '' then
+                    LNS.TempSettings.LookUpItem = true
+                end
+
                 if ImGui.IsItemHovered(ImGuiHoveredFlags.DelayShort) and mq.TLO.Cursor() then
                     LNS.TempSettings.SearchItems = mq.TLO.Cursor.Name()
                     mq.cmdf("/autoinv")
@@ -6481,13 +6580,16 @@ function LNS.drawItemsTables()
                 if ImGui.IsItemHovered() then ImGui.SetTooltip("Lookup Item in DB") end
                 ImGui.SameLine()
                 ImGui.HelpMarker([[
-Search items by Name or Class directly
+Search items by Name
 
 Advanced Searches can also be done with (<,>,=,<=, >=, and ~) operators
 example: hp>=500   this will return items with hp values of 500 and up
 
-You can also do multi searches by placing them in { } curly braces and comma separated
+You can also do multi searches by placing them in { } curly braces and separated by either ( , or | )
+a comma will be treated as AND in the search while a pipe ( | ) will be treated as OR
+
 example: {hp>=500, ac<=100} this will return items with hp values of 500 and up, and ac values of 100 and below
+example: {name~"words of" | name~"rune of"} will find items with either "words of" or "rune of" in the name
 
 The ~ symbol can be used on the name field for partial searches.
 example {hp>=500, name~robe} this will return items with 500 + Hp and has robe in the name
@@ -8312,9 +8414,18 @@ function LNS.DebugMailBox()
         ImGui.SameLine()
         if ImGui.Button(Icons.FA_TRASH) then
             LNS.TempSettings.MailBox = nil
+            LNS.TempSettings.MPS = nil
         end
-        ImGui.Text("Messages: (%s)", (LNS.TempSettings.MailBox ~= nil and (#LNS.TempSettings.MailBox or 0) or 0))
+        ImGui.Text("Messages:")
+        ImGui.SameLine()
+        ImGui.TextColored(ImVec4(0, 1, 1, 1), "%d", (LNS.TempSettings.MailBox ~= nil and (#LNS.TempSettings.MailBox or 0) or 0))
+        ImGui.SameLine()
+        ImGui.Text("Mps:")
+        ImGui.SameLine()
+        ImGui.TextColored(ImVec4(1, 1, 0, 1), "%0.2f", LNS.TempSettings.MPS or 0.0)
+        ImGui.Spacing()
         ImGui.Separator()
+        ImGui.Spacing()
         if ImGui.BeginTable("MailBox", 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY), ImVec2(0, 220)) then
             ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed, 80)
             ImGui.TableSetupColumn("Subject", ImGuiTableColumnFlags.WidthFixed, 100)
