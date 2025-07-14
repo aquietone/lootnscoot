@@ -888,16 +888,17 @@ function guiLoot.RegisterActor()
 			if guiLoot.recordData and ((item.Action:find('Looted') or item.Action:find('Destroyed')) and ((not item.Action:find('Left') and not item.Action:find("Ask")) or guiLoot.ReportLeft)) then
 				addRule(who, what, link, eval, rule)
 			end
-			if cantWear then
-				consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
+			if lootEntry.LootedBy ~= MyName then
+				if cantWear then
+					consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
+				end
+				local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', lootEntry.LootedAt, who, consoleAction, link, corpseName, lootEntry.ID)
+				if item.Action == 'Destroyed' then
+					text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', lootEntry.LootedAt, who, string.upper(item.Action), link, corpseName,
+						lootEntry.ID)
+				end
+				guiLoot.console:AppendText(text)
 			end
-			local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', lootEntry.LootedAt, who, consoleAction, link, corpseName, lootEntry.ID)
-			if item.Action == 'Destroyed' then
-				text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', lootEntry.LootedAt, who, string.upper(item.Action), link, corpseName,
-					lootEntry.ID)
-			end
-			guiLoot.console:AppendText(text)
-
 			local recordDate = os.date("%Y-%m-%d")
 			if guiLoot.SessionLootRecord == nil then
 				guiLoot.SessionLootRecord = {}

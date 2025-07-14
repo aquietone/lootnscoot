@@ -348,6 +348,7 @@ LNS.TempSettings.UpdateSettings     = false
 LNS.TempSettings.SendSettings       = false
 LNS.TempSettings.LastModID          = 0
 LNS.TempSettings.LastZone           = nil
+LNS.TempSettings.SafeZoneWarned     = false
 LNS.SafeZones                       = {}
 LNS.PauseLooting                    = false
 LNS.Zone                            = mq.TLO.Zone.ShortName()
@@ -960,6 +961,13 @@ function LNS.commandHandler(...)
     local args = { ..., }
     local item = mq.TLO.Cursor -- Capture the cursor item early for reuse
     local needSave = false
+    if args[1] == 'mailbox' then
+        LNS.TempSettings.ShowMailbox = not LNS.TempSettings.ShowMailbox
+        if not debugPrint then
+            debugPrint = LNS.TempSettings.ShowMailbox
+        end
+        return
+    end
     if args[1] == 'set' then
         local setting    = args[2]:lower()
         local settingVal = args[3]
@@ -1700,8 +1708,9 @@ function LNS.AddSafeZone(zoneName)
         Server = eqServer,
         zone = zoneName,
     })
-    if LNS.SafeZones[LNS.Zone] then
+    if LNS.SafeZones[LNS.Zone] and not LNS.TempSettings.SafeZoneWarned then
         Logger.Warn(LNS.guiLoot.console, "You are in a safe zone: \at%s\ax \ayLooting Disabled", LNS.Zone)
+        LNS.TempSettings.SafeZoneWarned = true
     end
 end
 
@@ -1822,17 +1831,30 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     if LNS.guiLoot.ReportLeft and (action:find('Left') or action:find('Ignore')) then
         actLabel = 'Left'
     end
-
-    table.insert(items_table,
-        {
-            Name = itemName,
-            CorpseName = corpseName,
-            Action = actLabel,
-            Link = link,
-            Eval = eval,
-            Rule = rule or eval,
-            cantWear = cantWear,
-        })
+    if allItems == nil then
+        allItems = {}
+    end
+    local tmpTable = {
+        Name = itemName,
+        CorpseName = corpseName,
+        Action = actLabel,
+        Link = link,
+        Eval = eval,
+        Rule = rule or eval,
+        cantWear = cantWear,
+    }
+    -- table.insert(allItems,
+    --     {
+    --         Name = itemName,
+    --         CorpseName = corpseName,
+    --         Action = actLabel,
+    --         Link = link,
+    --         Eval = eval,
+    --         Rule = rule or eval,
+    --         cantWear = cantWear,
+    --     })
+    return tmpTable
+    --======================
 end
 
 function LNS.LoadIcons()
@@ -3839,6 +3861,28 @@ function LNS.RegisterActors()
         }
         local infoMsg = {}
 
+        if debugPrint then
+            if LNS.TempSettings.MailBox == nil then
+                LNS.TempSettings.MailBox = {}
+            end
+            local sub = ''
+            if directions ~= nil and directions ~= 'NULL' then
+                sub = directions
+            elseif action ~= nil and action ~= 'NULL' then
+                sub = action
+            else
+                sub = 'unknown'
+            end
+            table.insert(LNS.TempSettings.MailBox, {
+                Time = string.format("%s.%s", os.date('%H:%M:%S'), string.format("%.3f", (os.clock() % 1)):gsub("0%.", '')),
+                Subject = sub,
+                Sender = who or 'unknown',
+            })
+            table.sort(LNS.TempSettings.MailBox, function(a, b)
+                return a.Time > b.Time
+            end)
+        end
+
         if Mode == 'directed' and who == MyName then
             if directions == 'doloot' and (LNS.Settings.DoLoot or LNS.Settings.LootMyCorpse) and not LNS.LootNow then
                 if os.time() - (LNS.TempSettings.DirectedLoot or 0) <= 2 then
@@ -4339,8 +4383,24 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         end
 
         Logger.Debug(LNS.guiLoot.console, "\aoINSERT HISTORY CHECK 4\ax: \ayAction\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", eval, itemName, itemLink)
-        LNS.insertIntoHistory(itemName, corpseName, eval,
+        local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
             os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear, rule)
+
+        if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
+            table.insert(allItems, allItemsEntry)
+        end
+
+        local consoleAction = rule or ''
+        if cantWear then
+            consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
+        end
+        local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
+            itemLink, corpseName, mq.TLO.Corpse.ID() or 0)
+        if rule == 'Destroyed' then
+            text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, string.upper(rule), itemLink, corpseName,
+                mq.TLO.Corpse.ID() or 0)
+        end
+        LNS.guiLoot.console:AppendText(text)
     end
 end
 
@@ -4353,7 +4413,7 @@ function LNS.lootCorpse(corpseID)
         Logger.Warn(LNS.guiLoot.console, "lootCorpse(): No corpseID provided.")
         return false
     end
-    allItems = {}
+    if allItems == nil then allItems = {} end
     noDropItems, loreItems = {}, {}
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
@@ -4406,8 +4466,11 @@ function LNS.lootCorpse(corpseID)
                 local itemName = corpseItem.Name() or 'none'
                 local itemLink = corpseItem.ItemLink('CLICKABLE')() or 'NULL'
                 local itemRule, qKeep, newRule, iCanUse = LNS.getRule(corpseItem, 'loot', i)
+
                 LNS.addToItemDB(corpseItem)
+
                 iList = string.format("%s (\at%s\ax [\ay%s\ax])", iList, corpseItem.Name() or 'none', itemRule)
+
                 if itemRule ~= 'MasterLooter' and not (itemRule == 'Ignore' or itemRule == 'Ask' or itemRule == 'NULL') then
                     table.insert(corpseItems, {
                         Name = itemName,
@@ -4432,19 +4495,60 @@ function LNS.lootCorpse(corpseID)
                     }
                     Logger.Debug(LNS.guiLoot.console, dbgTbl)
 
-                    LNS.insertIntoHistory(itemName, corpseName, eval,
+                    local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
                         os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, not iCanUse, itemRule)
-
-                    if LNS.Settings.ReportSkippedItems then
-                        if eval ~= 'Left' then
-                            LNS.report('%sing \ay%s\ax', eval, itemLink)
-                        else
-                            LNS.report('Left \ay%s\ax', itemLink)
-                        end
+                    if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
+                        table.insert(allItems, allItemsEntry)
                     end
+
+                    local consoleAction = itemRule or ''
+                    if not iCanUse then
+                        consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
+                    end
+                    local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
+                        itemLink, corpseName, corpseID)
+                    if itemRule == 'Destroyed' then
+                        text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, string.upper(itemRule), itemLink,
+                            corpseName, corpseID)
+                    end
+                    LNS.guiLoot.console:AppendText(text)
+                    -- local lbl = itemRule
+                    -- if itemRule == 'Ignore' then
+                    --     lbl = 'Left'
+                    -- elseif itemRule == 'Ask' then
+                    --     lbl = 'Asking'
+                    -- end
+                    -- if LNS.Settings.ReportSkippedItems then
+                    --     LNS.report('%s (\ao%s\ax) %s', MyName, lbl, itemLink)
+                    -- end
                 end
             end
+            -- if allItems ~= nil and #allItems > 0 then
+            --     LNS.send({
+            --         ID = corpseID,
+            --         Items = allItems,
+            --         Zone = LNS.Zone,
+            --         Server = eqServer,
+            --         LootedAt = mq.TLO.Time(),
+            --         CorpseName = mq.TLO.Corpse.DisplayName() or 'unknown',
+            --         LootedBy = MyName,
+            --     }, 'looted')
+            --     allItems = nil
+            -- end
         end
+
+        -- if allItems ~= nil and #allItems > 0 then
+        --     LNS.send({
+        --         ID = corpseID,
+        --         Items = allItems,
+        --         Zone = LNS.Zone,
+        --         Server = eqServer,
+        --         LootedAt = mq.TLO.Time(),
+        --         CorpseName = mq.TLO.Corpse.DisplayName() or 'unknown',
+        --         LootedBy = MyName,
+        --     }, 'looted')
+        --     allItems = nil
+        -- end
 
         Logger.Info(LNS.guiLoot.console, "lootCorpse(): Looting \at%s\ax Found (\ay%s\ax) Items:%s", corpseName, numItems, iList)
 
@@ -4555,7 +4659,9 @@ function LNS.lootMobs(limit)
             end
         end
     else
-        Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Skipping other corpses due to nearby player corpse.')
+        if LNS.Settings.DoLoot then
+            Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Skipping other corpses due to nearby player corpse.')
+        end
         LNS.finishedLooting()
         return false
     end
@@ -4606,6 +4712,8 @@ function LNS.lootMobs(limit)
             lootedCorpses[corpseID] = check
             mq.TLO.Window('LootWnd').DoClose()
 
+            ::continue::
+
             if allItems ~= nil and #allItems > 0 then
                 LNS.send({
                     ID = corpseID,
@@ -4619,7 +4727,6 @@ function LNS.lootMobs(limit)
                 allItems = nil
             end
 
-            ::continue::
             counter = check and counter + 1 or counter
 
             if counter >= limit then
@@ -4712,24 +4819,37 @@ function LNS.LootItemML(itemName, corpseID)
                 return false
             end
             checkMore = mq.TLO.Corpse.Item(string.format("=%s", itemName))() ~= nil or false
-            LNS.send({
-                ID = corpseID,
-                Items = {
-                    Name = itemName,
-                    CorpseName = corpseName,
-                    Action = 'Keep',
-                    Link = item.ItemLink('CLICKABLE')(),
-                    Eval = 'Keep',
-                    cantWear = not item.CanUse(),
-                },
-                Zone = LNS.Zone,
-                Server = eqServer,
-                LootedAt = mq.TLO.Time(),
-                CorpseName = corpseName,
-                LootedBy = MyName,
-            }, 'looted')
+            -- LNS.send({
+            --     ID = corpseID,
+            --     Items = {
+            --         Name = itemName,
+            --         CorpseName = corpseName,
+            --         Action = 'Keep',
+            --         Link = item.ItemLink('CLICKABLE')(),
+            --         Eval = 'Keep',
+            --         cantWear = not item.CanUse(),
+            --     },
+            --     Zone = LNS.Zone,
+            --     Server = eqServer,S
+            --     LootedAt = mq.TLO.Time(),
+            --     CorpseName = corpseName,
+            --     LootedBy = MyName,
+            -- }, 'looted')
+
             break
         end
+    end
+    if allItems ~= nil and #allItems > 0 then
+        LNS.send({
+            ID = corpseID,
+            Items = allItems,
+            Zone = LNS.Zone,
+            Server = eqServer,
+            LootedAt = mq.TLO.Time(),
+            CorpseName = mq.TLO.Corpse.DisplayName() or 'unknown',
+            LootedBy = MyName,
+        }, 'looted')
+        allItems = nil
     end
 
     checkMore = mq.TLO.Corpse.Item(string.format("=%s", itemName))() ~= nil or false
@@ -8099,6 +8219,10 @@ function LNS.RenderUIs()
         LNS.RenderMasterLooterWindow()
     end
 
+    if LNS.TempSettings.ShowMailbox then
+        LNS.DebugMailBox()
+    end
+
     LNS.renderHelpWindow()
 
     if LNS.TempSettings.PastHistory then
@@ -8161,6 +8285,55 @@ function LNS.processArgs(args)
     end
 end
 
+----------------- DEBUG ACTORS -------------------
+
+LNS.TempSettings.MailBox = nil
+LNS.TempSettings.ShowMailbox = false
+
+function LNS.DebugMailBox()
+    if not LNS.TempSettings.ShowMailbox then return end
+    if not debugPrint then
+        LNS.TempSettings.MailBox = nil
+        return
+    end
+
+    ImGui.SetNextWindowSize(400, 300, ImGuiCond.FirstUseEver)
+    local open, show = ImGui.Begin("MailBox Debug##", true)
+    if not open then
+        show = false
+    end
+
+    if show then
+        ImGui.Text("MailBox Debug")
+        ImGui.SameLine()
+        if ImGui.Button(Icons.FA_TRASH) then
+            LNS.TempSettings.MailBox = nil
+        end
+        ImGui.Text("Messages: (%s)", (LNS.TempSettings.MailBox ~= nil and (#LNS.TempSettings.MailBox or 0) or 0))
+        ImGui.Separator()
+        if ImGui.BeginTable("MailBox", 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY), ImVec2(0, 220)) then
+            ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed, 80)
+            ImGui.TableSetupColumn("Subject", ImGuiTableColumnFlags.WidthFixed, 100)
+            ImGui.TableSetupColumn("Sender", ImGuiTableColumnFlags.WidthFixed, 100)
+            ImGui.TableHeadersRow()
+
+            for _, Data in ipairs(LNS.TempSettings.MailBox or {}) do
+                ImGui.TableNextColumn()
+                ImGui.Text(Data.Time)
+                ImGui.TableNextColumn()
+                ImGui.Text(Data.Subject)
+                ImGui.TableNextColumn()
+                ImGui.Text(Data.Sender)
+            end
+
+            ImGui.EndTable()
+        end
+    end
+
+    ImGui.End()
+end
+
+---------------- Main Function and Init -----------
 function LNS.init(args)
     local needsSave = false
     if Mode ~= 'once' then
@@ -8200,6 +8373,7 @@ function LNS.init(args)
             IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
             CorpsesToIgnore = lootedCorpses or {},
             Server = eqServer,
+            LNSSettings = LNS.Settings,
         }, 'loot_module')
     end
     return needsSave
@@ -8245,14 +8419,17 @@ function LNS.MainLoop()
                     IgnoreNearby = LNS.Settings.IgnoreMyNearCorpses,
                     CorpsesToIgnore = lootedCorpses or {},
                     Server = eqServer,
+                    LNSSettings = LNS.Settings,
                 }, 'loot_module')
             end
             LNS.TempSettings.LastZone = LNS.Zone
             LNS.MasterLootList = nil
+            LNS.TempSettings.SafeZoneWarned = false
         end
 
-        if LNS.SafeZones[LNS.Zone] then
+        if LNS.SafeZones[LNS.Zone] and not LNS.TempSettings.SafeZoneWarned then
             Logger.Debug(LNS.guiLoot.console, "You are in a safe zone: \at%s\ax \ayLooting Disabled", LNS.Zone)
+            LNS.TempSettings.SafeZoneWarned = true
         end
 
         -- check if we need to import the old rules db.
@@ -8519,7 +8696,7 @@ function LNS.MainLoop()
         --     LNS.Settings.DoDestroy = false
         --     Logger.Warn(LNS.guiLoot.console, "\ayBard Detected\ax, \arDisabling\ax [\atDoDestroy\ax].")
         -- end
-        mq.delay(100)
+        mq.delay(10)
     end
     if LNS.Terminate then
         mq.unbind("/lootutils")
