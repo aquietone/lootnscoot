@@ -823,6 +823,8 @@ link TEXT
         db:exec("CREATE INDEX IF NOT EXISTS idx_item_id ON Items (item_id);")
 
         db:exec("COMMIT")
+        db:exec("PRAGMA wal_checkpoint;")
+
         db:close()
 
         LNS.LoadRuleDB()
@@ -1347,9 +1349,10 @@ function LNS.reportSkippedItems(noDropItems, loreItems, corpseName, corpseID)
     end
 end
 
-function LNS.corpseLocked(corpseID)
-    if not cantLootList[corpseID] then return false end
-    if os.difftime(os.clock(), cantLootList[corpseID]) > ((LNS.Settings.LootCheckDelay or 0) > 0 and LNS.Settings.LootCheckDelay or 0.25) then
+function LNS.checkLockedCorpse(corpseID)
+    if cantLootList[corpseID] == nil then return false end
+    local dTimer = LNS.Settings.LootCheckDelay > 0 and LNS.Settings.LootCheckDelay or 0.25
+    if (os.difftime(os.clock(), cantLootList[corpseID]) or 1) > dTimer then
         cantLootList[corpseID] = nil
         return false
     end
@@ -1497,6 +1500,8 @@ function LNS.ImportOldRulesDB(path)
     end
     stmt:finalize()
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
+
     db:close()
 
 
@@ -1556,6 +1561,8 @@ item_link = excluded.item_link
 
     stmt = db:prepare(qry)
     if not stmt then
+        db:exec("PRAGMA wal_checkpoint;")
+
         db:close()
         return
     end
@@ -1592,6 +1599,7 @@ item_link = excluded.item_link
     stmt = db:prepare(qry)
     if not stmt then
         db:exec("COMMIT;")
+        db:exec("PRAGMA wal_checkpoint;")
 
         db:close()
         return
@@ -1617,6 +1625,8 @@ item_link = excluded.item_link
 
     -- check items and if we find only one update the rule
     db:exec("COMMIT;")
+    db:exec("PRAGMA wal_checkpoint;")
+
     db:close()
     Logger.Info(LNS.guiLoot.console, "loot.ImportOldRulesDB() \agSuccessfully imported old rules from \at%s\ax", path)
 
@@ -1665,6 +1675,8 @@ CREATE TABLE IF NOT EXISTS LootHistory (
 
     stmt:finalize()
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
+
     db:close()
 end
 
@@ -1675,6 +1687,11 @@ function LNS.LoadDateHistory(lookup_Date)
 
     LNS.HistoryDataDate = {}
     local stmt = db:prepare("SELECT * FROM LootHistory WHERE Date = ?")
+    if not stmt then
+        printf("Error preparing statement for date history: %s", db:errmsg())
+        db:close()
+        return
+    end
     stmt:bind_values(lookup_Date)
     for row in stmt:nrows() do
         table.insert(LNS.HistoryDataDate, row)
@@ -1682,6 +1699,8 @@ function LNS.LoadDateHistory(lookup_Date)
 
     stmt:finalize()
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
+
     db:close()
 end
 
@@ -1692,6 +1711,11 @@ function LNS.AddSafeZone(zoneName)
     db:exec("BEGIN TRANSACTION")
 
     local stmt = db:prepare("INSERT OR IGNORE INTO SafeZones (zone) VALUES (?)")
+    if not stmt then
+        printf("Error preparing statement for safe zone: %s", db:errmsg())
+        db:close()
+        return
+    end
     stmt:bind_values(zoneName)
     local res, err = stmt:step()
     if res ~= SQLite3.DONE then
@@ -1700,6 +1724,8 @@ function LNS.AddSafeZone(zoneName)
     stmt:finalize()
 
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
+
     db:close()
     LNS.SafeZones[zoneName] = true
     LNS.send({
@@ -1721,6 +1747,11 @@ function LNS.RemoveSafeZone(zoneName)
     db:exec("BEGIN TRANSACTION")
 
     local stmt = db:prepare("DELETE FROM SafeZones WHERE zone = ?")
+    if not stmt then
+        printf("Error preparing statement for safe zone: %s", db:errmsg())
+        db:close()
+        return
+    end
     stmt:bind_values(zoneName)
     local res, err = stmt:step()
     if res ~= SQLite3.DONE then
@@ -1729,6 +1760,8 @@ function LNS.RemoveSafeZone(zoneName)
     stmt:finalize()
 
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
+
     db:close()
     LNS.SafeZones[zoneName] = nil
     LNS.send({
@@ -1746,13 +1779,20 @@ function LNS.LoadItemHistory(lookup_name)
 
     LNS.HistoryItemData = {}
     local stmt = db:prepare("SELECT * FROM LootHistory WHERE Item LIKE ?")
+    if not stmt then
+        printf("Error preparing statement for item history: %s", db:errmsg())
+        db:close()
+        return
+    end
     stmt:bind_values(string.format("%%%s%%", lookup_name))
+
     for row in stmt:nrows() do
         table.insert(LNS.HistoryItemData, row)
     end
 
     stmt:finalize()
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 end
 
@@ -1771,6 +1811,9 @@ end
 function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, link, looter, zone, items_table, cantWear, rule)
     if itemName == nil then return end
     local db = SQLite3.open(HistoryDB)
+    local toSoon = false
+    local isIgnore = false
+
     if not db then
         print("Error: Failed to open database.")
         return
@@ -1784,6 +1827,7 @@ function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, li
 
     -- Skip if a duplicate "Ignore" or "Left" action exists within the last minute
     if action:find("Ignore") or action:find("Left") then
+        isIgnore = true
         local checkStmt = db:prepare([[
 SELECT Date, TimeStamp FROM LootHistory
 WHERE Item = ? AND CorpseName = ? AND Action = ? AND Date = ?
@@ -1796,44 +1840,55 @@ ORDER BY Date DESC, TimeStamp DESC LIMIT 1
                 local lastTimestamp = checkStmt:get_value(1)
                 local recoredTime = convertTimestamp(lastTimestamp)
                 if (currentTime - recoredTime) <= 60 then
-                    checkStmt:finalize()
-                    db:close()
-                    return
+                    toSoon = true
                 end
             end
             checkStmt:finalize()
+            if toSoon then
+                db:exec("PRAGMA wal_checkpoint;")
+                db:close()
+            end
         end
     end
 
-    db:exec("BEGIN TRANSACTION")
-    local stmt = db:prepare([[
+    if not toSoon then
+        db:exec("BEGIN TRANSACTION")
+        local stmt = db:prepare([[
 INSERT INTO LootHistory (Item, CorpseName, Action, Date, TimeStamp, Link, Looter, Zone)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ]])
-    if stmt then
-        stmt:bind_values(itemName, corpseName, action, date, timestamp, link, looter, zone)
-        local res, err = stmt:step()
-        if res ~= SQLite3.DONE then
-            printf("Error inserting data: %s ", err)
+        if stmt then
+            stmt:bind_values(itemName, corpseName, action, date, timestamp, link, looter, zone)
+            local res, err = stmt:step()
+            if res ~= SQLite3.DONE then
+                printf("Error inserting data: %s ", err)
+            end
+            stmt:finalize()
+        else
+            print("Error preparing statement")
         end
-        stmt:finalize()
-    else
-        print("Error preparing statement")
+
+        db:exec("COMMIT")
+        db:exec("PRAGMA wal_checkpoint;")
+        db:close()
     end
 
-    db:exec("COMMIT")
-    db:close()
+    -- if isIgnore and not LNS.Settings.ReportSkippedItems then
+    --     return
+    -- end
 
     local actLabel = action:find('Destroy') and 'Destroyed' or action
     if not action:find('Destroy') and not action:find('Ignore') and not action:find('Left') then
         actLabel = 'Looted'
     end
-    if LNS.guiLoot.ReportLeft and (action:find('Left') or action:find('Ignore')) then
+    if (action:find('Left') or action:find('Ignore')) then
         actLabel = 'Left'
     end
     if allItems == nil then
         allItems = {}
     end
+    --======================
+
     local tmpTable = {
         Name = itemName,
         CorpseName = corpseName,
@@ -1866,6 +1921,7 @@ function LNS.LoadIcons()
     end
 
     stmt:finalize()
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 end
 
@@ -1946,6 +2002,7 @@ zone TEXT PRIMARY KEY NOT NULL UNIQUE
     sz_stmt:finalize()
 
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 
     -- Load icons
@@ -1985,7 +2042,7 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
     itemID = itemID or 0
     itemName = itemName or 'NULL'
     db = db or LNS.OpenItemsSQL()
-    local noDBConnection = db == nil
+    if db == nil then return 0 end
     LNS.TempSettings.SearchResults = nil
     -- --===============================
 
@@ -2071,9 +2128,8 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
     stmt = db:prepare(query)
     if not stmt then
         Logger.Error(LNS.guiLoot.console, "Failed to prepare SQL statement: %s", db:errmsg())
-        if noDBConnection then
-            db:close()
-        end
+        db:exec("PRAGMA wal_checkpoint;")
+        db:close()
         return 0
     end
     Logger.Debug(LNS.guiLoot.console, "SQL Query: \ay%s\ax ", query)
@@ -2159,9 +2215,8 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
     end
     Logger.Info(LNS.guiLoot.console, "loot.GetItemFromDB() \agFound \ay%d\ax items matching the query: \ay%s\ax", rowsFetched, query)
     stmt:finalize()
-    if noDBConnection then
-        db:close()
-    end
+    db:exec("PRAGMA wal_checkpoint;")
+    db:close()
     return rowsFetched
 end
 
@@ -2395,6 +2450,7 @@ heroicwis                                    = excluded.heroicwis
     local stmt = db:prepare(sql)
     if not stmt then
         Logger.Error(LNS.guiLoot.console, "\arFailed to prepare \ax[\ayINSERT\ax] \aoSQL\ax statement: \at%s", db:errmsg())
+        db:exec("PRAGMA wal_checkpoint;")
         db:close()
         return
     end
@@ -2471,6 +2527,7 @@ heroicwis                                    = excluded.heroicwis
     db:exec("BEGIN TRANSACTION")
     stmt:finalize()
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 end
 
@@ -2494,6 +2551,7 @@ function LNS.ResolveItemIDs(namesTable)
         end
     end
     stmt:finalize()
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 
     return resolved
@@ -2532,12 +2590,19 @@ function LNS.findItemInDb(itemName, itemId, exact, maxResults)
         query = "SELECT * FROM Items WHERE name LIKE ?"
         param = "%" .. cleanName .. "%"
     else
+        db:exec("PRAGMA wal_checkpoint;")
         db:close()
         return 0, {}
     end
 
     db:exec("BEGIN TRANSACTION")
     local stmt = db:prepare(query)
+    if not stmt then
+        Logger.Error(LNS.guiLoot.console, "Failed to prepare SQL statement: %s", db:errmsg())
+        db:exec("PRAGMA wal_checkpoint;")
+        db:close()
+        return 0, {}
+    end
     if param then stmt:bind_values(param) end
 
     for row in stmt:nrows() do
@@ -2556,6 +2621,7 @@ function LNS.findItemInDb(itemName, itemId, exact, maxResults)
 
     stmt:finalize()
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 
     if counter >= maxResults then
@@ -2597,6 +2663,7 @@ DELETE FROM %s WHERE item_id = ?;
     end
     local stmt = db:prepare(qry)
     if not stmt then
+        db:exec("PRAGMA wal_checkpoint;")
         db:close()
         return
     end
@@ -2627,6 +2694,7 @@ DELETE FROM %s WHERE item_id = ?;
 
     db:exec("COMMIT;")
     stmt:finalize()
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
     if localName ~= 'PersonalItems' then
         LNS.TempSettings.NeedSave = true
@@ -2661,12 +2729,14 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
 
     -- local qry = string.format([[UPDATE %s SET item_link = ? WHERE item_id = ?;]], which_table)
     local stmt = db:prepare(qry)
-    stmt:bind_values(itemID)
-
     if not stmt then
+        Logger.Error(LNS.guiLoot.console, "\arFailed to prepare SQL statement: %s", db:errmsg())
+        db:exec("PRAGMA wal_checkpoint;")
         db:close()
         return
     end
+    stmt:bind_values(itemID)
+
     for row in stmt:nrows() do
         if row.item_link and row.item_link == link then
             alreadyMatched = true
@@ -2679,6 +2749,7 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
         db:exec("BEGIN TRANSACTION;")
         stmt = db:prepare(qry)
         if not stmt then
+            db:exec("PRAGMA wal_checkpoint;")
             db:close()
             return
         end
@@ -2696,6 +2767,7 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
         LNS.ALLITEMS[itemID].Link = link
         Logger.Debug(LNS.guiLoot.console, "\aoLink for\ax\at %d\ax \agALREADY MATCHES %s", itemID, link)
     end
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 end
 
@@ -2789,6 +2861,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
 
         if not stmt then
             Logger.Warn(LNS.guiLoot.console, "\atSQL \arFAILED \axto prepare statement for \atlookupLootRule\ax.")
+            db:exec("PRAGMA wal_checkpoint;")
             db:close()
             return found, 'NULL', 'All', 'NULL'
         end
@@ -2815,6 +2888,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
         end
         -- Finalize the statement and close the database
         stmt:finalize()
+        db:exec("PRAGMA wal_checkpoint;")
         db:close()
         return found, rule, classes, returnLink
     end
@@ -2999,10 +3073,13 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link)
         Logger.Info(LNS.guiLoot.console, "\aoloot.modifyItemRule\ax \arDeleting rule\ax for item \at%s\ax in table \at%s", itemName, tableName)
         sql = string.format("DELETE FROM %s WHERE item_id = ?", tableName)
         stmt = db:prepare(sql)
-
-        if stmt then
-            stmt:bind_values(itemID)
+        if not stmt then
+            Logger.Warn(LNS.guiLoot.console, "Failed to prepare SQL statement for table: %s, item: %s (%s), rule: %s, classes: %s", tableName, itemName, itemID, action, classes)
+            db:exec("PRAGMA wal_checkpoint;")
+            db:close()
+            return
         end
+        stmt:bind_values(itemID)
     else
         -- UPSERT operation
         -- if tableName == "Normal_Rules" then
@@ -3017,16 +3094,15 @@ item_rule_classes                                    = excluded.item_rule_classe
 item_link                                    = excluded.item_link
 ]], tableName)
         stmt = db:prepare(sql)
-        if stmt then
-            stmt:bind_values(itemID, itemName, action, classes, link)
+        if not stmt then
+            Logger.Warn(LNS.guiLoot.console, "Failed to prepare SQL statement for table: %s, item: %s (%s), rule: %s, classes: %s", tableName, itemName, itemID, action, classes)
+            db:exec("PRAGMA wal_checkpoint;")
+            db:close()
+            return
         end
+        stmt:bind_values(itemID, itemName, action, classes, link)
     end
 
-    if not stmt then
-        Logger.Warn(LNS.guiLoot.console, "Failed to prepare SQL statement for table: %s, item:%s (%s), rule: %s, classes: %s", tableName, itemName, itemID, action, classes)
-        db:close()
-        return
-    end
 
     -- Execute the statement
     local success, errmsg = pcall(function() stmt:step() end)
@@ -3039,6 +3115,7 @@ item_link                                    = excluded.item_link
     -- Finalize and close the database
     stmt:finalize()
     db:exec("COMMIT")
+    db:exec("PRAGMA wal_checkpoint;")
     db:close()
 
     if success then
@@ -4259,7 +4336,7 @@ function LNS.RegisterActors()
                 else
                     LNS.NewItemsCount = 0
                 end
-                infoMsg = {
+                local infoMsg = {
                     Lookup = 'loot.RegisterActors()',
                     Action = 'New Item Rule',
                     Updated = lootMessage.entered,
@@ -4450,6 +4527,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
 
             local countHave = mq.TLO.FindItemCount(itemName)() + mq.TLO.FindItemBankCount(itemName)()
             LNS.report("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s", itemLink, tostring(countHave), qKeep)
+            Logger.Info(LNS.guiLoot.console, string.format("\awQuest Item:\ag %s \awCount:\ao %s \awof\ag %s", itemLink, countHave, qKeep))
         else
             Logger.Debug(LNS.guiLoot.console, string.format("eval = %s", eval))
 
@@ -4458,8 +4536,6 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
             if type(eval) == 'boolean' then eval = 'Ask' end
 
             Logger.Debug(LNS.guiLoot.console, string.format("eval = %s", eval))
-
-            LNS.report('%sing \ay%s\ax', eval, itemLink)
         end
 
         if actionLower == 'ignore' then eval = 'Left' end
@@ -4489,7 +4565,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
 
         local consoleAction = rule or ''
         if cantWear then
-            consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
+            consoleAction = consoleAction .. ' \ax(\aoCant Wear\ax)'
         end
         local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
             itemLink, corpseName, mq.TLO.Corpse.ID() or 0)
@@ -4525,8 +4601,8 @@ function LNS.lootCorpse(corpseID)
     mq.delay(1000, function() return cantLootID > 0 or mq.TLO.Window('LootWnd').Open() end)
 
     if not mq.TLO.Window('LootWnd').Open() then
-        if mq.TLO.Target.CleanName() then
-            Logger.Warn(LNS.guiLoot.console, "lootCorpse(): Can't loot %s right now", mq.TLO.Target.CleanName())
+        if mq.TLO.Target() and mq.TLO.Target.CleanName() then
+            Logger.Warn(LNS.guiLoot.console, "lootCorpse(): Can't loot %s right now", mq.TLO.Target.CleanName() or "unknown")
             cantLootList[corpseID] = os.clock()
         end
         return false
@@ -4541,6 +4617,7 @@ function LNS.lootCorpse(corpseID)
     if numItems == 0 then
         mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
         mq.TLO.Window('LootWnd').DoClose()
+        mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
         Logger.Debug(LNS.guiLoot.console, "lootCorpse(): \arNo items\ax to loot on corpse \at%s\ax (\ay%s\ax)", corpseName, corpseID)
         return true
     end
@@ -4600,7 +4677,7 @@ function LNS.lootCorpse(corpseID)
 
                     local consoleAction = itemRule or ''
                     if not iCanUse then
-                        consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
+                        consoleAction = consoleAction .. ' \ax(\aoCant Wear\ax)'
                     end
                     local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
                         itemLink, corpseName, corpseID)
@@ -4647,7 +4724,7 @@ function LNS.lootCorpse(corpseID)
         --     allItems = nil
         -- end
 
-        Logger.Info(LNS.guiLoot.console, "lootCorpse(): Looting \at%s\ax Found (\ay%s\ax) Items:%s", corpseName, numItems, iList)
+        Logger.Info(LNS.guiLoot.console, "lootCorpse(): Checked \at%s\ax Found (\ay%s\ax) Items:%s", corpseName, numItems, iList)
 
         for _, item in ipairs(corpseItems) do
             if not item then break end
@@ -4749,7 +4826,7 @@ function LNS.lootMobs(limit)
         for i = 1, deadCount do
             local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', LNS.Settings.CorpseRadius))
             if corpse() and not (lootedCorpses[corpse.ID()] and LNS.Settings.CheckCorpseOnce) then
-                if not LNS.corpseLocked(corpse.ID()) or
+                if not LNS.checkLockedCorpse(corpse.ID()) or
                     (mq.TLO.Navigation.PathLength('spawn id ' .. corpse.ID())() or 100) > LNS.Settings.CorpseRadius then
                     table.insert(corpseList, corpse)
                 end
@@ -4793,7 +4870,7 @@ function LNS.lootMobs(limit)
             Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Navigating to corpse ID\at %d.', corpseID)
 
             if mq.TLO.Me.Casting() ~= nil then
-                goto continue
+                return false
             end
 
             LNS.navToID(corpseID)
@@ -7130,6 +7207,7 @@ function LNS.drawSwitch(settingName, who)
             if settingName == 'MasterLooting' then
                 LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, Server = eqServer, })
             end
+            -- LNS.guiLoot.ReportLeft = LNS.Settings.ReportSkippedItems
         end
     end
 end
@@ -7261,6 +7339,7 @@ function LNS.renderSettingsTables(who)
                             if settingName == 'MasterLooting' then
                                 LNS.send({ who = MyName, action = 'master_looter', select = LNS.Settings.MasterLooting, Server = eqServer, })
                             end
+                            -- LNS.guiLoot.ReportLeft = LNS.Settings.ReportSkippedItems
                         end
                         if ImGui.IsItemHovered() then
                             ImGui.BeginTooltip()
@@ -8416,6 +8495,14 @@ function LNS.DebugMailBox()
             LNS.TempSettings.MailBox = nil
             LNS.TempSettings.MPS = nil
         end
+
+        ImGui.SameLine()
+        if LNS.TempSettings.MailboxFilter == nil then
+            LNS.TempSettings.MailboxFilter = ''
+        end
+        ImGui.SetNextItemWidth(150)
+        LNS.TempSettings.MailboxFilter = ImGui.InputTextWithHint("##MailBoxFilter", "Filter by Fields", LNS.TempSettings.MailboxFilter)
+
         ImGui.Text("Messages:")
         ImGui.SameLine()
         ImGui.TextColored(ImVec4(0, 1, 1, 1), "%d", (LNS.TempSettings.MailBox ~= nil and (#LNS.TempSettings.MailBox or 0) or 0))
@@ -8426,19 +8513,24 @@ function LNS.DebugMailBox()
         ImGui.Spacing()
         ImGui.Separator()
         ImGui.Spacing()
-        if ImGui.BeginTable("MailBox", 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY), ImVec2(0, 220)) then
+        local sizeX, sizeY = ImGui.GetContentRegionAvail()
+
+        if ImGui.BeginTable("MailBox", 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY), ImVec2(0, sizeY - 10)) then
             ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed, 80)
             ImGui.TableSetupColumn("Subject", ImGuiTableColumnFlags.WidthFixed, 100)
             ImGui.TableSetupColumn("Sender", ImGuiTableColumnFlags.WidthFixed, 100)
             ImGui.TableHeadersRow()
 
             for _, Data in ipairs(LNS.TempSettings.MailBox or {}) do
-                ImGui.TableNextColumn()
-                ImGui.Text(Data.Time)
-                ImGui.TableNextColumn()
-                ImGui.Text(Data.Subject)
-                ImGui.TableNextColumn()
-                ImGui.Text(Data.Sender)
+                if LNS.TempSettings.MailboxFilter == '' or ((Data.Subject:lower():find(LNS.TempSettings.MailboxFilter:lower()) or
+                        Data.Sender:lower():find(LNS.TempSettings.MailboxFilter:lower()))) then
+                    ImGui.TableNextColumn()
+                    ImGui.Text(Data.Time)
+                    ImGui.TableNextColumn()
+                    ImGui.Text(Data.Subject)
+                    ImGui.TableNextColumn()
+                    ImGui.Text(Data.Sender)
+                end
             end
 
             ImGui.EndTable()
@@ -8511,6 +8603,11 @@ function LNS.MainLoop()
     while not LNS.Terminate do
         LNS.Zone = mq.TLO.Zone.ShortName()
         if mq.TLO.MacroQuest.GameState() ~= "INGAME" then LNS.Terminate = true end -- exit sctipt if at char select.
+        -- LNS.guiLoot.ReportLeft = LNS.Settings.ReportSkippedItems
+        LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
+            LNS.Settings.RecordData,
+            true, true, 'lootnscoot',
+            LNS.Settings.ShowReport, LNS.Settings.ReportSkippedItems)
 
         -- check if the director script is running.
         local directorRunning = mq.TLO.Lua.Script(LNS.DirectorScript).Status() == 'RUNNING' or false
@@ -8540,6 +8637,17 @@ function LNS.MainLoop()
             LNS.TempSettings.LastZone = LNS.Zone
             LNS.MasterLootList = nil
             LNS.TempSettings.SafeZoneWarned = false
+        end
+
+        if debugPrint and LNS.guiLoot.MailBox ~= nil and LNS.GetTableSize(LNS.guiLoot.MailBox) > 0 then
+            for _, v in ipairs(LNS.guiLoot.MailBox) do
+                LNS.TempSettings.MailBox = LNS.TempSettings.MailBox or {}
+                table.insert(LNS.TempSettings.MailBox, v)
+            end
+            LNS.guiLoot.MailBox = {}
+            table.sort(LNS.TempSettings.MailBox, function(a, b)
+                return a.Time < b.Time
+            end)
         end
 
         if LNS.SafeZones[LNS.Zone] and not LNS.TempSettings.SafeZoneWarned then
@@ -8761,6 +8869,7 @@ function LNS.MainLoop()
             local itemID = LNS.TempSettings.GetItem.ID or 0
             local db = LNS.OpenItemsSQL()
             LNS.GetItemFromDB(itemName, itemID)
+            db:exec("PRAGMA wal_checkpoint;")
             db:close()
             LNS.lookupLootRule(nil, itemID)
             LNS.TempSettings.GetItem = nil
