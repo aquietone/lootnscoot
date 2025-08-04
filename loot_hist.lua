@@ -126,6 +126,8 @@ local guiLoot                                                = {
 	UseActors         = true,
 	winFlags          = bit32.bor(ImGuiWindowFlags.MenuBar, ImGuiWindowFlags.NoFocusOnAppearing),
 }
+
+guiLoot.MailBox                                              = {}
 local oldStyle                                               = ImGui.GetStyle()
 local style                                                  = ImGui.GetStyle()
 guiLoot.PastHistory                                          = false
@@ -163,7 +165,7 @@ function guiLoot.GetSettings(names, record, imported, useactors, caller, report,
 	guiLoot.UseActors = useactors
 	guiLoot.caller = caller
 	guiLoot.showReport = repVal
-	guiLoot.ReportLeft = report_left or (guiLoot.ReportLeft or false)
+	guiLoot.ReportLeft = report_left or false
 end
 
 -- draw any imported menus from outside this script.
@@ -857,6 +859,17 @@ end
 function guiLoot.RegisterActor()
 	guiLoot.actor = Actors.register('looted', function(message)
 		local lootEntry = message()
+		if guiLoot.MailBox == nil then
+			guiLoot.MailBox = {}
+		end
+		if #guiLoot.MailBox > 100 then
+			guiLoot.MailBox = {}
+		end
+		table.insert(guiLoot.MailBox, {
+			Time = string.format("%s.%s", os.date('%H:%M:%S'), string.format("%.3f", (os.clock() % 1)):gsub("0%.", '')),
+			Subject = string.format("Looted %s", lootEntry.Items and #lootEntry.Items or 0),
+			Sender = lootEntry.LootedBy or 'unknown',
+		})
 		if lootEntry.Server ~= eqServer then return end
 		for _, item in ipairs(lootEntry.Items) do
 			local link = item.Link
@@ -873,19 +886,21 @@ function guiLoot.RegisterActor()
 			if guiLoot.hideNames then
 				if who ~= mq.TLO.Me.Name() then who = mq.TLO.Spawn(string.format("%s", who)).Class.ShortName() else who = MyClass end
 			end
-			if guiLoot.recordData and ((item.Action:find('Looted') or item.Action:find('Destroyed')) and ((not item.Action:find('Left') and not item.Action:find("Ask")) or guiLoot.ReportLeft)) then
-				addRule(who, what, link, eval, rule)
+			if ((item.Action:find('Looted') or item.Action:find('Destroyed')) and ((not item.Action:find('Left') and not item.Action:find("Ask")) or guiLoot.ReportLeft)) then
+				if guiLoot.recordData then addRule(who, what, link, eval, rule) end
 			end
 			if lootEntry.LootedBy ~= MyName then
 				if cantWear then
-					consoleAction = consoleAction .. ' \ax(\arCant Wear\ax)'
+					consoleAction = consoleAction .. ' \ax(\aoCant Wear\ax)'
 				end
 				local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', lootEntry.LootedAt, who, consoleAction, link, corpseName, lootEntry.ID)
 				if item.Action == 'Destroyed' then
 					text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', lootEntry.LootedAt, who, string.upper(item.Action), link, corpseName,
 						lootEntry.ID)
 				end
-				guiLoot.console:AppendText(text)
+				if ((not item.Action:find('Left') and not item.Action:find("Ask") and not item.Action:find("Ignore")) or guiLoot.ReportLeft) then
+					guiLoot.console:AppendText(text)
+				end
 			end
 			local recordDate = os.date("%Y-%m-%d")
 			if guiLoot.SessionLootRecord == nil then
