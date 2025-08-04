@@ -2950,6 +2950,8 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
         Logger.Warn(LNS.guiLoot.console, "\arFailed to retrieve \axitemID\ar for corpseItem:\ax %s", itemName)
         return
     end
+    LNS.ItemNames[itemID] = itemName
+
     if LNS.NewItems[itemID] ~= nil then return end
     local isNoDrop       = corpseItem.NoDrop() or corpseItem.NoTrade()
     LNS.TempItemClasses  = LNS.retrieveClassList(corpseItem)
@@ -3163,8 +3165,8 @@ function LNS.addRule(itemID, section, rule, classes, link)
     -- Logger.Info(loot.guiLoot.console,"\agAdding\ax rule for item \at%s\ax\ao (\ayID\ax:\ag %s\ax\ao)\ax in [section] \at%s \axwith [rule] \at%s\ax and [classes] \at%s",
     -- itemName, itemID, section, rule, classes)
 
-    -- Update the in-memory data structure
-    LNS.ItemNames[itemID]             = itemName
+    -- -- Update the in-memory data structure
+    -- LNS.ItemNames[itemID]             = itemName
 
     LNS[section .. "Rules"][itemID]   = rule
     LNS[section .. "Classes"][itemID] = classes
@@ -3287,7 +3289,7 @@ function LNS.resolveItemIDbyName(itemName, allowDuplicates, exactMatch)
         end
     end
 
-    if not allowDuplicates then
+    if not allowDuplicates and matches[1] then
         return matches[1].ID
     end
 
