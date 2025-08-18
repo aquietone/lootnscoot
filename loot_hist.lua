@@ -539,222 +539,224 @@ function guiLoot.lootedReport_GUI()
 	if showRepGUI then
 		ImGui.SetWindowFontScale(ZoomLvl)
 		local sizeX, sizeY = ImGui.GetContentRegionAvail()
-		ImGui.BeginTable('##LootReport', 4, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY, ImGuiTableFlags.Resizable, ImGuiTableFlags.RowBg), ImVec2(sizeX, sizeY - 10))
-		ImGui.TableSetupScrollFreeze(0, 1)
+		if ImGui.BeginTable('##LootReport', 4, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY, ImGuiTableFlags.Resizable, ImGuiTableFlags.RowBg), ImVec2(sizeX, sizeY - 10)) then
+			ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthFixed, 150)
+			ImGui.TableSetupColumn("Looter(s)", ImGuiTableColumnFlags.WidthFixed, 75)
+			ImGui.TableSetupColumn("Count", bit32.bor(ImGuiTableColumnFlags.NoResize, ImGuiTableColumnFlags.WidthFixed), 50)
+			ImGui.TableSetupColumn("Tagged", bit32.bor(ImGuiTableColumnFlags.NoResize, ImGuiTableColumnFlags.WidthFixed), 75)
+			ImGui.TableSetupScrollFreeze(0, 1)
 
-		ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthFixed, 150)
-		ImGui.TableSetupColumn("Looter(s)", ImGuiTableColumnFlags.WidthFixed, 75)
-		ImGui.TableSetupColumn("Count", bit32.bor(ImGuiTableColumnFlags.NoResize, ImGuiTableColumnFlags.WidthFixed), 50)
-		ImGui.TableSetupColumn("Tagged", bit32.bor(ImGuiTableColumnFlags.NoResize, ImGuiTableColumnFlags.WidthFixed), 75)
-		ImGui.TableHeadersRow()
-		if ImGui.BeginPopupContextItem() then
-			ImGui.SeparatorText("Tags:")
-			ImGui.TextColored(0.523, 0.797, 0.944, 1.000, globeIcon)
-			ImGui.SameLine()
-			ImGui.Text('Global Item')
-			ImGui.TextColored(0.898, 0.777, 0.000, 1.000, Icons.MD_STAR)
-			ImGui.SameLine()
-			ImGui.Text('Changed Rule')
-			ImGui.TextColored(0.860, 0.104, 0.104, 1.000, Icons.MD_DELETE)
-			ImGui.SameLine()
-			ImGui.Text("Destroy")
-			ImGui.TextColored(1.000, 0.914, 0.200, 1.000, Icons.MD_SEARCH)
-			ImGui.SameLine()
-			ImGui.Text("Quest")
-			ImGui.TextColored(0.991, 0.506, 0.230, 1.000, Icons.FA_GIFT)
-			ImGui.SameLine()
-			ImGui.Text("Tribute")
-			ImGui.TextColored(0, 1, 0, 1, Icons.MD_ATTACH_MONEY)
-			ImGui.SameLine()
-			ImGui.Text("Sell")
-			ImGui.TextColored(0.916, 0.094, 0.736, 1.000, Icons.MD_FAVORITE_BORDER)
-			ImGui.SameLine()
-			ImGui.Text("Keep")
-			ImGui.TextColored(0.5, 0.5, 0.5, 1.000, Icons.FA_QUESTION)
-			ImGui.SameLine()
-			ImGui.Text("Unknown")
-			ImGui.SameLine()
-			ImGui.TextColored(0.5, 0.9, 0.5, 1.000, Icons.FA_QUESTION)
-			ImGui.SameLine()
-			ImGui.Text("Ask")
-			ImGui.SameLine()
-			ImGui.TextColored(0.4, 0.7, 0.2, 1.000, Icons.FA_USER_O)
-			ImGui.SameLine()
-			ImGui.Text("CanUse")
-			ImGui.EndPopup()
-		end
-		local row = 1
-		-- for looter, lootData in pairs(lootTable) do
-
-		local sortedKeys = getSortedKeys(lootTable)
-		for _, key in ipairs(sortedKeys) do
-			local data = lootTable[key]
-			local item = key
-			local looter = data['Who']
-			local itemName = key
-			local itemLink = data["Link"]
-			local itemCount = data["Count"]
-			local itemEval = data.Eval or 'Unknown'
-			local itemNewEval = data["NewEval"] or 'NONE'
-			local globalItem = false
-			local globalNew = false
-			globalItem = string.find(itemEval, 'Global') ~= nil
-			if globalItem then
-				itemName = string.gsub(itemName, 'Global ', '')
-			end
-			globalNew = string.find(itemNewEval, 'Global') ~= nil
-			itemEval = string.find(itemEval, "Quest") and 'Quest' or itemEval
-			local rowID = string.format("%s_%d", item, row)
-			ImGui.PushID(rowID)
-
+			ImGui.TableHeadersRow()
 			ImGui.TableNextRow()
 
-			ImGui.TableSetColumnIndex(0)
-			-- ImGui.BeginGroup()
-			if string.find(itemName, "*") then
-				itemName = string.gsub(itemName, "*", "")
-			end
-
-			if ImGui.Selectable(itemName .. "##" .. rowID, false, ImGuiSelectableFlags.SpanAllColumns) then
-				mq.cmdf('/executelink %s', itemLink)
-			end
-
-			if guiLoot.imported then
-				if ImGui.BeginPopupContextItem(rowID) then
-					if string.find(item, "*") then
-						itemName = string.gsub(item, "*", '')
-					end
-					ImGui.Text(itemName)
-					ImGui.Separator()
-					ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(1, 1, 0, 0.75))
-					if ImGui.BeginMenu('Normal Item Settings##' .. rowID) then
-						local tmpName = string.gsub(itemName, "*", "")
-						if ImGui.Selectable('Keep##' .. rowID) then
-							mq.cmdf('/lootutils keep "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Keep'
-							changed = true
-						end
-						if ImGui.Selectable('Quest##' .. rowID) then
-							mq.cmdf('/lootutils quest "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Quest'
-							changed = true
-						end
-						if ImGui.Selectable('Sell##' .. rowID) then
-							mq.cmdf('/lootutils sell "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Sell'
-							changed = true
-						end
-						if ImGui.Selectable('Tribute##' .. rowID) then
-							mq.cmdf('/lootutils tribute "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Tribute'
-							changed = true
-						end
-						if ImGui.Selectable('Destroy##' .. rowID) then
-							mq.cmdf('/lootutils destroy "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Destroy'
-							changed = true
-						end
-						ImGui.EndMenu()
-					end
-					ImGui.PopStyleColor()
-					ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.523, 0.797, 0.944, 1.000))
-					if ImGui.BeginMenu('Global Item Settings##' .. rowID) then
-						local tmpName = string.gsub(itemName, "*", "")
-						if ImGui.Selectable('Global Keep##' .. rowID) then
-							mq.cmdf('/lootutils globalitem keep "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Global Keep'
-							changed = true
-						end
-						if ImGui.Selectable('Global Quest##' .. rowID) then
-							mq.cmdf('/lootutils globalitem quest "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Global Quest'
-							changed = true
-						end
-						if ImGui.Selectable('Global Sell##' .. rowID) then
-							mq.cmdf('/lootutils globalitem sell "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Global Sell'
-							changed = true
-						end
-						if ImGui.Selectable('Global Tribute##' .. rowID) then
-							mq.cmdf('/lootutils globalitem tribute "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Global Tribute'
-							changed = true
-						end
-						if ImGui.Selectable('Global Destroy##' .. rowID) then
-							mq.cmdf('/lootutils globalitem destroy "%s"', tmpName)
-							lootTable[item]["NewEval"] = 'Global Destroy'
-							changed = true
-						end
-						ImGui.EndMenu()
-					end
-					ImGui.PopStyleColor()
-					ImGui.EndPopup()
-				end
-			else
-				if ImGui.IsItemHovered() then
-					ImGui.BeginTooltip()
-					ImGui.Text("Left Click to open item link")
-					ImGui.EndTooltip()
-				end
-			end
-
-			ImGui.TableSetColumnIndex(1)
-			ImGui.Text(looter)
-			ImGui.TableSetColumnIndex(2)
-			ImGui.Text("\t%d", itemCount)
-			if ImGui.IsItemHovered() then
-				ImGui.BeginTooltip()
-				if string.find(itemEval, 'Unknown') then
-					ImGui.Text("%s Looted: %d", looter, itemCount)
-				else
-					ImGui.Text("%s %sing: %d", looter, itemEval, itemCount)
-				end
-				ImGui.EndTooltip()
-			end
-
-			ImGui.TableSetColumnIndex(3)
-			if itemEval == itemNewEval then itemNewEval = 'NONE' end
-			if itemNewEval ~= 'NONE' then
+			if ImGui.BeginPopupContextItem() then
+				ImGui.SeparatorText("Tags:")
+				ImGui.TextColored(0.523, 0.797, 0.944, 1.000, globeIcon)
+				ImGui.SameLine()
+				ImGui.Text('Global Item')
 				ImGui.TextColored(0.898, 0.777, 0.000, 1.000, Icons.MD_STAR)
+				ImGui.SameLine()
+				ImGui.Text('Changed Rule')
+				ImGui.TextColored(0.860, 0.104, 0.104, 1.000, Icons.MD_DELETE)
+				ImGui.SameLine()
+				ImGui.Text("Destroy")
+				ImGui.TextColored(1.000, 0.914, 0.200, 1.000, Icons.MD_SEARCH)
+				ImGui.SameLine()
+				ImGui.Text("Quest")
+				ImGui.TextColored(0.991, 0.506, 0.230, 1.000, Icons.FA_GIFT)
+				ImGui.SameLine()
+				ImGui.Text("Tribute")
+				ImGui.TextColored(0, 1, 0, 1, Icons.MD_ATTACH_MONEY)
+				ImGui.SameLine()
+				ImGui.Text("Sell")
+				ImGui.TextColored(0.916, 0.094, 0.736, 1.000, Icons.MD_FAVORITE_BORDER)
+				ImGui.SameLine()
+				ImGui.Text("Keep")
+				ImGui.TextColored(0.5, 0.5, 0.5, 1.000, Icons.FA_QUESTION)
+				ImGui.SameLine()
+				ImGui.Text("Unknown")
+				ImGui.SameLine()
+				ImGui.TextColored(0.5, 0.9, 0.5, 1.000, Icons.FA_QUESTION)
+				ImGui.SameLine()
+				ImGui.Text("Ask")
+				ImGui.SameLine()
+				ImGui.TextColored(0.4, 0.7, 0.2, 1.000, Icons.FA_USER_O)
+				ImGui.SameLine()
+				ImGui.Text("CanUse")
+				ImGui.EndPopup()
+			end
+			local row = 1
+			-- for looter, lootData in pairs(lootTable) do
+
+			local sortedKeys = getSortedKeys(lootTable)
+			for _, key in ipairs(sortedKeys) do
+				local data = lootTable[key]
+				local item = key
+				local looter = data['Who']
+				local itemName = key
+				local itemLink = data["Link"]
+				local itemCount = data["Count"]
+				local itemEval = data.Eval or 'Unknown'
+				local itemNewEval = data["NewEval"] or 'NONE'
+				local globalItem = false
+				local globalNew = false
+				globalItem = string.find(itemEval, 'Global') ~= nil
+				if globalItem then
+					itemName = string.gsub(itemName, 'Global ', '')
+				end
+				globalNew = string.find(itemNewEval, 'Global') ~= nil
+				itemEval = string.find(itemEval, "Quest") and 'Quest' or itemEval
+				local rowID = string.format("%s_%d", item, row)
+				ImGui.PushID(rowID)
+
+				ImGui.TableNextColumn()
+				-- ImGui.BeginGroup()
+				if string.find(itemName, "*") then
+					itemName = string.gsub(itemName, "*", "")
+				end
+
+				if ImGui.Selectable(itemName .. "##" .. rowID, false, ImGuiSelectableFlags.SpanAllColumns) then
+					mq.cmdf('/executelink %s', itemLink)
+				end
+
+				if guiLoot.imported then
+					if ImGui.BeginPopupContextItem(rowID) then
+						if string.find(item, "*") then
+							itemName = string.gsub(item, "*", '')
+						end
+						ImGui.Text(itemName)
+						ImGui.Separator()
+						ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(1, 1, 0, 0.75))
+						if ImGui.BeginMenu('Normal Item Settings##' .. rowID) then
+							local tmpName = string.gsub(itemName, "*", "")
+							if ImGui.Selectable('Keep##' .. rowID) then
+								mq.cmdf('/lootutils keep "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Keep'
+								changed = true
+							end
+							if ImGui.Selectable('Quest##' .. rowID) then
+								mq.cmdf('/lootutils quest "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Quest'
+								changed = true
+							end
+							if ImGui.Selectable('Sell##' .. rowID) then
+								mq.cmdf('/lootutils sell "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Sell'
+								changed = true
+							end
+							if ImGui.Selectable('Tribute##' .. rowID) then
+								mq.cmdf('/lootutils tribute "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Tribute'
+								changed = true
+							end
+							if ImGui.Selectable('Destroy##' .. rowID) then
+								mq.cmdf('/lootutils destroy "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Destroy'
+								changed = true
+							end
+							ImGui.EndMenu()
+						end
+						ImGui.PopStyleColor()
+						ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.523, 0.797, 0.944, 1.000))
+						if ImGui.BeginMenu('Global Item Settings##' .. rowID) then
+							local tmpName = string.gsub(itemName, "*", "")
+							if ImGui.Selectable('Global Keep##' .. rowID) then
+								mq.cmdf('/lootutils globalitem keep "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Global Keep'
+								changed = true
+							end
+							if ImGui.Selectable('Global Quest##' .. rowID) then
+								mq.cmdf('/lootutils globalitem quest "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Global Quest'
+								changed = true
+							end
+							if ImGui.Selectable('Global Sell##' .. rowID) then
+								mq.cmdf('/lootutils globalitem sell "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Global Sell'
+								changed = true
+							end
+							if ImGui.Selectable('Global Tribute##' .. rowID) then
+								mq.cmdf('/lootutils globalitem tribute "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Global Tribute'
+								changed = true
+							end
+							if ImGui.Selectable('Global Destroy##' .. rowID) then
+								mq.cmdf('/lootutils globalitem destroy "%s"', tmpName)
+								lootTable[item]["NewEval"] = 'Global Destroy'
+								changed = true
+							end
+							ImGui.EndMenu()
+						end
+						ImGui.PopStyleColor()
+						ImGui.EndPopup()
+					end
+				else
+					if ImGui.IsItemHovered() then
+						ImGui.BeginTooltip()
+						ImGui.Text("Left Click to open item link")
+						ImGui.EndTooltip()
+					end
+				end
+
+				-- ImGui.TableSetColumnIndex(1)
+				ImGui.TableNextColumn()
+				ImGui.Text(looter)
+				ImGui.TableNextColumn()
+				ImGui.Text("\t%d", itemCount)
 				if ImGui.IsItemHovered() then
 					ImGui.BeginTooltip()
-					ImGui.TextColored(0.6, 0.6, 0.6, 1, "Old Rule: %s", itemEval)
-					ImGui.TextColored(1.000, 0.914, 0.200, 1.000, "New Rule: %s", itemNewEval)
+					if string.find(itemEval, 'Unknown') then
+						ImGui.Text("%s Looted: %d", looter, itemCount)
+					else
+						ImGui.Text("%s %sing: %d", looter, itemEval, itemCount)
+					end
 					ImGui.EndTooltip()
 				end
-				ImGui.SameLine()
-				if globalNew then
-					ImGui.TextColored(0.523, 0.797, 0.944, 1.000, globalNewIcon)
+
+				ImGui.TableNextColumn()
+				if itemEval == itemNewEval then itemNewEval = 'NONE' end
+				if itemNewEval ~= 'NONE' then
+					ImGui.TextColored(0.898, 0.777, 0.000, 1.000, Icons.MD_STAR)
 					if ImGui.IsItemHovered() then
 						ImGui.BeginTooltip()
-						ImGui.Text("Global Rule")
+						ImGui.TextColored(0.6, 0.6, 0.6, 1, "Old Rule: %s", itemEval)
+						ImGui.TextColored(1.000, 0.914, 0.200, 1.000, "New Rule: %s", itemNewEval)
 						ImGui.EndTooltip()
 					end
 					ImGui.SameLine()
-				end
-				ImGui.SameLine()
-				evalRule(itemNewEval)
-			else
-				if globalItem then
-					ImGui.TextColored(0.523, 0.797, 0.944, 1.000, globeIcon)
-					if ImGui.IsItemHovered() then
-						ImGui.BeginTooltip()
-						ImGui.Text("Global Item")
-						ImGui.EndTooltip()
+					if globalNew then
+						ImGui.TextColored(0.523, 0.797, 0.944, 1.000, globalNewIcon)
+						if ImGui.IsItemHovered() then
+							ImGui.BeginTooltip()
+							ImGui.Text("Global Rule")
+							ImGui.EndTooltip()
+						end
+						ImGui.SameLine()
 					end
 					ImGui.SameLine()
+					evalRule(itemNewEval)
+				else
+					if globalItem then
+						ImGui.TextColored(0.523, 0.797, 0.944, 1.000, globeIcon)
+						if ImGui.IsItemHovered() then
+							ImGui.BeginTooltip()
+							ImGui.Text("Global Item")
+							ImGui.EndTooltip()
+						end
+						ImGui.SameLine()
+					end
+					evalRule(itemEval)
 				end
-				evalRule(itemEval)
+
+				-- ImGui.Text(data['Eval'])
+
+				ImGui.PopID()
+				row = row + 1
 			end
+			-- end
 
-			-- ImGui.Text(data['Eval'])
-
-			ImGui.PopID()
-			row = row + 1
+			ImGui.EndTable()
 		end
-		-- end
-
-		ImGui.EndTable()
 	end
 
 	ImGui.SetWindowFontScale(1)
