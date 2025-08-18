@@ -5756,9 +5756,9 @@ This will return the item info for the first 20 matching items found.]])
                 ImGui.TableSetupColumn("Toggle")
                 ImGui.TableSetupColumn("Description")
                 ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
                 for k, v in pairs(LNS.Settings) do
                     if type(v) == 'boolean' and not settingsNoDraw[k] then
-                        ImGui.TableNextRow()
                         ImGui.TableNextColumn()
                         ImGui.TextWrapped(k)
                         ImGui.TableNextColumn()
@@ -5776,9 +5776,9 @@ This will return the item info for the first 20 matching items found.]])
                 ImGui.TableSetupColumn("Setting")
                 ImGui.TableSetupColumn("Description")
                 ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
                 for k, v in pairs(LNS.Settings) do
                     if type(v) ~= 'boolean' and not settingsNoDraw[k] then
-                        ImGui.TableNextRow()
                         ImGui.TableNextColumn()
                         ImGui.TextWrapped(k)
                         ImGui.TableNextColumn()
@@ -5928,6 +5928,7 @@ function LNS.drawNewItemsTable()
             ImGui.TableSetupColumn('Classes', ImGuiTableColumnFlags.NoResize, 150)
             ImGui.TableSetupColumn('Rule', bit32.bor(ImGuiTableColumnFlags.NoResize), 90)
             ImGui.TableHeadersRow()
+            ImGui.TableNextRow()
 
             -- Iterate Over New Items
             for idx, itemID in ipairs(LNS.TempSettings.NewItemIDs or {}) do
@@ -5947,7 +5948,6 @@ function LNS.drawNewItemsTable()
                 if LNS.tempGlobalRule == nil then
                     LNS.tempGlobalRule = {}
                 end
-                ImGui.TableNextRow()
                 -- Item Name and Link
                 ImGui.TableNextColumn()
 
@@ -6161,7 +6161,7 @@ function LNS.drawTabbedTable(label)
         if ImGui.IsItemHovered() then ImGui.SetTooltip("Clear Search") end
 
         local col = 4
-        col = math.max(4, math.floor(ImGui.GetContentRegionAvail() / 140))
+        col = math.max(4, math.floor((ImGui.GetContentRegionAvail() or 0) / 140))
         local colCount = col + (col % 4)
         if colCount % 4 ~= 0 then
             if (colCount - 1) % 4 == 0 then
@@ -6348,7 +6348,6 @@ function LNS.drawTabbedTable(label)
         end
 
         if ImGui.BeginTable(label .. " Items", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
-            ImGui.TableSetupScrollFreeze(colCount, 1)
             for i = 1, colCount / 4 do
                 ImGui.TableSetupColumn(Icons.FA_CHECK, ImGuiTableColumnFlags.WidthFixed, 30)
                 ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch)
@@ -6357,6 +6356,7 @@ function LNS.drawTabbedTable(label)
             end
             ImGui.TableSetupScrollFreeze(colCount, 1)
             ImGui.TableHeadersRow()
+            ImGui.TableNextRow()
 
             if LNS[label .. 'ItemsRules'] ~= nil then
                 for i = startIndex, endIndex do
@@ -6462,7 +6462,8 @@ function LNS.drawItemsTables()
     ImGui.SetWindowFontScale(fontScale)
 
     if ImGui.BeginTabBar("Items", bit32.bor(ImGuiTabBarFlags.Reorderable, ImGuiTabBarFlags.FittingPolicyScroll)) then
-        local col = math.max(2, math.floor(ImGui.GetContentRegionAvail() / 150))
+        local col = math.max(2, math.floor((ImGui.GetContentRegionAvail() or 0) / 150))
+        col = col > 0 and col or 2
         col = col + (col % 2)
 
         -- Buy Items
@@ -6481,6 +6482,8 @@ function LNS.drawItemsTables()
                 ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthFixed, 280)
                 ImGui.TableSetupColumn("Qty", ImGuiTableColumnFlags.WidthFixed, 150)
                 ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
+
                 ImGui.TableNextColumn()
 
                 ImGui.SetNextItemWidth(150)
@@ -6519,12 +6522,13 @@ function LNS.drawItemsTables()
             end
             ImGui.SeparatorText("Buy Items Table")
             if ImGui.BeginTable("Buy Items", col, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
-                ImGui.TableSetupScrollFreeze(col, 1)
                 for i = 1, col / 2 do
-                    ImGui.TableSetupColumn("Item")
-                    ImGui.TableSetupColumn("Qty")
+                    ImGui.TableSetupColumn("Item##" .. i)
+                    ImGui.TableSetupColumn("Qty##" .. i)
                 end
+                ImGui.TableSetupScrollFreeze(col, 1)
                 ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
 
                 local numDisplayColumns = col / 2
 
@@ -6808,18 +6812,19 @@ example {hp>=500, name~robe} this will return items with 500 + Hp and has robe i
 
                     for idx, label in pairs(LNS.AllItemColumnListIndex) do
                         if label == 'name' then
-                            ImGui.TableSetupColumn(label, ImGuiTableColumnFlags.NoHide)
+                            ImGui.TableSetupColumn(label .. "##" .. idx, ImGuiTableColumnFlags.NoHide)
                         else
-                            ImGui.TableSetupColumn(label, ImGuiTableColumnFlags.DefaultHide)
+                            ImGui.TableSetupColumn(label .. "##" .. idx, ImGuiTableColumnFlags.DefaultHide)
                         end
                     end
                     ImGui.TableSetupScrollFreeze(2, 1)
                     ImGui.TableHeadersRow()
+                    ImGui.TableNextRow()
 
                     -- Render only the current page's items
                     for i = startIndex, endIndex do
-                        local id = filteredItems[i].id
-                        local item = filteredItems[i].data
+                        local id = filteredItems[i].id or 0
+                        local item = filteredItems[i].data or {}
                         ImGui.TableNextColumn()
                         ImGui.PushID(id .. "_checkbox")
                         if LNS.TempSettings.SelectedItems[id] == nil then
@@ -7218,7 +7223,10 @@ function LNS.renderSettingsTables(who)
     if who == nil then return end
 
     local col = 2
-    col = math.max(2, math.floor(ImGui.GetContentRegionAvail() / 140))
+    col = math.max(2, math.floor((ImGui.GetContentRegionAvail() or 0) / 140))
+    if col < 2 then
+        col = 2
+    end
     local colCount = col + (col % 2)
     if colCount % 2 ~= 0 then
         if (colCount - 1) % 2 == 0 then
@@ -7231,13 +7239,14 @@ function LNS.renderSettingsTables(who)
     local sorted_toggles = LNS.SortTableColums(nil, LNS.TempSettings.SortedToggleKeys, colCount / 2)
 
     if ImGui.CollapsingHeader(string.format("Settings %s##%s", who, who)) then
-        if ImGui.BeginTable("##Settings", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.AutoResizeY, ImGuiTableFlags.Resizable)) then
-            ImGui.TableSetupScrollFreeze(colCount, 1)
+        if ImGui.BeginTable("##Settings", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
             for i = 1, colCount / 2 do
-                ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
-                ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 80)
+                ImGui.TableSetupColumn("Setting##" .. i, ImGuiTableColumnFlags.WidthStretch)
+                ImGui.TableSetupColumn("Value##" .. i, ImGuiTableColumnFlags.WidthFixed, 80)
             end
             ImGui.TableHeadersRow()
+            ImGui.TableSetupScrollFreeze(colCount, 1)
+            ImGui.TableNextRow()
 
             for i, settingName in ipairs(sorted_settings or {}) do
                 if who == nil then break end
@@ -7307,12 +7316,14 @@ function LNS.renderSettingsTables(who)
 
     if ImGui.CollapsingHeader(string.format("Toggles %s##%s", who, who)) then
         if ImGui.BeginTable("Toggles##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)) then
-            ImGui.TableSetupScrollFreeze(2, 1)
             for i = 1, 2 / 2 do
-                ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
-                ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 80)
+                ImGui.TableSetupColumn("Setting##" .. i, ImGuiTableColumnFlags.WidthStretch)
+                ImGui.TableSetupColumn("Value##" .. i, ImGuiTableColumnFlags.WidthFixed, 80)
             end
             ImGui.TableHeadersRow()
+            ImGui.TableSetupScrollFreeze(2, 1)
+
+            ImGui.TableNextRow()
 
             for i, settingName in ipairs(sorted_toggles or {}) do
                 if who == nil then break end
@@ -7548,6 +7559,7 @@ function LNS.renderSettingsSection(who)
             ImGui.TableSetupColumn("Setting", ImGuiTableColumnFlags.WidthStretch)
             ImGui.TableSetupColumn("Delete", ImGuiTableColumnFlags.WidthFixed, 80)
             ImGui.TableHeadersRow()
+            ImGui.TableNextRow()
 
             for settingName, _ in pairs(LNS.SafeZones or {}) do
                 if settingName ~= nil then
@@ -7628,6 +7640,7 @@ function LNS.RenderMasterLooterWindow()
                             ImGui.TableSetupColumn("Lore", ImGuiTableColumnFlags.WidthFixed, 30)
                             ImGui.TableHeadersRow()
                             ImGui.TableNextRow()
+
                             ImGui.TableNextColumn()
                             ImGui.Text("%s", LNS.valueToCoins(itemData.Value) or "N/A") -- value
                             ImGui.TableNextColumn()
@@ -7666,11 +7679,13 @@ function LNS.RenderMasterLooterWindow()
                                     ImGui.TableSetupColumn("Count", ImGuiTableColumnFlags.WidthFixed, 30)
                                     ImGui.TableSetupColumn("Loot", ImGuiTableColumnFlags.WidthFixed, 80)
                                     ImGui.TableHeadersRow()
-                                    for _, k in ipairs(LNS.BoxKeys) do
+                                    ImGui.TableNextRow()
+
+                                    for _, k in ipairs(LNS.BoxKeys or {}) do
                                         if itemData.Members[k] ~= nil then
                                             local member = k
                                             local count = itemData.Members[k]
-                                            ImGui.TableNextRow()
+                                            -- ImGui.TableNextRow()
                                             ImGui.TableNextColumn()
 
                                             if ImGui.Selectable(string.format("%s##%s", member, cID .. item)) then
@@ -7895,6 +7910,7 @@ function LNS.RenderModifyItemWindow()
                 ImGui.TableSetupColumn("itemName", ImGuiTableColumnFlags.WidthStretch)
                 ImGui.TableSetupColumn("Set", ImGuiTableColumnFlags.WidthFixed, 80)
                 ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
 
                 --[[
 retTable[row.item_id] = {
@@ -8116,6 +8132,7 @@ function LNS.DrawRecord(tableToDraw)
             ImGui.TableSetupColumn("Corpse", ImGuiTableColumnFlags.WidthFixed, 100)
             ImGui.TableSetupColumn("Zone", ImGuiTableColumnFlags.WidthFixed, 100)
             ImGui.TableHeadersRow()
+            ImGui.TableNextRow()
 
             -- Calculate start and end indices for pagination
             local startIdx = (LNS.histCurrentPage - 1) * LNS.histItemsPerPage + 1
@@ -8522,6 +8539,7 @@ function LNS.DebugMailBox()
             ImGui.TableSetupColumn("Subject", ImGuiTableColumnFlags.WidthFixed, 100)
             ImGui.TableSetupColumn("Sender", ImGuiTableColumnFlags.WidthFixed, 100)
             ImGui.TableHeadersRow()
+            ImGui.TableNextRow()
 
             for _, Data in ipairs(LNS.TempSettings.MailBox or {}) do
                 if LNS.TempSettings.MailboxFilter == '' or ((Data.Subject:lower():find(LNS.TempSettings.MailboxFilter:lower()) or
