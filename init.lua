@@ -348,10 +348,12 @@ LNS.TempSettings.UpdateSettings     = false
 LNS.TempSettings.SendSettings       = false
 LNS.TempSettings.LastModID          = 0
 LNS.TempSettings.LastZone           = nil
+LNS.TempSettings.LastInstance       = nil
 LNS.TempSettings.SafeZoneWarned     = false
 LNS.SafeZones                       = {}
 LNS.PauseLooting                    = false
 LNS.Zone                            = mq.TLO.Zone.ShortName()
+LNS.Instance                        = mq.TLO.Me.Instance()
 
 local tableList                     = {
     "Global_Items", "Normal_Items", LNS.PersonalTableName,
@@ -4895,6 +4897,7 @@ function LNS.lootMobs(limit)
                     ID = corpseID,
                     Items = allItems,
                     Zone = LNS.Zone,
+                    Instance = LNS.Instance,
                     Server = eqServer,
                     LootedAt = mq.TLO.Time(),
                     CorpseName = corpse.DisplayName() or 'unknown',
@@ -5020,6 +5023,7 @@ function LNS.LootItemML(itemName, corpseID)
             ID = corpseID,
             Items = allItems,
             Zone = LNS.Zone,
+            Instance = LNS.Instance,
             Server = eqServer,
             LootedAt = mq.TLO.Time(),
             CorpseName = mq.TLO.Corpse.DisplayName() or 'unknown',
@@ -8622,6 +8626,7 @@ end
 function LNS.MainLoop()
     while not LNS.Terminate do
         LNS.Zone = mq.TLO.Zone.ShortName()
+        LNS.Instance = mq.TLO.Me.Instance()
         if mq.TLO.MacroQuest.GameState() ~= "INGAME" then LNS.Terminate = true end -- exit sctipt if at char select.
         -- LNS.guiLoot.ReportLeft = LNS.Settings.ReportSkippedItems
         LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
@@ -8635,7 +8640,7 @@ function LNS.MainLoop()
             LNS.Terminate = true
         end
 
-        if LNS.TempSettings.LastZone ~= LNS.Zone then
+        if LNS.TempSettings.LastZone ~= LNS.Zone or LNS.TempSettings.LastInstance ~= LNS.Instance then
             mq.delay(5000, function() return not mq.TLO.Me.Zoning() end) -- wait for zoning to finish.
             LNS.TempSettings.ItemsToLoot = {}
             lootedCorpses = {}
@@ -8655,6 +8660,7 @@ function LNS.MainLoop()
                 }, 'loot_module')
             end
             LNS.TempSettings.LastZone = LNS.Zone
+            LNS.TempSettings.LastInstance = LNS.Instance
             LNS.MasterLootList = nil
             LNS.TempSettings.SafeZoneWarned = false
         end
