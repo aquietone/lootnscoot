@@ -122,7 +122,7 @@ local settingsEnum                      = {
     ignorebagslot = 'IgnoreBagSlot',
     processingeval = 'ProcessingEval',
     alwaysglobal = 'AlwaysGlobal',
-
+    useautorules = 'UseAutoRules',
 }
 local doSell, doBuy, doTribute, areFull = false, false, false, false
 local settingList                       = {
@@ -216,6 +216,7 @@ LNS.Settings    = {
     AlwaysGlobal        = false, -- Always assign new rules to global as well as normal rules.
     IgnoreMyNearCorpses = false, -- Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.
     -- ProcessingEval   = true, -- Re evaluate when processing items for sell\tribute? this will re check our settings and not sell or tribute items outside the new parameters
+    UseAutoRules        = false, -- let LNS decide loot rules on new items
     BuyItemsTable       = {
         ['Iron Ration'] = 20,
         ['Water Flask'] = 20,
@@ -3514,7 +3515,7 @@ function LNS.getRule(item, fromFunction, index)
     local countHave    = mq.TLO.FindItemCount(item.Name())() + mq.TLO.FindItemBankCount(item.Name())()
     local itemName     = item.Name()
     local newRule      = false
-    local alwaysAsk    = LNS.Settings.AlwaysAsk
+    local alwaysAsk    = true
     local qKeep        = 0
     local iCanUse      = true
     local freeSpace    = mq.TLO.Me.FreeInventory()
@@ -3583,49 +3584,38 @@ function LNS.getRule(item, fromFunction, index)
         lootClasses = LNS.retrieveClassList(item)
         ruletype = 'Normal'
         local addToDB = true
-        -- NODROP
-        if isNoDrop then
-            if not isEquippable then
-                lootRule = "Ask"
-            else
-                lootRule = "CanUse"
-            end
-            addToDB = (LNS.Settings.LootNoDropNew and LNS.Settings.LootNoDrop) or false
+        lootRule = "Ask"
 
-            if not addToDB then
-                lootRule = 'Ask'
-                lootDecision = 'Ask'
-                -- Logger.Info(LNS.guiLoot.console, "\ax\ag New Rule for \ayNODROP\ax Item: (\at%s\ax) Rule: (\ag%s\ax)",
-                --     itemName, lootRule)
-                return lootRule, 0, newRule, isEquippable
-            else
-                Logger.Info(LNS.guiLoot.console, "\ax\ag Setting New Rule\ax \ayNODROP\ax Item: (\at%s\ax) Rule: (\ag%s\ax)",
-                    itemName, lootRule)
-            end
-            LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, addToDB)
-        else
-            if not isEquippable then
-                if sellPrice > 0 then
-                    lootRule = 'Sell'
-                elseif tributeValue > 0 then
-                    lootRule = 'Tribute'
+        if LNS.Settings.UseAutoRules then
+            -- NODROP
+            if isNoDrop then
+                addToDB = (LNS.Settings.LootNoDropNew and LNS.Settings.LootNoDrop) or false
+                if isEquippable and addToDB then
+                    lootRule = "CanUse"
                 else
-                    lootRule = 'Ask'
+                    return 'Ask', 0, newRule, isEquippable
                 end
             else
-                lootRule = 'Keep'
+                if not isEquippable then
+                    if sellPrice > 0 then
+                        lootRule = 'Sell'
+                    elseif tributeValue > 0 then
+                        lootRule = 'Tribute'
+                    end
+                else
+                    lootRule = 'Keep'
+                end
             end
-            Logger.Info(LNS.guiLoot.console, "\ax\agSetting NEW RULE\ax Item: (\at%s\ax) Rule: (\ag%s\ax)",
-                itemName, lootRule)
-
-            LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, addToDB)
         end
+        Logger.Info(LNS.guiLoot.console, "\ax\agSetting NEW RULE\ax Item: (\at%s\ax) Rule: (\ag%s\ax)",
+            itemName, lootRule)
+        LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, addToDB)
     end
 
     lootDecision = lootRule
 
     -- Handle AlwaysAsk setting
-    if alwaysAsk then
+    if alwaysAsk and lootRule == "Ask" then
         newRule = true
         lootDecision = "Ask"
         dbgTbl = {
