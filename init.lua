@@ -6,6 +6,7 @@ local PackageMan      = require('mq.PackageMan')
 local SQLite3         = PackageMan.Require('lsqlite3')
 local Icons           = require('mq.ICONS')
 local success, Logger = pcall(require, 'lib.Write')
+local perf            = require('performance')
 -- local MasterLooter = require('MasterLooter')
 
 if not success then
@@ -4294,6 +4295,7 @@ end
 ---@param qKeep number @The count to keep for quest items.
 ---@param cantWear boolean|nil @ Whether the character canwear the item
 function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
+    local startTime = mq.gettime()
     Logger.Debug(LNS.guiLoot.console, 'Enter lootItem')
     if doWhat == nil or type(doWhat) ~= 'string' then return end
     local actionToTake = doWhat:gsub("%s$", "")
@@ -4423,8 +4425,10 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         if areFull == true then
             LNS.report('My bags are full, I can\'t loot anymore! \aoOnly Looting \ayCoin\ax and Items I have \atStack Space\ax for')
         end
+        perf:OnFrameExec('lootitem', mq.gettime() - startTime)
 
         if LNS.Settings.TrackHistory then
+            startTime = mq.gettime()
             Logger.Debug(LNS.guiLoot.console, "\aoINSERT HISTORY CHECK 4\ax: \ayAction\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", eval, itemName, itemLink)
             local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
                 os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear, rule)
@@ -4444,6 +4448,7 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
                     mq.TLO.Corpse.ID() or 0)
             end
             LNS.guiLoot.console:AppendText(text)
+            perf:OnFrameExec('history', mq.gettime() - startTime)
         end
     end
 end
@@ -4541,6 +4546,7 @@ function LNS.lootCorpse(corpseID)
                     Logger.Debug(LNS.guiLoot.console, dbgTbl)
 
                     if LNS.Settings.TrackHistory then
+                        local startTime = mq.gettime()
                         local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
                             os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, not iCanUse, itemRule)
                         if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
@@ -4558,6 +4564,7 @@ function LNS.lootCorpse(corpseID)
                                 corpseName, corpseID)
                         end
                         LNS.guiLoot.console:AppendText(text)
+                        perf:OnFrameExec('history', mq.gettime() - startTime)
                     end
                     -- local lbl = itemRule
                     -- if itemRule == 'Ignore' then
@@ -8207,6 +8214,11 @@ function LNS.RenderMainUI()
                     end
                 end
 
+                ImGui.SameLine()
+
+                if ImGui.SmallButton(string.format('%s Perf', Icons.FA_AREA_CHART)) then
+                    perf.EnablePerfMonitoring = not perf.EnablePerfMonitoring
+                end
 
                 ImGui.Spacing()
                 ImGui.Separator()
@@ -8244,6 +8256,8 @@ function LNS.RenderMainUI()
         end
 
         ImGui.End()
+
+        if perf:ShouldRender() then perf:Render() end
     end
 end
 
