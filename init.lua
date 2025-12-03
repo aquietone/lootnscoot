@@ -6,6 +6,7 @@ local PackageMan      = require('mq.PackageMan')
 local SQLite3         = PackageMan.Require('lsqlite3')
 local Icons           = require('mq.ICONS')
 local success, Logger = pcall(require, 'lib.Write')
+local perf            = require('performance')
 -- local MasterLooter = require('MasterLooter')
 
 if not success then
@@ -35,7 +36,7 @@ local iconAnimation                     = mq.FindTextureAnimation('A_DragItem')
 local cantLootList                      = {}
 local cantLootID                        = 0
 local itemNoValue                       = nil
-local noDropItems, loreItems            = {}, {}
+local skippedLoots                      = {}
 local allItems                          = {}
 local foragingLoot                      = false
 -- Constants
@@ -63,6 +64,7 @@ local resourceDir                       = mq.TLO.MacroQuest.Path('resources')() 
 local RulesDB                           = string.format('%s/LootNScoot/%s/AdvLootRules.db', resourceDir, eqServer)
 local lootDB                            = string.format('%s/LootNScoot/%s/Items.db', resourceDir, eqServer)
 local HistoryDB                         = string.format('%s/LootNScoot/%s/LootHistory.db', resourceDir, eqServer)
+local preparedStatements                = {}
 
 -- gui
 local fontScale                         = 1
@@ -123,6 +125,8 @@ local settingsEnum                      = {
     processingeval = 'ProcessingEval',
     alwaysglobal = 'AlwaysGlobal',
     useautorules = 'UseAutoRules',
+    trackhistory = 'TrackHistory',
+
 }
 local doSell, doBuy, doTribute, areFull = false, false, false, false
 local settingList                       = {
@@ -215,6 +219,7 @@ LNS.Settings    = {
     IgnoreBagSlot       = 0,     -- Ignore this Bag Slot when buying, selling, tributing and destroying of items.
     AlwaysGlobal        = false, -- Always assign new rules to global as well as normal rules.
     IgnoreMyNearCorpses = false, -- Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.
+    TrackHistory        = true,  -- Enable inserting loot results into history table
     -- ProcessingEval   = true, -- Re evaluate when processing items for sell\tribute? this will re check our settings and not sell or tribute items outside the new parameters
     UseAutoRules        = false, -- let LNS decide loot rules on new items
     BuyItemsTable       = {
@@ -273,6 +278,7 @@ REQUIRES DoDestroy set to true.]],
     MaxCorpsesPerCycle  = "Maximum number of corpses to loot per cycle.",
     AlwaysGlobal        = "Always assign new rules to global as well as normal rules.",
     IgnoreMyNearCorpses = "Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.",
+    TrackHistory        = "Enable inserting loot results into history table",
 }
 
 local tmpCmd    = LNS.GroupChannel or 'dgae'
@@ -430,6 +436,154 @@ LNS.AllItemColumnListIndex          = {
 ------------------------------------
 --      UTILITY functions
 ------------------------------------
+
+function LNS.OpenDB(db_name)
+    local db = SQLite3.open(db_name)
+    if not db then
+        printf('Error: Failed to open %s database.', db_name)
+        return
+    end
+    db:exec("PRAGMA journal_mode=WAL;")
+    return db
+end
+local items_db = LNS.OpenDB(lootDB)
+local history_db = LNS.OpenDB(HistoryDB)
+local rules_db = LNS.OpenDB(RulesDB)
+
+local function prepareStatements()
+    local function initPreparedStatement(key, db, sql)
+        preparedStatements[key] = db:prepare(sql)
+        if not preparedStatements[key] then
+            Logger.Error(LNS.guiLoot.console, "\arFailed to prepare %s statement: \at%s", key, db:errmsg())
+        end
+    end
+
+    local sql  = [[
+INSERT INTO Items (
+item_id, name, nodrop, notrade, tradeskill, quest, lore, augment,
+stackable, sell_value, tribute_value, stack_size, clickable, augtype,
+strength, dexterity, agility, stamina, intelligence, wisdom,
+charisma, mana, hp, ac, regen_hp, regen_mana, haste, link, weight, classes, class_list,
+svfire, svcold, svdisease, svpoison, svcorruption, svmagic, spelldamage, spellshield, races, race_list, collectible,
+attack, damage, weightreduction, item_size, icon, strikethrough, heroicagi, heroiccha, heroicdex, heroicint,
+heroicsta, heroicstr, heroicsvcold, heroicsvcorruption, heroicsvdisease, heroicsvfire, heroicsvmagic, heroicsvpoison,
+heroicwis
+)
+VALUES (
+?,?,?,?,?,?,?,?,?,?,
+?,?,?,?,?,?,?,?,?,?,
+?,?,?,?,?,?,?,?,?,?,
+?,?,?,?,?,?,?,?,?,?,
+?,?,?,?,?,?,?,?,?,?,
+?,?,?,?,?,?,?,?,?,?,
+?
+)
+ON CONFLICT(item_id) DO UPDATE SET
+name                                    = excluded.name,
+nodrop                                    = excluded.nodrop,
+notrade                                    = excluded.notrade,
+tradeskill                                    = excluded.tradeskill,
+quest                                    = excluded.quest,
+lore                                    = excluded.lore,
+augment                                    = excluded.augment,
+stackable                                    = excluded.stackable,
+sell_value                                    = excluded.sell_value,
+tribute_value                                    = excluded.tribute_value,
+stack_size                                    = excluded.stack_size,
+clickable                                    = excluded.clickable,
+augtype                                    = excluded.augtype,
+strength                                    = excluded.strength,
+dexterity                                    = excluded.dexterity,
+agility                                    = excluded.agility,
+stamina                                    = excluded.stamina,
+intelligence                                    = excluded.intelligence,
+wisdom                                    = excluded.wisdom,
+charisma                                    = excluded.charisma,
+mana                                    = excluded.mana,
+hp                                    = excluded.hp,
+ac                                    = excluded.ac,
+regen_hp                                    = excluded.regen_hp,
+regen_mana                                    = excluded.regen_mana,
+haste                                    = excluded.haste,
+link                                    = excluded.link,
+weight                                    = excluded.weight,
+item_size                                    = excluded.item_size,
+classes                                    = excluded.classes,
+class_list                                    = excluded.class_list,
+svfire                                    = excluded.svfire,
+svcold                                    = excluded.svcold,
+svdisease                                    = excluded.svdisease,
+svpoison                                    = excluded.svpoison,
+svcorruption                                    = excluded.svcorruption,
+svmagic                                    = excluded.svmagic,
+spelldamage                                    = excluded.spelldamage,
+spellshield                                    = excluded.spellshield,
+races                                    = excluded.races,
+race_list                               = excluded.race_list,
+collectible                                    = excluded.collectible,
+attack                                    = excluded.attack,
+damage                                    = excluded.damage,
+weightreduction                                    = excluded.weightreduction,
+strikethrough                                    = excluded.strikethrough,
+heroicagi                                    = excluded.heroicagi,
+heroiccha                                    = excluded.heroiccha,
+heroicdex                                    = excluded.heroicdex,
+heroicint                                    = excluded.heroicint,
+heroicsta                                    = excluded.heroicsta,
+heroicstr                                    = excluded.heroicstr,
+heroicsvcold                                    = excluded.heroicsvcold,
+heroicsvcorruption                                    = excluded.heroicsvcorruption,
+heroicsvdisease                                    = excluded.heroicsvdisease,
+heroicsvfire                                    = excluded.heroicsvfire,
+heroicsvmagic                                    = excluded.heroicsvmagic,
+heroicsvpoison                                    = excluded.heroicsvpoison,
+heroicwis                                    = excluded.heroicwis
+]]
+    initPreparedStatement('ADD_ITEM_TO_DB', items_db, sql)
+    initPreparedStatement('CHECK_HISTORY', history_db, [[
+SELECT Date, TimeStamp FROM LootHistory
+WHERE Item = ? AND CorpseName = ? AND Action = ? AND Date = ?
+ORDER BY Date DESC, TimeStamp DESC LIMIT 1
+]])
+    initPreparedStatement('INSERT_HISTORY', history_db, [[
+INSERT INTO LootHistory (Item, CorpseName, Action, Date, TimeStamp, Link, Looter, Zone)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+]])
+    initPreparedStatement('INSERT_RULE_NORMAL', rules_db, [[
+INSERT INTO Normal_Rules
+(item_id, item_name, item_rule, item_rule_classes, item_link)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(item_id) DO UPDATE SET
+item_name                                    = excluded.item_name,
+item_rule                                    = excluded.item_rule,
+item_rule_classes                                    = excluded.item_rule_classes,
+item_link                                    = excluded.item_link
+]])
+    initPreparedStatement('INSERT_RULE_GLOBAL', rules_db, [[
+INSERT INTO Global_Rules
+(item_id, item_name, item_rule, item_rule_classes, item_link)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(item_id) DO UPDATE SET
+item_name                                    = excluded.item_name,
+item_rule                                    = excluded.item_rule,
+item_rule_classes                                    = excluded.item_rule_classes,
+item_link                                    = excluded.item_link
+]])
+    initPreparedStatement('INSERT_RULE_PERSONAL', rules_db, string.format([[
+INSERT INTO %s
+(item_id, item_name, item_rule, item_rule_classes, item_link)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(item_id) DO UPDATE SET
+item_name                                    = excluded.item_name,
+item_rule                                    = excluded.item_rule,
+item_rule_classes                                    = excluded.item_rule_classes,
+item_link                                    = excluded.item_link
+]], LNS.PersonalTableName))
+    initPreparedStatement('CHECK_DB_PERSONAL', rules_db, string.format("SELECT item_rule, item_rule_classes, item_link FROM %s WHERE item_id = ?", LNS.PersonalTableName))
+    initPreparedStatement('CHECK_DB_NORMAL', rules_db, "SELECT item_rule, item_rule_classes, item_link FROM Normal_Rules WHERE item_id = ?")
+    initPreparedStatement('CHECK_DB_GLOBAL', rules_db, "SELECT item_rule, item_rule_classes, item_link FROM Global_Rules WHERE item_id = ?")
+end
+prepareStatements()
 
 ---comment
 ---@param item_name string
@@ -754,9 +908,8 @@ function LNS.loadSettings(firstRun)
         -- load the rules database
 
         -- check if the DB structure needs updating
-        local db = LNS.OpenItemsSQL()
-        db:exec("BEGIN TRANSACTION")
-        db:exec([[
+        items_db:exec("BEGIN TRANSACTION")
+        items_db:exec([[
 CREATE TABLE IF NOT EXISTS Items (
 item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
 name TEXT NOT NULL,
@@ -822,13 +975,11 @@ heroicwis INTEGER DEFAULT 0,
 link TEXT
 );
 ]])
-        db:exec("CREATE INDEX IF NOT EXISTS idx_item_name ON Items (name);")
-        db:exec("CREATE INDEX IF NOT EXISTS idx_item_id ON Items (item_id);")
+        items_db:exec("CREATE INDEX IF NOT EXISTS idx_item_name ON Items (name);")
+        items_db:exec("CREATE INDEX IF NOT EXISTS idx_item_id ON Items (item_id);")
 
-        db:exec("COMMIT")
-        db:exec("PRAGMA wal_checkpoint;")
-
-        db:close()
+        items_db:exec("COMMIT")
+        items_db:exec("PRAGMA wal_checkpoint;")
 
         LNS.LoadRuleDB()
 
@@ -895,11 +1046,11 @@ end
 
 function LNS.navToID(spawnID)
     mq.cmdf('/nav id %d dist=10 log=off', spawnID)
-    mq.delay(50)
+    mq.delay(50, function() return mq.TLO.Spawn(spawnID).Distance3D() or 0 < 20 end)
     if mq.TLO.Navigation.Active() then
         local startTime = os.time()
         while mq.TLO.Navigation.Active() do
-            mq.delay(100)
+            mq.delay(50)
             if os.difftime(os.time(), startTime) > 5 then
                 break
             end
@@ -1329,25 +1480,15 @@ function LNS.eventNoSlot()
     LNS.report("\ay[WARN]\arI can't loot %s, dropping it on the ground!\ax", cantLootItemName)
 end
 
-function LNS.reportSkippedItems(noDropItems, loreItems, corpseName, corpseID)
+function LNS.reportSkippedItems(skippedLoots, corpseName, corpseID)
     -- Ensure parameters are valid
-    noDropItems = noDropItems or {}
-    loreItems   = loreItems or {}
+    skippedLoots = skippedLoots or {}
 
-    -- Log skipped items
-    if next(noDropItems) then
-        Logger.Info(LNS.guiLoot.console, "\aySkipped NoDrop\ax items from corpse \at%s\ax (ID:\at %s\ax):\ay %s\ax",
-            corpseName, tostring(corpseID), table.concat(noDropItems, ", "))
+    if next(skippedLoots) then
+        Logger.Info(LNS.guiLoot.console, "\aySkipped Loot\ax items from corpse \at%s\ax (ID:\at %s\ax):\ay %s\ax",
+            corpseName, tostring(corpseID), table.concat(skippedLoots, ", "))
         if LNS.Settings.ReportSkippedItems then
-            LNS.doReport("Skipped NoDrop: %s (%s): %s", corpseName, tostring(corpseID), table.concat(noDropItems, ", "))
-        end
-    end
-
-    if next(loreItems) then
-        Logger.Info(LNS.guiLoot.console, "\aySkipped Lore\ax items from corpse \at%s\ax (ID:\at %s\ax):\ay %s\ax",
-            corpseName, tostring(corpseID), table.concat(loreItems, ", "))
-        if LNS.Settings.ReportSkippedItems then
-            LNS.doReport("Skipped Lore: %s (%s): %s", corpseName, tostring(corpseID), table.concat(loreItems, ", "))
+            LNS.doReport("Skipped Loot: %s (%s): %s", corpseName, tostring(corpseID), table.concat(skippedLoots, ", "))
         end
     end
 end
@@ -1451,7 +1592,6 @@ end
 --          SQL Functions
 ------------------------------------
 
-
 function LNS.ImportOldRulesDB(path)
     if not Files.File.Exists(path) then
         Logger.Error(LNS.guiLoot.console, "loot.ImportOldRulesDB() \arFile not found: \at%s\ax", path)
@@ -1470,7 +1610,6 @@ function LNS.ImportOldRulesDB(path)
     local tmpNamesNormal = {}
 
     db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
     local query = "SELECT * From Global_Rules;"
     local stmt = db:prepare(query)
     local cntr = 1
@@ -1502,8 +1641,6 @@ function LNS.ImportOldRulesDB(path)
         cntr = cntr + 1
     end
     stmt:finalize()
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
 
     db:close()
 
@@ -1548,10 +1685,6 @@ function LNS.ImportOldRulesDB(path)
     tmpNormalDB = newNormal
 
     -- insert into the current rules DB
-    db = SQLite3.open(RulesDB)
-    if not db then return end
-    db:exec("PRAGMA journal_mode=WAL;")
-
     local qry = string.format([[
 INSERT INTO Global_Rules (item_id, item_name, item_rule, item_rule_classes, item_link)
 VALUES (?, ?, ?, ?, ?)
@@ -1562,15 +1695,12 @@ item_rule_classes = excluded.item_rule_classes,
 item_link = excluded.item_link
 ]])
 
-    stmt = db:prepare(qry)
+    stmt = rules_db:prepare(qry)
     if not stmt then
-        db:exec("PRAGMA wal_checkpoint;")
-
-        db:close()
         return
     end
 
-    db:exec("BEGIN TRANSACTION;")
+    rules_db:exec("BEGIN TRANSACTION;")
 
     for itemID, data in pairs(tmpGlobalDB or {}) do
         local itemName = data.item_name
@@ -1599,12 +1729,10 @@ item_rule_classes = excluded.item_rule_classes,
 item_link = excluded.item_link
 ]])
 
-    stmt = db:prepare(qry)
+    stmt = rules_db:prepare(qry)
     if not stmt then
-        db:exec("COMMIT;")
-        db:exec("PRAGMA wal_checkpoint;")
-
-        db:close()
+        rules_db:exec("COMMIT;")
+        rules_db:exec("PRAGMA wal_checkpoint;")
         return
     end
 
@@ -1627,10 +1755,9 @@ item_link = excluded.item_link
 
 
     -- check items and if we find only one update the rule
-    db:exec("COMMIT;")
-    db:exec("PRAGMA wal_checkpoint;")
+    rules_db:exec("COMMIT;")
+    rules_db:exec("PRAGMA wal_checkpoint;")
 
-    db:close()
     Logger.Info(LNS.guiLoot.console, "loot.ImportOldRulesDB() \agSuccessfully imported old rules from \at%s\ax", path)
 
     -- update our missing tables
@@ -1640,20 +1767,10 @@ item_link = excluded.item_link
     LNS.NormalMissingNames = tmpNamesNormal or {}
 end
 
-function LNS.OpenItemsSQL()
-    local db = SQLite3.open(lootDB)
-    if db then
-        db:exec("PRAGMA journal_mode=WAL;")
-    end
-    return db
-end
-
 function LNS.LoadHistoricalData()
     LNS.HistoricalDates = {}
-    local db = SQLite3.open(HistoryDB)
-    db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
-    db:exec([[
+    history_db:exec([[
+BEGIN TRANSACTION;
 CREATE TABLE IF NOT EXISTS LootHistory (
 "id" INTEGER PRIMARY KEY AUTOINCREMENT,
 "Item" TEXT NOT NULL,
@@ -1665,34 +1782,23 @@ CREATE TABLE IF NOT EXISTS LootHistory (
 "Looter" TEXT NOT NULL,
 "Zone" TEXT NOT NULL
 );
+COMMIT;
 ]])
-    db:exec("COMMIT")
 
-    db:exec("BEGIN TRANSACTION")
-
-    local stmt = db:prepare("SELECT DISTINCT Date FROM LootHistory ORDER BY Date DESC")
+    local stmt = history_db:prepare("SELECT DISTINCT Date FROM LootHistory ORDER BY Date DESC")
 
     for row in stmt:nrows() do
         table.insert(LNS.HistoricalDates, row.Date)
     end
 
     stmt:finalize()
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-
-    db:close()
 end
 
 function LNS.LoadDateHistory(lookup_Date)
-    local db = SQLite3.open(HistoryDB)
-    db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
-
     LNS.HistoryDataDate = {}
-    local stmt = db:prepare("SELECT * FROM LootHistory WHERE Date = ?")
+    local stmt = history_db:prepare("SELECT * FROM LootHistory WHERE Date = ?")
     if not stmt then
-        printf("Error preparing statement for date history: %s", db:errmsg())
-        db:close()
+        printf("Error preparing statement for date history: %s", history_db:errmsg())
         return
     end
     stmt:bind_values(lookup_Date)
@@ -1701,35 +1807,25 @@ function LNS.LoadDateHistory(lookup_Date)
     end
 
     stmt:finalize()
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-
-    db:close()
 end
 
 function LNS.AddSafeZone(zoneName)
     if not zoneName or zoneName == "" then return end
-    local db = SQLite3.open(RulesDB)
-    db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
-
-    local stmt = db:prepare("INSERT OR IGNORE INTO SafeZones (zone) VALUES (?)")
+    local stmt = rules_db:prepare("INSERT OR IGNORE INTO SafeZones (zone) VALUES (?)")
     if not stmt then
-        printf("Error preparing statement for safe zone: %s", db:errmsg())
-        db:close()
+        printf("Error preparing statement for safe zone: %s", rules_db:errmsg())
         return
     end
     stmt:bind_values(zoneName)
+    rules_db:exec("BEGIN TRANSACTION")
     local res, err = stmt:step()
     if res ~= SQLite3.DONE then
         printf("Error inserting safe zone: %s ", err)
     end
     stmt:finalize()
 
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-
-    db:close()
+    rules_db:exec("COMMIT")
+    rules_db:exec("PRAGMA wal_checkpoint;")
     LNS.SafeZones[zoneName] = true
     LNS.send({
         who = MyName,
@@ -1745,27 +1841,22 @@ end
 
 function LNS.RemoveSafeZone(zoneName)
     if not zoneName or zoneName == "" then return end
-    local db = SQLite3.open(RulesDB)
-    db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
 
-    local stmt = db:prepare("DELETE FROM SafeZones WHERE zone = ?")
+    local stmt = rules_db:prepare("DELETE FROM SafeZones WHERE zone = ?")
     if not stmt then
-        printf("Error preparing statement for safe zone: %s", db:errmsg())
-        db:close()
+        printf("Error preparing statement for safe zone: %s", rules_db:errmsg())
         return
     end
     stmt:bind_values(zoneName)
+    rules_db:exec("BEGIN TRANSACTION")
     local res, err = stmt:step()
     if res ~= SQLite3.DONE then
         printf("Error deleting safe zone: %s ", err)
     end
     stmt:finalize()
 
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-
-    db:close()
+    rules_db:exec("COMMIT")
+    rules_db:exec("PRAGMA wal_checkpoint;")
     LNS.SafeZones[zoneName] = nil
     LNS.send({
         who = MyName,
@@ -1776,15 +1867,10 @@ function LNS.RemoveSafeZone(zoneName)
 end
 
 function LNS.LoadItemHistory(lookup_name)
-    local db = SQLite3.open(HistoryDB)
-    db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
-
     LNS.HistoryItemData = {}
-    local stmt = db:prepare("SELECT * FROM LootHistory WHERE Item LIKE ?")
+    local stmt = history_db:prepare("SELECT * FROM LootHistory WHERE Item LIKE ?")
     if not stmt then
-        printf("Error preparing statement for item history: %s", db:errmsg())
-        db:close()
+        printf("Error preparing statement for item history: %s", history_db:errmsg())
         return
     end
     stmt:bind_values(string.format("%%%s%%", lookup_name))
@@ -1794,9 +1880,6 @@ function LNS.LoadItemHistory(lookup_name)
     end
 
     stmt:finalize()
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
 end
 
 ---comment
@@ -1813,17 +1896,10 @@ end
 ---@param rule string|nil the rule applied to the item
 function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, link, looter, zone, items_table, cantWear, rule)
     if itemName == nil then return end
-    local db = SQLite3.open(HistoryDB)
     local toSoon = false
     local isIgnore = false
 
-    if not db then
-        print("Error: Failed to open database.")
-        return
-    end
     local eval = action:find('Ignore') and 'Left' or action
-
-    db:exec("PRAGMA journal_mode=WAL;")
 
     -- Convert current date+time to epoch
     local currentTime = convertTimestamp(timestamp)
@@ -1831,54 +1907,26 @@ function LNS.insertIntoHistory(itemName, corpseName, action, date, timestamp, li
     -- Skip if a duplicate "Ignore" or "Left" action exists within the last minute
     if action:find("Ignore") or action:find("Left") then
         isIgnore = true
-        local checkStmt = db:prepare([[
-SELECT Date, TimeStamp FROM LootHistory
-WHERE Item = ? AND CorpseName = ? AND Action = ? AND Date = ?
-ORDER BY Date DESC, TimeStamp DESC LIMIT 1
-]])
-        if checkStmt then
-            checkStmt:bind_values(itemName, corpseName, action, date)
-            local res = checkStmt:step()
-            if res == SQLite3.ROW then
-                local lastTimestamp = checkStmt:get_value(1)
-                local recoredTime = convertTimestamp(lastTimestamp)
-                if (currentTime - recoredTime) <= 60 then
-                    toSoon = true
-                end
-            end
-            checkStmt:finalize()
-            if toSoon then
-                db:exec("PRAGMA wal_checkpoint;")
-                db:close()
+        preparedStatements.CHECK_HISTORY:bind_values(itemName, corpseName, action, date)
+        local res = preparedStatements.CHECK_HISTORY:step()
+        if res == SQLite3.ROW then
+            local lastTimestamp = preparedStatements.CHECK_HISTORY:get_value(1)
+            local recoredTime = convertTimestamp(lastTimestamp)
+            if (currentTime - recoredTime) <= 60 then
+                toSoon = true
             end
         end
+        preparedStatements.CHECK_HISTORY:reset()
     end
 
     if not toSoon then
-        db:exec("BEGIN TRANSACTION")
-        local stmt = db:prepare([[
-INSERT INTO LootHistory (Item, CorpseName, Action, Date, TimeStamp, Link, Looter, Zone)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-]])
-        if stmt then
-            stmt:bind_values(itemName, corpseName, action, date, timestamp, link, looter, zone)
-            local res, err = stmt:step()
-            if res ~= SQLite3.DONE then
-                printf("Error inserting data: %s ", err)
-            end
-            stmt:finalize()
-        else
-            print("Error preparing statement")
+        preparedStatements.INSERT_HISTORY:bind_values(itemName, corpseName, action, date, timestamp, link, looter, zone)
+        local res, err = preparedStatements.INSERT_HISTORY:step()
+        if res ~= SQLite3.DONE then
+            printf("Error inserting data: %s ", err)
         end
-
-        db:exec("COMMIT")
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
+        preparedStatements.INSERT_HISTORY:reset()
     end
-
-    -- if isIgnore and not LNS.Settings.ReportSkippedItems then
-    --     return
-    -- end
 
     local actLabel = action:find('Destroy') and 'Destroyed' or action
     if not action:find('Destroy') and not action:find('Ignore') and not action:find('Left') then
@@ -1916,27 +1964,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 end
 
 function LNS.LoadIcons()
-    local db = LNS.OpenItemsSQL()
-    local stmt = db:prepare("SELECT item_id, icon FROM Items")
+    local stmt = items_db:prepare("SELECT item_id, icon FROM Items")
 
     for row in stmt:nrows() do
         LNS.ItemIcons[row.item_id] = row.icon
     end
 
     stmt:finalize()
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
 end
 
 function LNS.LoadRuleDB()
-    local db = SQLite3.open(RulesDB)
     local charTableName = string.format("%s_Rules", MyName)
 
-    db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
-
     -- Creating tables
-    db:exec(string.format([[
+    rules_db:exec(string.format([[
+BEGIN TRANSACTION;
 CREATE TABLE IF NOT EXISTS Global_Rules (
 item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
 item_name TEXT NOT NULL,
@@ -1961,10 +2003,11 @@ item_link TEXT
 CREATE TABLE IF NOT EXISTS SafeZones (
 zone TEXT PRIMARY KEY NOT NULL UNIQUE
 );
+COMMIT;
+PRAGMA wal_checkpoint;
 ]], charTableName))
 
     local function processRules(stmt, ruleTable, classTable, linkTable, missingItemTable, missingNames)
-        if not db then db = SQLite3.open(RulesDB) end
         for row in stmt:nrows() do
             local id = row.item_id
             local classes = row.item_rule_classes
@@ -1984,7 +2027,7 @@ zone TEXT PRIMARY KEY NOT NULL UNIQUE
     end
 
     for _, tbl in ipairs({ "Global_Rules", "Normal_Rules", charTableName, }) do
-        local stmt = db:prepare("SELECT * FROM " .. tbl)
+        local stmt = rules_db:prepare("SELECT * FROM " .. tbl)
         local lbl = tbl:gsub("_Rules", "")
         if tbl == charTableName then lbl = 'Personal' end
         if stmt then
@@ -1995,7 +2038,7 @@ zone TEXT PRIMARY KEY NOT NULL UNIQUE
     end
 
     LNS.SafeZones = {}
-    local sz_stmt = db:prepare("SELECT * FROM SafeZones")
+    local sz_stmt = rules_db:prepare("SELECT * FROM SafeZones")
     for row in sz_stmt:nrows() do
         local zone = row.zone
         if zone then
@@ -2003,10 +2046,6 @@ zone TEXT PRIMARY KEY NOT NULL UNIQUE
         end
     end
     sz_stmt:finalize()
-
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
 
     -- Load icons
     LNS.LoadIcons()
@@ -2044,10 +2083,7 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
     if not itemID and not itemName then return 0 end
     itemID = itemID or 0
     itemName = itemName or 'NULL'
-    db = db or LNS.OpenItemsSQL()
-    if db == nil then return 0 end
     LNS.TempSettings.SearchResults = nil
-    -- --===============================
 
     local conditions = {}
     local orderBy = "ORDER BY name ASC"
@@ -2128,16 +2164,12 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
         end
     end
 
-    stmt = db:prepare(query)
+    stmt = items_db:prepare(query)
     if not stmt then
-        Logger.Error(LNS.guiLoot.console, "Failed to prepare SQL statement: %s", db:errmsg())
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
+        Logger.Error(LNS.guiLoot.console, "Failed to prepare SQL statement: %s", items_db:errmsg())
         return 0
     end
     Logger.Debug(LNS.guiLoot.console, "SQL Query: \ay%s\ax ", query)
-
-    --===========================
 
     local rowsFetched = 0
     for row in stmt:nrows() do
@@ -2218,8 +2250,6 @@ function LNS.GetItemFromDB(itemName, itemID, rules, db, exact)
     end
     Logger.Info(LNS.guiLoot.console, "loot.GetItemFromDB() \agFound \ay%d\ax items matching the query: \ay%s\ax", rowsFetched, query)
     stmt:finalize()
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
     return rowsFetched
 end
 
@@ -2297,169 +2327,74 @@ function LNS.addToItemDB(item)
     LNS.ItemNames[itemID]                   = itemName
     LNS.ItemIcons[itemID]                   = itemIcon
 
-    LNS.ALLITEMS[itemID]                    = {}
-    LNS.ALLITEMS[itemID].Name               = item.Name()
-    LNS.ALLITEMS[itemID].NoDrop             = item.NoDrop()
-    LNS.ALLITEMS[itemID].NoTrade            = item.NoTrade()
-    LNS.ALLITEMS[itemID].Tradeskills        = item.Tradeskills()
-    LNS.ALLITEMS[itemID].Quest              = item.Quest()
-    LNS.ALLITEMS[itemID].Lore               = item.Lore()
-    LNS.ALLITEMS[itemID].Augment            = item.AugType() > 0
-    LNS.ALLITEMS[itemID].Stackable          = item.Stackable()
-    LNS.ALLITEMS[itemID].Value              = LNS.valueToCoins(value) or 0
-    LNS.ALLITEMS[itemID].Tribute            = item.Tribute() or 0
-    LNS.ALLITEMS[itemID].StackSize          = item.StackSize() or 0
-    LNS.ALLITEMS[itemID].Clicky             = item.Clicky() or nil
-    LNS.ALLITEMS[itemID].AugType            = item.AugType() or 0
-    LNS.ALLITEMS[itemID].strength           = item.STR() or 0
-    LNS.ALLITEMS[itemID].DEX                = item.DEX() or 0
-    LNS.ALLITEMS[itemID].AGI                = item.AGI() or 0
-    LNS.ALLITEMS[itemID].STA                = item.STA() or 0
-    LNS.ALLITEMS[itemID].INT                = item.INT() or 0
-    LNS.ALLITEMS[itemID].WIS                = item.WIS() or 0
-    LNS.ALLITEMS[itemID].CHA                = item.CHA() or 0
-    LNS.ALLITEMS[itemID].Mana               = item.Mana() or 0
-    LNS.ALLITEMS[itemID].HP                 = item.HP() or 0
-    LNS.ALLITEMS[itemID].AC                 = item.AC() or 0
-    LNS.ALLITEMS[itemID].HPRegen            = item.HPRegen() or 0
-    LNS.ALLITEMS[itemID].ManaRegen          = item.ManaRegen() or 0
-    LNS.ALLITEMS[itemID].Haste              = item.Haste() or 0
-    LNS.ALLITEMS[itemID].Link               = item.ItemLink('CLICKABLE')() or 'NULL'
-    LNS.ALLITEMS[itemID].Weight             = (item.Weight() or 0) * 10
-    LNS.ALLITEMS[itemID].Classes            = item.Classes() or 0
-    LNS.ALLITEMS[itemID].ClassList          = LNS.retrieveClassList(item)
-    LNS.ALLITEMS[itemID].svFire             = item.svFire() or 0
-    LNS.ALLITEMS[itemID].svCold             = item.svCold() or 0
-    LNS.ALLITEMS[itemID].svDisease          = item.svDisease() or 0
-    LNS.ALLITEMS[itemID].svPoison           = item.svPoison() or 0
-    LNS.ALLITEMS[itemID].svCorruption       = item.svCorruption() or 0
-    LNS.ALLITEMS[itemID].svMagic            = item.svMagic() or 0
-    LNS.ALLITEMS[itemID].SpellDamage        = item.SpellDamage() or 0
-    LNS.ALLITEMS[itemID].SpellShield        = item.SpellShield() or 0
-    LNS.ALLITEMS[itemID].Races              = item.Races() or 0
-    LNS.ALLITEMS[itemID].RaceList           = LNS.retrieveRaceList(item)
-    LNS.ALLITEMS[itemID].Collectible        = item.Collectible()
-    LNS.ALLITEMS[itemID].Attack             = item.Attack() or 0
-    LNS.ALLITEMS[itemID].Damage             = item.Damage() or 0
-    LNS.ALLITEMS[itemID].WeightReduction    = item.WeightReduction() or 0
-    LNS.ALLITEMS[itemID].Size               = item.Size() or 0
-    LNS.ALLITEMS[itemID].Icon               = itemIcon
-    LNS.ALLITEMS[itemID].StrikeThrough      = item.StrikeThrough() or 0
-    LNS.ALLITEMS[itemID].HeroicAGI          = item.HeroicAGI() or 0
-    LNS.ALLITEMS[itemID].HeroicCHA          = item.HeroicCHA() or 0
-    LNS.ALLITEMS[itemID].HeroicDEX          = item.HeroicDEX() or 0
-    LNS.ALLITEMS[itemID].HeroicINT          = item.HeroicINT() or 0
-    LNS.ALLITEMS[itemID].HeroicSTA          = item.HeroicSTA() or 0
-    LNS.ALLITEMS[itemID].HeroicSTR          = item.HeroicSTR() or 0
-    LNS.ALLITEMS[itemID].HeroicSvCold       = item.HeroicSvCold() or 0
-    LNS.ALLITEMS[itemID].HeroicSvCorruption = item.HeroicSvCorruption() or 0
-    LNS.ALLITEMS[itemID].HeroicSvDisease    = item.HeroicSvDisease() or 0
-    LNS.ALLITEMS[itemID].HeroicSvFire       = item.HeroicSvFire() or 0
-    LNS.ALLITEMS[itemID].HeroicSvMagic      = item.HeroicSvMagic() or 0
-    LNS.ALLITEMS[itemID].HeroicSvPoison     = item.HeroicSvPoison() or 0
-    LNS.ALLITEMS[itemID].HeroicWIS          = item.HeroicWIS() or 0
+    LNS.ALLITEMS[itemID]                    = {
+        Name               = item.Name(),
+        NoDrop             = item.NoDrop(),
+        NoTrade            = item.NoTrade(),
+        Tradeskills        = item.Tradeskills(),
+        Quest              = item.Quest(),
+        Lore               = item.Lore(),
+        Augment            = item.AugType() > 0,
+        Stackable          = item.Stackable(),
+        Value              = LNS.valueToCoins(value) or 0,
+        Tribute            = item.Tribute() or 0,
+        StackSize          = item.StackSize() or 0,
+        Clicky             = item.Clicky() or nil,
+        AugType            = item.AugType() or 0,
+        STR                = item.STR() or 0,
+        DEX                = item.DEX() or 0,
+        AGI                = item.AGI() or 0,
+        STA                = item.STA() or 0,
+        INT                = item.INT() or 0,
+        WIS                = item.WIS() or 0,
+        CHA                = item.CHA() or 0,
+        Mana               = item.Mana() or 0,
+        HP                 = item.HP() or 0,
+        AC                 = item.AC() or 0,
+        HPRegen            = item.HPRegen() or 0,
+        ManaRegen          = item.ManaRegen() or 0,
+        Haste              = item.Haste() or 0,
+        Link               = item.ItemLink('CLICKABLE')() or 'NULL',
+        Weight             = (item.Weight() or 0) * 10,
+        Classes            = item.Classes() or 0,
+        ClassList          = LNS.retrieveClassList(item),
+        svFire             = item.svFire() or 0,
+        svCold             = item.svCold() or 0,
+        svDisease          = item.svDisease() or 0,
+        svPoison           = item.svPoison() or 0,
+        svCorruption       = item.svCorruption() or 0,
+        svMagic            = item.svMagic() or 0,
+        SpellDamage        = item.SpellDamage() or 0,
+        SpellShield        = item.SpellShield() or 0,
+        Races              = item.Races() or 0,
+        RaceList           = LNS.retrieveRaceList(item),
+        Collectible        = item.Collectible(),
+        Attack             = item.Attack() or 0,
+        Damage             = item.Damage() or 0,
+        WeightReduction    = item.WeightReduction() or 0,
+        Size               = item.Size() or 0,
+        Icon               = itemIcon,
+        StrikeThrough      = item.StrikeThrough() or 0,
+        HeroicAGI          = item.HeroicAGI() or 0,
+        HeroicCHA          = item.HeroicCHA() or 0,
+        HeroicDEX          = item.HeroicDEX() or 0,
+        HeroicINT          = item.HeroicINT() or 0,
+        HeroicSTA          = item.HeroicSTA() or 0,
+        HeroicSTR          = item.HeroicSTR() or 0,
+        HeroicSvCold       = item.HeroicSvCold() or 0,
+        HeroicSvCorruption = item.HeroicSvCorruption() or 0,
+        HeroicSvDisease    = item.HeroicSvDisease() or 0,
+        HeroicSvFire       = item.HeroicSvFire() or 0,
+        HeroicSvMagic      = item.HeroicSvMagic() or 0,
+        HeroicSvPoison     = item.HeroicSvPoison() or 0,
+        HeroicWIS          = item.HeroicWIS() or 0,
+    }
     LNS.ItemLinks[itemID]                   = item.ItemLink('CLICKABLE')() or 'NULL'
 
     -- insert the item into the database
-
-    local db                                = SQLite3.open(lootDB)
-
-    if not db then
-        Logger.Error(LNS.guiLoot.console, "\arFailed to open\ax loot database.")
-        return
-    end
-    db:exec("PRAGMA journal_mode=WAL;")
-    local sql  = [[
-INSERT INTO Items (
-item_id, name, nodrop, notrade, tradeskill, quest, lore, augment,
-stackable, sell_value, tribute_value, stack_size, clickable, augtype,
-strength, dexterity, agility, stamina, intelligence, wisdom,
-charisma, mana, hp, ac, regen_hp, regen_mana, haste, link, weight, classes, class_list,
-svfire, svcold, svdisease, svpoison, svcorruption, svmagic, spelldamage, spellshield, races, race_list, collectible,
-attack, damage, weightreduction, item_size, icon, strikethrough, heroicagi, heroiccha, heroicdex, heroicint,
-heroicsta, heroicstr, heroicsvcold, heroicsvcorruption, heroicsvdisease, heroicsvfire, heroicsvmagic, heroicsvpoison,
-heroicwis
-)
-VALUES (
-?,?,?,?,?,?,?,?,?,?,
-?,?,?,?,?,?,?,?,?,?,
-?,?,?,?,?,?,?,?,?,?,
-?,?,?,?,?,?,?,?,?,?,
-?,?,?,?,?,?,?,?,?,?,
-?,?,?,?,?,?,?,?,?,?,
-?
-)
-ON CONFLICT(item_id) DO UPDATE SET
-name                                    = excluded.name,
-nodrop                                    = excluded.nodrop,
-notrade                                    = excluded.notrade,
-tradeskill                                    = excluded.tradeskill,
-quest                                    = excluded.quest,
-lore                                    = excluded.lore,
-augment                                    = excluded.augment,
-stackable                                    = excluded.stackable,
-sell_value                                    = excluded.sell_value,
-tribute_value                                    = excluded.tribute_value,
-stack_size                                    = excluded.stack_size,
-clickable                                    = excluded.clickable,
-augtype                                    = excluded.augtype,
-strength                                    = excluded.strength,
-dexterity                                    = excluded.dexterity,
-agility                                    = excluded.agility,
-stamina                                    = excluded.stamina,
-intelligence                                    = excluded.intelligence,
-wisdom                                    = excluded.wisdom,
-charisma                                    = excluded.charisma,
-mana                                    = excluded.mana,
-hp                                    = excluded.hp,
-ac                                    = excluded.ac,
-regen_hp                                    = excluded.regen_hp,
-regen_mana                                    = excluded.regen_mana,
-haste                                    = excluded.haste,
-link                                    = excluded.link,
-weight                                    = excluded.weight,
-item_size                                    = excluded.item_size,
-classes                                    = excluded.classes,
-class_list                                    = excluded.class_list,
-svfire                                    = excluded.svfire,
-svcold                                    = excluded.svcold,
-svdisease                                    = excluded.svdisease,
-svpoison                                    = excluded.svpoison,
-svcorruption                                    = excluded.svcorruption,
-svmagic                                    = excluded.svmagic,
-spelldamage                                    = excluded.spelldamage,
-spellshield                                    = excluded.spellshield,
-races                                    = excluded.races,
-race_list                               = excluded.race_list,
-collectible                                    = excluded.collectible,
-attack                                    = excluded.attack,
-damage                                    = excluded.damage,
-weightreduction                                    = excluded.weightreduction,
-strikethrough                                    = excluded.strikethrough,
-heroicagi                                    = excluded.heroicagi,
-heroiccha                                    = excluded.heroiccha,
-heroicdex                                    = excluded.heroicdex,
-heroicint                                    = excluded.heroicint,
-heroicsta                                    = excluded.heroicsta,
-heroicstr                                    = excluded.heroicstr,
-heroicsvcold                                    = excluded.heroicsvcold,
-heroicsvcorruption                                    = excluded.heroicsvcorruption,
-heroicsvdisease                                    = excluded.heroicsvdisease,
-heroicsvfire                                    = excluded.heroicsvfire,
-heroicsvmagic                                    = excluded.heroicsvmagic,
-heroicsvpoison                                    = excluded.heroicsvpoison,
-heroicwis                                    = excluded.heroicwis
-]]
-    local stmt = db:prepare(sql)
-    if not stmt then
-        Logger.Error(LNS.guiLoot.console, "\arFailed to prepare \ax[\ayINSERT\ax] \aoSQL\ax statement: \at%s", db:errmsg())
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
-        return
-    end
-
+    items_db:exec("BEGIN TRANSACTION")
     local success, errmsg = pcall(function()
-        stmt:bind_values(
+        preparedStatements.ADD_ITEM_TO_DB:bind_values(
             itemID,
             itemName,
             LNS.ALLITEMS[itemID].NoDrop and 1 or 0,
@@ -2521,17 +2456,15 @@ heroicwis                                    = excluded.heroicwis
             LNS.ALLITEMS[itemID].HeroicSvMagic,
             LNS.ALLITEMS[itemID].HeroicSvPoison,
             LNS.ALLITEMS[itemID].HeroicWIS)
-        stmt:step()
+        preparedStatements.ADD_ITEM_TO_DB:step()
     end)
 
     if not success then
         Logger.Error(LNS.guiLoot.console, "Error executing SQL statement: %s", errmsg)
     end
-    db:exec("BEGIN TRANSACTION")
-    stmt:finalize()
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
+
+    preparedStatements.ADD_ITEM_TO_DB:reset()
+    items_db:exec("COMMIT")
 end
 
 --- Resolve a set of item names to IDs, ignoring not unique matches.
@@ -2541,8 +2474,7 @@ function LNS.ResolveItemIDs(namesTable)
     local resolved = {}
     local seenCount = {}
 
-    local db = LNS.OpenItemsSQL()
-    local stmt = db:prepare("SELECT item_id, name FROM Items")
+    local stmt = items_db:prepare("SELECT item_id, name FROM Items")
     for row in stmt:nrows() do
         if namesTable[row.name] then
             seenCount[row.name] = (seenCount[row.name] or 0) + 1
@@ -2554,8 +2486,6 @@ function LNS.ResolveItemIDs(namesTable)
         end
     end
     stmt:finalize()
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
 
     return resolved
 end
@@ -2568,10 +2498,9 @@ end
 --- @return number counter The number of items found
 --- @return table retTable A table of item data indexed by item_id
 function LNS.findItemInDb(itemName, itemId, exact, maxResults)
-    local db = LNS.OpenItemsSQL()
     local counter = 0
     local retTable = {}
-    if not db then return counter, retTable end
+    if not items_db then return counter, retTable end
 
     -- Shift args if passed as (name, exact)
     if itemId ~= nil and type(itemId) == 'boolean' then
@@ -2593,19 +2522,15 @@ function LNS.findItemInDb(itemName, itemId, exact, maxResults)
         query = "SELECT * FROM Items WHERE name LIKE ?"
         param = "%" .. cleanName .. "%"
     else
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
         return 0, {}
     end
 
-    db:exec("BEGIN TRANSACTION")
-    local stmt = db:prepare(query)
+    local stmt = items_db:prepare(query)
     if not stmt then
-        Logger.Error(LNS.guiLoot.console, "Failed to prepare SQL statement: %s", db:errmsg())
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
+        Logger.Error(LNS.guiLoot.console, "Failed to prepare SQL statement: %s", items_db:errmsg())
         return 0, {}
     end
+
     if param then stmt:bind_values(param) end
 
     for row in stmt:nrows() do
@@ -2623,9 +2548,6 @@ function LNS.findItemInDb(itemName, itemId, exact, maxResults)
     end
 
     stmt:finalize()
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
 
     if counter >= maxResults then
         Logger.Info(LNS.guiLoot.console, "\aoMore than\ax \ay%d\ax items found, showing only first\ax \at%d\ax.", counter, maxResults)
@@ -2646,10 +2568,6 @@ function LNS.bulkSet(item_table, setting, classes, which_table, delete_items)
     local localName = which_table == 'Normal_Rules' and 'NormalItems' or 'GlobalItems'
     localName = which_table == LNS.PersonalTableName and 'PersonalItems' or localName
 
-    local db = SQLite3.open(RulesDB)
-    if not db then return end
-    db:exec("PRAGMA journal_mode=WAL;")
-
     local qry = string.format([[
 INSERT INTO %s (item_id, item_name, item_rule, item_rule_classes, item_link)
 VALUES (?, ?, ?, ?, ?)
@@ -2664,14 +2582,12 @@ item_link = excluded.item_link;
 DELETE FROM %s WHERE item_id = ?;
 ]], which_table)
     end
-    local stmt = db:prepare(qry)
+    local stmt = rules_db:prepare(qry)
     if not stmt then
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
         return
     end
 
-    db:exec("BEGIN TRANSACTION;")
+    rules_db:exec("BEGIN TRANSACTION;")
 
     for itemID, data in pairs(item_table) do
         local itemName = LNS.ItemNames[itemID] or nil
@@ -2695,10 +2611,9 @@ DELETE FROM %s WHERE item_id = ?;
         end
     end
 
-    db:exec("COMMIT;")
     stmt:finalize()
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
+    rules_db:exec("COMMIT;")
+    rules_db:exec("PRAGMA wal_checkpoint;")
     if localName ~= 'PersonalItems' then
         LNS.TempSettings.NeedSave = true
         LNS.send({
@@ -2720,9 +2635,6 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
 
     local alreadyMatched = false
 
-    local db = SQLite3.open(RulesDB)
-    if not db then return end
-    db:exec("PRAGMA journal_mode=WAL;")
     -- grab the link from the db and if it doesn't match then update it
     if not link or link == 'NULL' or link == '' then
         Logger.Warn(LNS.guiLoot.console, "\arLink is \ax[\ayNULL\ax] for itemID: %d", itemID)
@@ -2731,11 +2643,9 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
     local qry = string.format("SELECT item_link FROM %s WHERE item_id = ?", which_table)
 
     -- local qry = string.format([[UPDATE %s SET item_link = ? WHERE item_id = ?;]], which_table)
-    local stmt = db:prepare(qry)
+    local stmt = rules_db:prepare(qry)
     if not stmt then
-        Logger.Error(LNS.guiLoot.console, "\arFailed to prepare SQL statement: %s", db:errmsg())
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
+        Logger.Error(LNS.guiLoot.console, "\arFailed to prepare SQL statement: %s", rules_db:errmsg())
         return
     end
     stmt:bind_values(itemID)
@@ -2749,17 +2659,13 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
 
     if not alreadyMatched then
         qry = string.format([[UPDATE %s SET item_link = ? WHERE item_id = ?;]], which_table)
-        db:exec("BEGIN TRANSACTION;")
-        stmt = db:prepare(qry)
+        stmt = rules_db:prepare(qry)
         if not stmt then
-            db:exec("PRAGMA wal_checkpoint;")
-            db:close()
             return
         end
         stmt:bind_values(link, itemID)
         stmt:step()
         stmt:reset()
-        db:exec("COMMIT;")
         stmt:finalize()
 
         LNS.ItemLinks[itemID] = link
@@ -2770,8 +2676,6 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
         LNS.ALLITEMS[itemID].Link = link
         Logger.Debug(LNS.guiLoot.console, "\aoLink for\ax\at %d\ax \agALREADY MATCHES %s", itemID, link)
     end
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
 end
 
 ------------------------------------
@@ -2827,48 +2731,33 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
             end
             return LNS.NormalItemsRules[itemID], LNS.NormalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Normal'
         end
-    elseif tablename == 'Global_Rules' then
-        if LNS.GlobalItemsRules[itemID] then
-            if link ~= 'NULL' or (item_link and link ~= item_link) then
-                LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], 'Global_Rules')
-            end
-            return LNS.GlobalItemsRules[itemID], LNS.GlobalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Global'
-        end
-    elseif tablename == 'Normal_Rules' then
-        if LNS.NormalItemsRules[itemID] then
-            if link ~= 'NULL' or (item_link and link ~= item_link) then
-                LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], 'Normal_Rules')
-            end
-            return LNS.NormalItemsRules[itemID], LNS.NormalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Normal'
-        end
-    elseif tablename == LNS.PersonalTableName then
-        if LNS.PersonalItemsRules[itemID] then
-            if link ~= 'NULL' or (item_link and link ~= item_link) then
-                LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], LNS.PersonalTableName)
-            end
-            return LNS.PersonalItemsRules[itemID], LNS.PersonalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Personal'
-        end
+    -- Never called with a tablename
+    -- elseif tablename == 'Global_Rules' then
+    --     if LNS.GlobalItemsRules[itemID] then
+    --         if link ~= 'NULL' or (item_link and link ~= item_link) then
+    --             LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], 'Global_Rules')
+    --         end
+    --         return LNS.GlobalItemsRules[itemID], LNS.GlobalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Global'
+    --     end
+    -- elseif tablename == 'Normal_Rules' then
+    --     if LNS.NormalItemsRules[itemID] then
+    --         if link ~= 'NULL' or (item_link and link ~= item_link) then
+    --             LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], 'Normal_Rules')
+    --         end
+    --         return LNS.NormalItemsRules[itemID], LNS.NormalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Normal'
+    --     end
+    -- elseif tablename == LNS.PersonalTableName then
+    --     if LNS.PersonalItemsRules[itemID] then
+    --         if link ~= 'NULL' or (item_link and link ~= item_link) then
+    --             LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], LNS.PersonalTableName)
+    --         end
+    --         return LNS.PersonalItemsRules[itemID], LNS.PersonalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Personal'
+    --     end
     end
 
     -- check SQLite DB if lua tables don't have the data
-    local function checkDB(id, tbl)
-        local db = SQLite3.open(RulesDB)
+    local function checkDB(id, stmt)
         local found = false
-        if not db then
-            Logger.Warn(LNS.guiLoot.console, "\atSQL \arFailed\ax to open \atRulesDB:\ax for \aolookupLootRule\ax.")
-            return found, 'NULL', 'All', 'NULL'
-        end
-        db:exec("PRAGMA journal_mode=WAL;")
-        local sql  = string.format("SELECT item_rule, item_rule_classes, item_link FROM %s WHERE item_id = ?", tbl)
-        local stmt = db:prepare(sql)
-
-        if not stmt then
-            Logger.Warn(LNS.guiLoot.console, "\atSQL \arFAILED \axto prepare statement for \atlookupLootRule\ax.")
-            db:exec("PRAGMA wal_checkpoint;")
-            db:close()
-            return found, 'NULL', 'All', 'NULL'
-        end
-
         stmt:bind_values(id)
         local stepResult = stmt:step()
 
@@ -2890,9 +2779,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
             classes = 'All'
         end
         -- Finalize the statement and close the database
-        stmt:finalize()
-        db:exec("PRAGMA wal_checkpoint;")
-        db:close()
+        stmt:reset()
         return found, rule, classes, returnLink
     end
 
@@ -2903,14 +2790,14 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
     if tablename == nil then
         -- check global rules
         local found = false
-        found, rule, classes, lookupLink = checkDB(itemID, LNS.PersonalTableName)
+        found, rule, classes, lookupLink = checkDB(itemID, preparedStatements.CHECK_DB_PERSONAL)
         which_table = 'Personal'
         if not found then
-            found, rule, classes, lookupLink = checkDB(itemID, 'Global_Rules')
+            found, rule, classes, lookupLink = checkDB(itemID, preparedStatements.CHECK_DB_GLOBAL)
             which_table = 'Global'
         end
         if not found then
-            found, rule, classes, lookupLink = checkDB(itemID, 'Normal_Rules')
+            found, rule, classes, lookupLink = checkDB(itemID, preparedStatements.CHECK_DB_NORMAL)
             which_table = 'Normal'
         end
 
@@ -2919,8 +2806,9 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
             classes = 'None'
             lookupLink = 'NULL'
         end
-    else
-        _, rule, classes, lookupLink = checkDB(itemID, tablename)
+    -- never called with a table name
+    -- else
+    --     _, rule, classes, lookupLink = checkDB(itemID, tablename)
     end
 
     -- if SQL has the item add the rules to the lua table for next time
@@ -3062,54 +2950,32 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link)
     end
     classes  = classes or 'All'
 
-    -- Open the database
-    local db = SQLite3.open(RulesDB)
-    if not db then
-        Logger.Warn(LNS.guiLoot.console, "Failed to open database.")
-        return
-    end
-
     local stmt
     local sql
-    db:exec("PRAGMA journal_mode=WAL;")
-    db:exec("BEGIN TRANSACTION")
     if action == 'delete' then
         -- DELETE operation
         Logger.Info(LNS.guiLoot.console, "\aoloot.modifyItemRule\ax \arDeleting rule\ax for item \at%s\ax in table \at%s", itemName, tableName)
         sql = string.format("DELETE FROM %s WHERE item_id = ?", tableName)
-        stmt = db:prepare(sql)
+        stmt = rules_db:prepare(sql)
         if not stmt then
             Logger.Warn(LNS.guiLoot.console, "Failed to prepare SQL statement for table: %s, item: %s (%s), rule: %s, classes: %s", tableName, itemName, itemID, action, classes)
-            db:exec("PRAGMA wal_checkpoint;")
-            db:close()
             return
         end
         stmt:bind_values(itemID)
     else
         -- UPSERT operation
-        -- if tableName == "Normal_Rules" then
-        sql  = string.format([[
-INSERT INTO %s
-(item_id, item_name, item_rule, item_rule_classes, item_link)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT(item_id) DO UPDATE SET
-item_name                                    = excluded.item_name,
-item_rule                                    = excluded.item_rule,
-item_rule_classes                                    = excluded.item_rule_classes,
-item_link                                    = excluded.item_link
-]], tableName)
-        stmt = db:prepare(sql)
-        if not stmt then
-            Logger.Warn(LNS.guiLoot.console, "Failed to prepare SQL statement for table: %s, item: %s (%s), rule: %s, classes: %s", tableName, itemName, itemID, action, classes)
-            db:exec("PRAGMA wal_checkpoint;")
-            db:close()
-            return
+        if tableName == 'Normal_Rules' then
+            stmt = preparedStatements.INSERT_RULE_NORMAL
+        elseif tableName == 'Global_Rules' then
+            stmt = preparedStatements.INSERT_RULE_GLOBAL
+        else
+            stmt = preparedStatements.INSERT_RULE_PERSONAL
         end
         stmt:bind_values(itemID, itemName, action, classes, link)
     end
 
-
     -- Execute the statement
+    rules_db:exec("BEGIN TRANSACTION")
     local success, errmsg = pcall(function() stmt:step() end)
     if not success then
         Logger.Warn(LNS.guiLoot.console, "Failed to execute SQL statement for table %s. Error: %s", tableName, errmsg)
@@ -3118,10 +2984,9 @@ item_link                                    = excluded.item_link
     end
 
     -- Finalize and close the database
-    stmt:finalize()
-    db:exec("COMMIT")
-    db:exec("PRAGMA wal_checkpoint;")
-    db:close()
+    if action == 'delete' then stmt:finalize() else stmt:reset() end
+    rules_db:exec("COMMIT")
+    rules_db:exec("PRAGMA wal_checkpoint;")
 
     if success then
         -- Notify other actors about the rule change
@@ -3477,10 +3342,20 @@ function LNS.checkLore(itemName, itemLink, decision, countHave, isLore)
     end
     if countHave > 0 then
         Logger.Warn(LNS.guiLoot.console, "Item is \ayLORE\ax and I \arHAVE\ax it. Ignoring.")
-        table.insert(loreItems, itemLink)
+        if shouldLootActions[decision] then
+            if not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
+        end
         return 'Ignore', false
     end
     local ret = decision
+    local lootable = true
+    local freeSpace = mq.TLO.Me.FreeInventory()
+    if freeSpace <= LNS.Settings.SaveBagSlots then
+        if not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
+        ret = 'Ignore'
+        lootable = false
+    end
+    -- if shouldLootActions[decision] and not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
     local dbgTbl = {
         Lookup = '\ax\ag Check for LORE',
         IsLore = isLore,
@@ -3566,7 +3441,7 @@ function LNS.getRule(item, fromFunction, index)
     -- Lookup existing rule in the databases
 
     local lootRule, lootClasses, lootLink, ruletype = LNS.lookupLootRule(item, itemID, nil, itemLink)
-    Logger.Info(LNS.guiLoot.console, "\ax\ao Lookup Rule \axItem: (\at%s\ax) ID: (\ag%s\ax) Rule: (\ay%s\ax) Classes: (\at%s\ax)",
+    Logger.Debug(LNS.guiLoot.console, "\ax\ao Lookup Rule \axItem: (\at%s\ax) ID: (\ag%s\ax) Rule: (\ay%s\ax) Classes: (\at%s\ax)",
         itemName, itemID, lootRule, lootClasses)
     -- check for always eval
     if LNS.Settings.AlwaysEval and ruletype == 'Normal' then
@@ -3575,6 +3450,7 @@ function LNS.getRule(item, fromFunction, index)
         end
     end
 
+    local existingIgnoreRule = lootRule == 'Ignore'
     newRule = lootRule == 'NULL' or false
 
     ---- NEW RULES ----
@@ -3690,7 +3566,7 @@ function LNS.getRule(item, fromFunction, index)
     if isLore then
         lootLore = countHave == 0
         if not lootLore and not LNS.Settings.MasterLooting then
-            table.insert(loreItems, itemLink)
+            if not existingIgnoreRule and not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
             Logger.Info(LNS.guiLoot.console, "\aoItem \ax(\at%s\ax) is \ayLORE\ax and I \aoHAVE\ax it. Ignoring.", itemName)
             return 'Ignore', 0, newRule, isEquippable
         end
@@ -3699,7 +3575,7 @@ function LNS.getRule(item, fromFunction, index)
     --handle NoDrop
     if isNoDrop and not LNS.Settings.LootNoDrop and not LNS.Settings.MasterLooting then
         Logger.Info(LNS.guiLoot.console, "\axItem is \aoNODROP\ax \at%s\ax and LootNoDrop is \arNOT \axenabled\ax", itemName)
-        table.insert(noDropItems, itemLink)
+        if not existingIgnoreRule and not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
         return 'Ignore', 0, newRule, isEquippable
     end
 
@@ -3719,7 +3595,7 @@ function LNS.getRule(item, fromFunction, index)
             return lootDecision, qKeep, newRule, isEquippable
         end
 
-        Logger.Info(LNS.guiLoot.console, "\ax\aoItem\ax (\ag%s\ax) Classes: (\at%s)\ax MyClass: (\ay%s\ax) Decision: (\at%s\ax)",
+        Logger.Debug(LNS.guiLoot.console, "\ax\aoItem\ax (\ag%s\ax) Classes: (\at%s)\ax MyClass: (\ay%s\ax) Decision: (\at%s\ax)",
             itemName, lootClasses, LNS.MyClass, lootDecision)
     end
 
@@ -4419,6 +4295,7 @@ end
 ---@param qKeep number @The count to keep for quest items.
 ---@param cantWear boolean|nil @ Whether the character canwear the item
 function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
+    local startTime = mq.gettime()
     Logger.Debug(LNS.guiLoot.console, 'Enter lootItem')
     if doWhat == nil or type(doWhat) ~= 'string' then return end
     local actionToTake = doWhat:gsub("%s$", "")
@@ -4548,26 +4425,31 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         if areFull == true then
             LNS.report('My bags are full, I can\'t loot anymore! \aoOnly Looting \ayCoin\ax and Items I have \atStack Space\ax for')
         end
+        perf:OnFrameExec('lootitem', mq.gettime() - startTime)
 
-        Logger.Debug(LNS.guiLoot.console, "\aoINSERT HISTORY CHECK 4\ax: \ayAction\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", eval, itemName, itemLink)
-        local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
-            os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear, rule)
+        if LNS.Settings.TrackHistory then
+            startTime = mq.gettime()
+            Logger.Debug(LNS.guiLoot.console, "\aoINSERT HISTORY CHECK 4\ax: \ayAction\ax: \at%s\ax, Item: \ao%s\ax, \atLink: %s", eval, itemName, itemLink)
+            local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
+                os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, cantWear, rule)
 
-        if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
-            table.insert(allItems, allItemsEntry)
-        end
+            if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
+                table.insert(allItems, allItemsEntry)
+            end
 
-        local consoleAction = rule or ''
-        if cantWear then
-            consoleAction = consoleAction .. ' \ax(\aoCant Wear\ax)'
+            local consoleAction = rule or ''
+            if cantWear then
+                consoleAction = consoleAction .. ' \ax(\aoCant Wear\ax)'
+            end
+            local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
+                itemLink, corpseName, mq.TLO.Corpse.ID() or 0)
+            if rule == 'Destroyed' then
+                text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, string.upper(rule), itemLink, corpseName,
+                    mq.TLO.Corpse.ID() or 0)
+            end
+            LNS.guiLoot.console:AppendText(text)
+            perf:OnFrameExec('history', mq.gettime() - startTime)
         end
-        local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
-            itemLink, corpseName, mq.TLO.Corpse.ID() or 0)
-        if rule == 'Destroyed' then
-            text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, string.upper(rule), itemLink, corpseName,
-                mq.TLO.Corpse.ID() or 0)
-        end
-        LNS.guiLoot.console:AppendText(text)
     end
 end
 
@@ -4581,7 +4463,7 @@ function LNS.lootCorpse(corpseID)
         return false
     end
     if allItems == nil then allItems = {} end
-    noDropItems, loreItems = {}, {}
+    skippedLoots = {}
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
 
@@ -4663,23 +4545,27 @@ function LNS.lootCorpse(corpseID)
                     }
                     Logger.Debug(LNS.guiLoot.console, dbgTbl)
 
-                    local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
-                        os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, not iCanUse, itemRule)
-                    if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
-                        table.insert(allItems, allItemsEntry)
-                    end
+                    if LNS.Settings.TrackHistory then
+                        local startTime = mq.gettime()
+                        local allItemsEntry = LNS.insertIntoHistory(itemName, corpseName, eval,
+                            os.date('%Y-%m-%d'), os.date('%H:%M:%S'), itemLink, MyName, LNS.Zone, allItems, not iCanUse, itemRule)
+                        if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
+                            table.insert(allItems, allItemsEntry)
+                        end
 
-                    local consoleAction = itemRule or ''
-                    if not iCanUse then
-                        consoleAction = consoleAction .. ' \ax(\aoCant Wear\ax)'
+                        local consoleAction = itemRule or ''
+                        if not iCanUse then
+                            consoleAction = consoleAction .. ' \ax(\aoCant Wear\ax)'
+                        end
+                        local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
+                            itemLink, corpseName, corpseID)
+                        if itemRule == 'Destroyed' then
+                            text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, string.upper(itemRule), itemLink,
+                                corpseName, corpseID)
+                        end
+                        LNS.guiLoot.console:AppendText(text)
+                        perf:OnFrameExec('history', mq.gettime() - startTime)
                     end
-                    local text = string.format('\ao[\at%s\ax] \at%s \ax%s %s Corpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, consoleAction,
-                        itemLink, corpseName, corpseID)
-                    if itemRule == 'Destroyed' then
-                        text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), MyName, string.upper(itemRule), itemLink,
-                            corpseName, corpseID)
-                    end
-                    LNS.guiLoot.console:AppendText(text)
                     -- local lbl = itemRule
                     -- if itemRule == 'Ignore' then
                     --     lbl = 'Left'
@@ -4718,7 +4604,7 @@ function LNS.lootCorpse(corpseID)
         --     allItems = nil
         -- end
 
-        Logger.Info(LNS.guiLoot.console, "lootCorpse(): Checked \at%s\ax Found (\ay%s\ax) Items:%s", corpseName, numItems, iList)
+        Logger.Debug(LNS.guiLoot.console, "lootCorpse(): Checked \at%s\ax Found (\ay%s\ax) Items:%s", corpseName, numItems, iList)
 
         for _, item in ipairs(corpseItems) do
             if not item then break end
@@ -4731,8 +4617,6 @@ function LNS.lootCorpse(corpseID)
 
             mq.delay(1)
             if mq.TLO.Cursor() then LNS.checkCursor() end
-
-            mq.delay(1)
             if not mq.TLO.Window('LootWnd').Open() then break end
         end
 
@@ -4741,7 +4625,7 @@ function LNS.lootCorpse(corpseID)
     end
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
-    LNS.reportSkippedItems(noDropItems, loreItems, corpseName, corpseID)
+    LNS.reportSkippedItems(skippedLoots, corpseName, corpseID)
 
     return true
 end
@@ -8330,6 +8214,11 @@ function LNS.RenderMainUI()
                     end
                 end
 
+                ImGui.SameLine()
+
+                if ImGui.SmallButton(string.format('%s Perf', Icons.FA_AREA_CHART)) then
+                    perf.EnablePerfMonitoring = not perf.EnablePerfMonitoring
+                end
 
                 ImGui.Spacing()
                 ImGui.Separator()
@@ -8367,6 +8256,8 @@ function LNS.RenderMainUI()
         end
 
         ImGui.End()
+
+        if perf:ShouldRender() then perf:Render() end
     end
 end
 
@@ -8883,10 +8774,7 @@ function LNS.MainLoop()
             if LNS.TempSettings.GetItem == nil then return end
             local itemName = LNS.TempSettings.GetItem.Name or 'None'
             local itemID = LNS.TempSettings.GetItem.ID or 0
-            local db = LNS.OpenItemsSQL()
             LNS.GetItemFromDB(itemName, itemID)
-            db:exec("PRAGMA wal_checkpoint;")
-            db:close()
             LNS.lookupLootRule(nil, itemID)
             LNS.TempSettings.GetItem = nil
         end
