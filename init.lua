@@ -39,6 +39,7 @@ local itemNoValue                       = nil
 local skippedLoots                      = {}
 local allItems                          = {}
 local foragingLoot                      = false
+local MySelf                            = mq.TLO.Me
 -- Constants
 local spawnSearch                       = '%s radius %d zradius 50'
 local shouldLootActions                 = { Ask = false, CanUse = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, Quest = false, }
@@ -162,7 +163,31 @@ local settingsNoDraw                    = {
 local ITEMS_PER_PAGE                    = 25
 local selectedIndex                     = 1
 
-
+local equipSlots                        = {
+    [0] = 'Charm',
+    [1] = 'Ears',
+    [2] = 'Head',
+    [3] = 'Face',
+    [4] = 'Ears',
+    [5] = 'Neck',
+    [6] = 'Shoulder',
+    [7] = 'Arms',
+    [8] = 'Back',
+    [9] = 'Wrists',
+    [10] = 'Wrists',
+    [11] = 'Ranged',
+    [12] = 'Hands',
+    [13] = 'Primary',
+    [14] = 'Secondary',
+    [15] = 'Fingers',
+    [16] = 'Fingers',
+    [17] = 'Chest',
+    [18] = 'Legs',
+    [19] = 'Feet',
+    [20] = 'Waist',
+    [21] = 'Powersource',
+    [22] = 'Ammo',
+}
 -- Public default settings, also read in from Loot.ini [Settings] section
 
 
@@ -357,6 +382,8 @@ LNS.TempSettings.LastModID          = 0
 LNS.TempSettings.LastZone           = nil
 LNS.TempSettings.LastInstance       = nil
 LNS.TempSettings.SafeZoneWarned     = false
+LNS.TempSettings.Popped             = {}
+LNS.TempSettings.NewItemData        = {}
 LNS.SafeZones                       = {}
 LNS.PauseLooting                    = false
 LNS.Zone                            = mq.TLO.Zone.ShortName()
@@ -1205,7 +1232,16 @@ function LNS.commandHandler(...)
             -- LNS.findItemInDb(args[2])
         end
     end
+    if args[1] == 'lowest' then
+        local normal_low = LNS.GetLowestID('Normal_Rules') or 0
+        local global_low = LNS.GetLowestID('Global_Rules') or 0
+        -- local personal_low = LNS.GetLowestID(string.format('%s_Rules', MyName)) or 0
+        Logger.Info(LNS.guiLoot.console, string.format("Lowest Normal Item ID: \ay%s\ax", normal_low or 'None'))
+        Logger.Info(LNS.guiLoot.console, string.format("Lowest Global Item ID: \ay%s\ax", global_low or 'None'))
+        -- Logger.Info(LNS.guiLoot.console, "Lowest Personal Item ID: \ay%s\ax", personal_low or 'None')
 
+        return
+    end
     if args[1] == 'personalitem' then
         if validActions[args[2]] then
             local rule = validActions[args[2]]
@@ -1227,7 +1263,11 @@ function LNS.commandHandler(...)
                     LNS.addRule(itemID, 'PersonalItems', rule, 'All', 'NULL')
                     Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", args[3], rule)
                 else
-                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[3])
+                    local newID = LNS.GetLowestID(string.format('%s_Rules', MyName)) or -1
+                    -- then add rule as a missing item for now.
+                    LNS.addRule(newID, 'PersonalItems', rule, 'All', 'NULL')
+
+                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB. adding rule as a missing item.", args[3])
                 end
             end
             if item() then
@@ -1260,7 +1300,11 @@ function LNS.commandHandler(...)
                     LNS.addRule(itemID, 'GlobalItems', rule, 'All', 'NULL')
                     Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", args[3], rule)
                 else
-                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[3])
+                    local newID = LNS.GetLowestID('Global_Rules') or -1
+                    -- then add rule as a missing item for now.
+                    LNS.addRule(newID, 'GlobalItems', rule, 'All', 'NULL')
+
+                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB. adding rule as a missing item.", args[3])
                 end
             end
             if item() then
@@ -1293,7 +1337,13 @@ function LNS.commandHandler(...)
                     LNS.addRule(itemID, 'NormalItems', rule, 'All', 'NULL')
                     Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", args[3], rule)
                 else
-                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB", args[3])
+                    -- get lowest item ID from the table multiply times -1 and subtract one to make a unique negative ID
+                    -- local newID = LNS.GetLowestID('Normal_Rules') or -1
+                    LNS.EnterNegIDRule(args[3], rule, 'All', 'NULL', 'Normal_Rules')
+                    -- then add rule as a missing item for now.
+                    -- LNS.addRule(newID, 'NormalItems', rule, 'All', 'NULL')
+
+                    Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB. adding rule as a missing item.", args[3])
                 end
             end
             if item() then
@@ -1440,20 +1490,19 @@ function LNS.commandHandler(...)
             LNS.TempSettings.NeedSave = true
             LNS.TempSettings.NewBuyItem = ""
             LNS.TempSettings.NewBuyQty = 1
-
             Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", item_name)
         end
     elseif args[1] == 'buy' then
-        LNS.BuyItemsTable[args[2]] = args[3]
-        LNS.setBuyItem(args[2], args[3])
+        LNS.BuyItemsTable[args[2]] = args[3] or 0
+        LNS.setBuyItem(args[2], tonumber(args[3]) or 0)
         LNS.TempSettings.NeedSave = true
-        LNS.TempSettings.NewBuyItem = ""
-        LNS.TempSettings.NewBuyQty = tonumber(args[3]) or 0
         Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \agBuy Item\ax", args[2])
     end
     if LNS.TempSettings.NeedSave then
         LNS.writeSettings("CommandHandler:args")
         LNS.TempSettings.NeedSave = false
+        LNS.SortTables()
+        LNS.SortSettings()
     end
 end
 
@@ -1591,6 +1640,103 @@ end
 ------------------------------------
 --          SQL Functions
 ------------------------------------
+
+function LNS.GetLowestID(tableName)
+    local db = SQLite3.open(RulesDB)
+    if not db then return -1 end
+
+    local query = string.format("SELECT MIN(item_id) as min_id FROM %s;", tableName)
+    local stmt = db:prepare(query)
+    if not stmt then
+        db:close()
+        return -1
+    end
+
+    local result = 0
+    for row in stmt:nrows() do
+        result = tonumber(row.min_id or -1)
+    end
+
+    stmt:finalize()
+    db:close()
+
+    -- If the lowest ID is positive, we want to start assigning from -1
+    if result > 0 then
+        return -1
+    end
+
+    -- Otherwise, go one lower than the current lowest
+    return result - 1
+end
+
+function LNS.EnterNegIDRule(itemName, rule, classes, link, tableName)
+    local db = SQLite3.open(RulesDB)
+    if not db then return nil end
+    Logger.Info(LNS.guiLoot.console, "Entering rule for missing item \ay%s\ax", itemName)
+    local newID = LNS.GetLowestID(tableName) or -1
+    Logger.Debug(LNS.guiLoot.console, "Assigned temporary ID \at%s\ax for missing item \ay%s\ax", newID, itemName)
+    local qry = string.format([[
+INSERT INTO %s (item_id, item_name, item_rule, item_rule_classes, item_link)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(item_id) DO UPDATE SET
+item_name = excluded.item_name,
+item_rule = excluded.item_rule,
+item_rule_classes = excluded.item_rule_classes,
+item_link = excluded.item_link
+]], tableName)
+    Logger.Info(LNS.guiLoot.console, "Query: %s", qry)
+    local stmt = db:prepare(qry)
+    if not stmt then
+        db:close()
+        return nil
+    end
+
+    stmt:bind_values(newID, itemName, rule, classes, link)
+    local result = stmt:step()
+    stmt:finalize()
+    db:close()
+
+    if result == SQLite3.DONE then
+        LNS.ItemNames[newID] = itemName
+
+        if tableName == 'Global_Rules' then
+            LNS.GlobalItemsRules[newID] = rule
+            LNS.GlobalItemsClasses[newID] = classes
+            LNS.GlobalItemsMissing[newID] = {
+                item_id      = newID,
+                item_name    = itemName,
+                item_rule    = rule,
+                item_classes = classes,
+            }
+            LNS.GlobalMissingNames[itemName] = newID
+        elseif tableName == 'Normal_Rules' then
+            LNS.NormalItemsRules[newID] = rule
+            LNS.NormalItemsClasses[newID] = classes
+            LNS.NormalItemsMissing[newID] = {
+                item_id      = newID,
+                item_name    = itemName,
+                item_rule    = rule,
+                item_classes = classes,
+            }
+            LNS.NormalMissingNames[itemName] = newID
+        end
+        LNS.enterNewItemRuleInfo({
+            ID       = newID,
+            ItemName = itemName,
+            Rule     = rule,
+            Classes  = classes,
+            Link     = link,
+            CorpseID = nil,
+        })
+        LNS.HasMissingItems = true
+        LNS.SortTables()
+        Logger.Info(LNS.guiLoot.console, "Added rule for missing item \ay%s\ax with temporary ID \at%s\ax", itemName, newID)
+        return newID
+    else
+        Logger.Error(LNS.guiLoot.console, "Failed to add rule for missing item \ay%s\ax", itemName)
+        return nil
+    end
+end
 
 function LNS.ImportOldRulesDB(path)
     if not Files.File.Exists(path) then
@@ -2825,6 +2971,976 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
     return rule, classes, lookupLink, which_table
 end
 
+--- Color table for GUI returns ImVec4
+---Valud colors are:
+---(red, pink, orange, yellow, yellow2, white, blue, softblue, light blue2, light blue,teal, green, green2, grey, purple, btn_red, btn_green)
+---@param color_name string  the name of the color you want to return
+---@return ImVec4  returns color as an ImVec4 vector
+function LNS.Colors(color_name)
+    color_name = color_name:lower()
+    local ColorList = {
+        red = ImVec4(0.9, 0.1, 0.1, 1),
+        red2 = ImVec4(0.928, 0.352, 0.035, 1.000),
+        pink2 = ImVec4(0.976, 0.518, 0.844, 1.000),
+        pink = ImVec4(0.9, 0.4, 0.4, 0.8),
+        orange = ImVec4(0.78, 0.20, 0.05, 0.8),
+        tangarine = ImVec4(1.000, 0.557, 0.000, 1.000),
+        yellow = ImVec4(1, 1, 0, 1),
+        yellow2 = ImVec4(0.7, 0.6, 0.1, 0.7),
+        white = ImVec4(1, 1, 1, 1),
+        blue = ImVec4(0, 0, 1, 1),
+        softblue = ImVec4(0.370, 0.704, 1.000, 1.000),
+        ['light blue2'] = ImVec4(0.2, 0.9, 0.9, 0.5),
+        ['light blue'] = ImVec4(0, 1, 1, 1),
+        teal = ImVec4(0, 1, 1, 1),
+        green = ImVec4(0, 1, 0, 1),
+        green2 = ImVec4(0.01, 0.56, 0.001, 1),
+        grey = ImVec4(0.6, 0.6, 0.6, 1),
+        purple = ImVec4(0.8, 0.0, 1.0, 1.0),
+        purple2 = ImVec4(0.460, 0.204, 1.000, 1.000),
+        btn_red = ImVec4(1.0, 0.4, 0.4, 0.4),
+        btn_green = ImVec4(0.4, 1.0, 0.4, 0.4),
+    }
+    if (ColorList[color_name]) then
+        return ColorList[color_name]
+    end
+    -- If the color is not found, return white as default
+    return ImVec4(1, 1, 1, 1)
+end
+
+function LNS.Get_worn_slots(item)
+    local SlotsString = ""
+    local tmp = {}
+    for i = 1, item.WornSlots() do
+        local slotID = item.WornSlot(i)() or '-1'
+        tmp[equipSlots[tonumber(slotID)]] = true
+    end
+    for slotID, _ in pairs(tmp) do
+        SlotsString = SlotsString .. slotID .. " "
+    end
+    return SlotsString
+end
+
+function LNS.Get_item_data(item)
+    if not item() then
+        return nil
+    end
+    local tmpItemData = {
+        Name = item.Name(),
+        Type = item.Type(),
+        ID = item.ID(),
+        ReqLvl = item.RequiredLevel() or 0,
+        RecLvl = item.RecommendedLevel() or 0,
+        AC = item.AC() or 0,
+        BaseDMG = item.Damage() or 0,
+        Delay = item.ItemDelay() or 0,
+        Value = item.Value() or 0,
+        Weight = item.Weight() or 0,
+        Stack = item.Stack() or 0,
+        MaxStack = item.StackSize() or 0,
+        Clicky = item.Clicky(),
+        Charges = (item.Charges() or 0) ~= -1 and (item.Charges() or 0) or 'Infinite',
+        ClassList = LNS.retrieveClassList(item),
+        RaceList = LNS.retrieveRaceList(item),
+        Icon = item.Icon() or 0,
+        WornSlots = LNS.Get_worn_slots(item),
+        TributeValue = item.Tribute() or 0,
+        EffectType = item.EffectType() or 'None',
+        --base stats
+        HP = item.HP() or 0,
+        Mana = item.Mana() or 0,
+        Endurance = item.Endurance() or 0,
+
+        -- stats
+        STR = item.STR() or 0,
+        AGI = item.AGI() or 0,
+        STA = item.STA() or 0,
+        INT = item.INT() or 0,
+        WIS = item.WIS() or 0,
+        DEX = item.DEX() or 0,
+        CHA = item.CHA() or 0,
+        -- resists
+        MR = item.svMagic() or 0,
+        FR = item.svFire() or 0,
+        DR = item.svDisease() or 0,
+        PR = item.svPoison() or 0,
+        CR = item.svCold() or 0,
+        svCor = item.svCorruption() or 0,
+
+        --heroic stats
+        hStr = item.HeroicSTR() or 0,
+        hAgi = item.HeroicAGI() or 0,
+        hSta = item.HeroicSTA() or 0,
+        hInt = item.HeroicINT() or 0,
+        hDex = item.HeroicDEX() or 0,
+        hCha = item.HeroicCHA() or 0,
+        hWis = item.HeroicWIS() or 0,
+
+        --heroic resists
+        hMr = item.HeroicSvMagic() or 0,
+        hFr = item.HeroicSvFire() or 0,
+        hDr = item.HeroicSvDisease() or 0,
+        hPr = item.HeroicSvPoison() or 0,
+        hCr = item.HeroicSvCold() or 0,
+        hCor = item.HeroicSvCorruption() or 0,
+
+        --augments
+        AugSlots = item.Augs() or 0,
+        AugSlot1 = item.AugSlot(1).Name() or 'none',
+        AugSlot2 = item.AugSlot(2).Name() or 'none',
+        AugSlot3 = item.AugSlot(3).Name() or 'none',
+        AugSlot4 = item.AugSlot(4).Name() or 'none',
+        AugSlot5 = item.AugSlot(5).Name() or 'none',
+        AugSlot6 = item.AugSlot(6).Name() or 'none',
+
+        AugType1 = item.AugSlot1() or 'none',
+        AugType2 = item.AugSlot2() or 'none',
+        AugType3 = item.AugSlot3() or 'none',
+        AugType4 = item.AugSlot4() or 'none',
+        AugType5 = item.AugSlot5() or 'none',
+        AugType6 = item.AugSlot6() or 'none',
+
+        -- bonus efx
+        Spelleffect = item.Spell.Name() or "",
+        Worn = item.Worn.Spell() and (item.Worn.Spell.Name() or '') or 'none',
+        Focus1 = item.Focus() and (item.Focus.Spell.Name() or '') or 'none',
+        Focus2 = item.Focus2() and (item.Focus2.Spell.Name() or '') or 'none',
+        -- ElementalDamage = item.ElementalDamage() or 0,
+        Haste = item.Haste() or 0,
+        DmgShield = item.DamShield() or 0,
+        DmgShieldMit = item.DamageShieldMitigation() or 0,
+        Avoidance = item.Avoidance() or 0,
+        DotShield = item.DoTShielding() or 0,
+        InstrumentMod = item.InstrumentMod() or 0,
+        HPRegen = item.HPRegen() or 0,
+        ManaRegen = item.ManaRegen() or 0,
+        EnduranceRegen = item.EnduranceRegen() or 0,
+        Accuracy = item.Accuracy() or 0,
+        BonusDmgType = item.DMGBonusType() or 'None',
+        SpellShield = item.SpellShield() or 0,
+        Clairvoyance = item.Clairvoyance() or 0,
+        HealAmount = item.HealAmount() or 0,
+        SpellDamage = item.SpellDamage() or 0,
+        StunResist = item.StunResist() or 0,
+        CanUse = item.CanUse() or false,
+
+        --restrictions
+        isNoDrop = item.NoDrop() or false,
+        isNoRent = item.NoRent() or false,
+        isNoTrade = item.NoTrade() or false,
+        isAttuneable = item.Attuneable() or false,
+        isLore = item.Lore() or false,
+        isEvolving = (item.Evolving.ExpPct() > 0 and item.Evolving.ExpOn()) or false,
+        isMagic = item.Magic() or false,
+
+        -- evolution
+        EvolvingLevel = item.Evolving.Level() or 0,
+        EvolvingExpPct = item.Evolving.ExpPct() or 0,
+        EvolvingMaxLevel = item.Evolving.MaxLevel() or 0,
+
+        --descriptions
+        SpellDesc = item.Spell.Description() or "",
+        WornDesc = item.Worn.Spell() and (item.Worn.Spell.Description() or '') or '',
+        Focus1Desc = item.Focus() and (item.Focus.Spell.Description() or '') or '',
+        Focus2Desc = item.Focus2() and (item.Focus2.Spell.Description() or '') or '',
+        ClickyDesc = item.Clicky() and (item.Clicky.Spell.Description() or '') or '',
+
+        -- links
+        SpellID = item.Spell.ID() or 0,
+        WornID = item.Worn.Spell() and (item.Worn.Spell.ID() or 0) or 0,
+        Focus1ID = item.Focus() and (item.Focus.Spell.ID() or 0) or 0,
+        Focus2ID = item.Focus2() and (item.Focus2.Spell.ID() or 0) or 0,
+        ClickyID = item.Clicky() and (item.Clicky.Spell.ID() or 0) or 0,
+
+        CombatEffects = item.CombatEffects() or 0,
+        -- slots
+        NumSlots = item.Container() or 0,
+        Size = item.Size() or 0,
+        SizeCapacity = item.SizeCapacity() or 0,
+
+    }
+
+    return tmpItemData
+end
+
+local function comma_value(amount)
+    local formatted = amount
+    local k = 0
+    while true do
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+        if (k == 0) then
+            break
+        end
+    end
+    return formatted
+end
+
+local function draw_value(value)
+    local val_plat = math.floor(value / 1000)
+    local val_gold = math.floor((value - (val_plat * 1000)) / 100)
+    local val_silver = math.floor((value - (val_plat * 1000) - (val_gold * 100)) / 10)
+    local val_copper = value - (val_plat * 1000) - (val_gold * 100) - (val_silver * 10)
+
+    iconAnimation:SetTextureCell(644 - EQ_ICON_OFFSET)
+    ImGui.DrawTextureAnimation(iconAnimation, 10, 10)
+    ImGui.SameLine()
+    ImGui.TextColored(ImVec4(0, 1, 1, 1), " %s ", comma_value(val_plat))
+    ImGui.SameLine()
+
+    iconAnimation:SetTextureCell(645 - EQ_ICON_OFFSET)
+    ImGui.DrawTextureAnimation(iconAnimation, 10, 10)
+    ImGui.SameLine()
+    ImGui.TextColored(ImVec4(0, 1, 1, 1), " %s ", comma_value(val_gold))
+    ImGui.SameLine()
+
+    iconAnimation:SetTextureCell(646 - EQ_ICON_OFFSET)
+    ImGui.DrawTextureAnimation(iconAnimation, 10, 10)
+    ImGui.SameLine()
+    ImGui.TextColored(ImVec4(0, 1, 1, 1), " %s ", comma_value(val_silver))
+    ImGui.SameLine()
+
+    iconAnimation:SetTextureCell(647 - EQ_ICON_OFFSET)
+    ImGui.DrawTextureAnimation(iconAnimation, 10, 10)
+    ImGui.SameLine()
+
+    ImGui.TextColored(ImVec4(0, 1, 1, 1), " %s ", comma_value(val_copper))
+end
+
+local Sizes = {
+    [0] = 'Tiny',
+    [1] = "Small",
+    [2] = "Medium",
+    [3] = "Large",
+    [4] = "Giant",
+}
+function LNS.Draw_item_tooltip(itemID)
+    if LNS.TempSettings.NewItemData[itemID] == nil then
+        return
+    end
+    if LNS.NewItems[itemID] == nil then
+        LNS.TempSettings.NewItemData[itemID] = nil
+        LNS.TempSettings.Popped[itemID] = nil
+        return
+    end
+    local itemData = LNS.TempSettings.NewItemData[itemID]
+
+    local hasStats = false
+    local hasResists = false
+    local hasBase = false
+    local numCombatEfx = itemData.CombatEffects
+    local hasCombatEffects = numCombatEfx and numCombatEfx > 0
+
+    for _, stat in pairs({ 'STR', 'AGI', 'STA', 'INT', 'WIS', 'DEX', 'CHA', 'hStr', 'hSta', 'hAgi', 'hInt', 'hWis', 'hDex', 'hCha', }) do
+        if itemData[stat] and (itemData[stat] > 0 or itemData[stat] < 0) then
+            hasStats = true
+            break
+        end
+    end
+    -- local listResists = { 'MR', 'FR', 'DR', 'PR', 'CR', }
+    for _, resist in pairs({ 'MR', 'FR', 'DR', 'PR', 'CR', 'svCor', 'hMr', 'hFr', 'hCr', 'hPr', 'hDr', 'hCor', }) do
+        if itemData[resist] and (itemData[resist] > 0 or itemData[resist] < 0) then
+            hasResists = true
+            break
+        end
+    end
+    -- local listBase = { 'HP', 'Mana', 'Endurance', }
+    for _, base in pairs({ 'HP', 'Mana', 'Endurance', 'AC', 'HPRegen', 'EnduranceRegen', 'ManaRegen', }) do
+        if itemData[base] and (itemData[base] > 0 or itemData[base] < 0) then
+            hasBase = true
+            break
+        end
+    end
+    local cursorY = ImGui.GetCursorPosY()
+
+    ImGui.Text("Item: ")
+    ImGui.SameLine()
+    --local changeColor, isTrash = LNS.ColorItemInfo(item)
+    if itemData.CanUse and (itemData.ReqLvl <= MySelf.Level()) then
+        ImGui.TextColored(LNS.Colors('green'), "%s", itemData.Name)
+    else
+        ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.Name)
+    end
+    if ImGui.IsItemHovered() then
+        ImGui.BeginTooltip()
+        ImGui.Text("Click to copy item Name to clipboard")
+        ImGui.EndTooltip()
+        if ImGui.IsMouseClicked(ImGuiMouseButton.Left) then
+            ImGui.LogToClipboard()
+            ImGui.LogText(itemData.Name)
+            ImGui.LogFinish()
+        end
+    end
+    ImGui.Text("Item ID: ")
+    ImGui.SameLine()
+    ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.ID)
+    if ImGui.IsItemHovered() then
+        ImGui.BeginTooltip()
+        ImGui.Text("Click to copy item ID to clipboard")
+        ImGui.EndTooltip()
+        if ImGui.IsMouseClicked(ImGuiMouseButton.Left) then
+            ImGui.LogToClipboard()
+            ImGui.LogText(itemData.ID)
+            ImGui.LogFinish()
+        end
+    end
+    local cursorX = ImGui.GetCursorPosX()
+    local cursorY2 = ImGui.GetCursorPosY()
+    ImGui.SetCursorPosY(cursorY)
+    ImGui.SetCursorPosX(ImGui.GetWindowWidth() - 60)
+
+    LNS.drawIcon(itemData.Icon or 0, 50)
+    ImGui.SetCursorPosX(cursorX)
+    ImGui.SetCursorPosY(cursorY2)
+
+    ImGui.Spacing()
+
+    ImGui.Text("Type: ")
+    ImGui.SameLine()
+    ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.Type)
+
+    ImGui.Text("Size: ")
+    ImGui.SameLine()
+    ImGui.TextColored(LNS.Colors('yellow'), "%s", Sizes[itemData.Size] or "uknwn")
+
+    local needSameLine = false
+    local restrictionString = ''
+    --restrictions
+    if itemData.isMagic then
+        needSameLine = true
+        restrictionString = restrictionString .. 'Magic '
+    end
+    if itemData.isNoDrop then
+        if needSameLine then restrictionString = restrictionString .. ',' end
+        restrictionString = restrictionString .. 'No Drop '
+        needSameLine = true
+    end
+    if itemData.isNoRent then
+        if needSameLine then restrictionString = restrictionString .. ',' end
+        restrictionString = restrictionString .. 'No Rent '
+        needSameLine = true
+    end
+    if itemData.isNoTrade then
+        if needSameLine then restrictionString = restrictionString .. ',' end
+        restrictionString = restrictionString .. 'No Trade '
+        needSameLine = true
+    end
+    if itemData.isLore then
+        if needSameLine then restrictionString = restrictionString .. ',' end
+        restrictionString = restrictionString .. 'Lore '
+        needSameLine = true
+    end
+    if itemData.isAttuneable then
+        if needSameLine then restrictionString = restrictionString .. ',' end
+        restrictionString = restrictionString .. 'Attuneable '
+        needSameLine = true
+    end
+    if itemData.isEvolving then
+        if needSameLine then restrictionString = restrictionString .. ',' end
+        restrictionString = restrictionString .. 'Evolving '
+    end
+
+    if restrictionString ~= '' then
+        ImGui.PushTextWrapPos(ImGui.GetWindowWidth() - 60)
+        ImGui.TextColored(LNS.Colors('grey'), "%s", restrictionString)
+        ImGui.PopTextWrapPos()
+    end
+
+    if ImGui.BeginTable('basicinfo##basicinfo', 2, ImGuiTableFlags.None) then
+        ImGui.TableSetupColumn("Info##basicinfo", ImGuiTableColumnFlags.WidthFixed, 60)
+        ImGui.TableSetupColumn("Value##basicinfo", ImGuiTableColumnFlags.WidthStretch, 240)
+        ImGui.TableNextRow()
+        if itemData.ClassList and itemData.ClassList ~= '' then
+            ImGui.TableNextColumn()
+            ImGui.Text("Classes:")
+            ImGui.TableNextColumn()
+            ImGui.PushTextWrapPos(ImGui.GetColumnWidth(-1))
+            ImGui.TextColored(LNS.Colors('grey'), "%s", itemData.ClassList)
+            ImGui.PopTextWrapPos()
+        end
+
+        if itemData.RaceList and itemData.RaceList ~= '' then
+            ImGui.TableNextColumn()
+            ImGui.Text("Races:")
+            ImGui.TableNextColumn()
+            ImGui.PushTextWrapPos(ImGui.GetColumnWidth(-1))
+            ImGui.TextColored(LNS.Colors('grey'), "%s", itemData.RaceList)
+            ImGui.PopTextWrapPos()
+        end
+
+        if itemData.WornSlots ~= '' then
+            ImGui.TableNextColumn()
+            ImGui.Text('Slots:')
+            ImGui.TableNextColumn()
+            ImGui.PushTextWrapPos(ImGui.GetColumnWidth(-1))
+            ImGui.TextColored(LNS.Colors('grey'), "%s", itemData.WornSlots)
+            ImGui.PopTextWrapPos()
+        end
+        ImGui.EndTable()
+    end
+
+    if ImGui.BeginTable('LVlInfo##lvl', 2, ImGuiTableFlags.None) then
+        ImGui.TableSetupColumn("Level Info##lvlinfo", ImGuiTableColumnFlags.WidthFixed, 150)
+        ImGui.TableSetupColumn("Value##lvlvalue", ImGuiTableColumnFlags.WidthFixed, 150)
+
+        ImGui.TableNextRow()
+        if itemData.ReqLvl > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text('Req Lvl: ')
+            ImGui.SameLine()
+            local reqColorLabel = itemData.ReqLvl <= MySelf.Level() and 'green' or 'tangarine'
+            ImGui.TextColored(LNS.Colors(reqColorLabel), "%s", itemData.ReqLvl)
+        end
+        if itemData.RecLvl and itemData.RecLvl > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text('Rec Lvl: ')
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('softblue'), "%s", itemData.RecLvl)
+        end
+
+        ImGui.TableNextColumn()
+        ImGui.Text("Weight: ")
+        ImGui.SameLine()
+        ImGui.TextColored(LNS.Colors('pink2'), "%s", itemData.Weight)
+
+        if itemData.NumSlots and itemData.NumSlots > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Slots: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.NumSlots)
+
+            -- Size Capacity
+            if itemData.SizeCapacity and itemData.SizeCapacity > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("Bag Size:")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('teal'), "%s", Sizes[itemData.SizeCapacity] or 'Unknown')
+            end
+        end
+
+        if itemData.MaxStack > 1 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Qty: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.Stack)
+            ImGui.SameLine()
+            ImGui.Text(" / ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.MaxStack)
+        end
+        ImGui.EndTable()
+    end
+
+    if ImGui.BeginTable("DamageStats", 2, ImGuiTableFlags.None) then
+        ImGui.TableSetupColumn("Stat##dmg", ImGuiTableColumnFlags.WidthFixed, 150)
+        ImGui.TableSetupColumn("Value##dmg", ImGuiTableColumnFlags.WidthFixed, 150)
+        ImGui.TableNextRow()
+
+        if itemData.BaseDMG > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Dmg: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('pink2'), "%s", itemData.BaseDMG or 'NA')
+        end
+        if itemData.Delay > 0 then
+            ImGui.TableNextColumn()
+
+            ImGui.Text(" Dly: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.Delay or 'NA')
+        end
+        if itemData.BonusDmgType ~= 'None' then
+            ImGui.TableNextColumn()
+            ImGui.Text("Bonus %s Dmg ", itemData.BonusDmgType)
+            -- ImGui.SameLine()
+            -- ImGui.TextColored(LNS.Colors('pink2'), "%s", itemData.ElementalDamage or 'NA')
+            ImGui.TableNextColumn()
+        end
+
+        if itemData.Haste > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Haste: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('green'), "%s%%", itemData.Haste)
+        end
+        if itemData.DmgShield > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Dmg Shield: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.DmgShield)
+        end
+
+        if itemData.DmgShieldMit > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("DS Mit: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.DmgShieldMit)
+        end
+        if itemData.Avoidance > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Avoidance: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('green'), "%s", itemData.Avoidance)
+        end
+        if itemData.DotShield > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("DoT Shielding: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.DotShield)
+        end
+        if itemData.Accuracy > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Accuracy: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('green'), "%s", itemData.Accuracy)
+        end
+        if itemData.SpellShield > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Spell Shield: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.SpellShield)
+        end
+
+        if itemData.HealAmount > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Heal Amt: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('pink2'), "%s", itemData.HealAmount)
+        end
+        if itemData.SpellDamage > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Spell Dmg: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.SpellDamage)
+        end
+        if itemData.StunResist > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Stun Res: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('green'), "%s", itemData.StunResist)
+        end
+
+        if itemData.Clairvoyance > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Clairvoyance: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('green'), "%s", itemData.Clairvoyance)
+        end
+        -- DPS Ratio
+        if itemData.BaseDMG > 0 and itemData.Delay > 0 then
+            ImGui.TableNextColumn()
+            ImGui.Text("Ratio: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('teal'), "%0.3f", (itemData.Delay / (itemData.BaseDMG or 1)) or 0)
+        end
+        ImGui.EndTable()
+    end
+
+    ImGui.Spacing()
+
+    -- base stats
+
+    if hasBase then
+        ImGui.SeparatorText('Stats')
+        -- base
+        if ImGui.BeginTable("BaseStats##itemBaseStats", 2, ImGuiTableFlags.None) then
+            ImGui.TableSetupColumn("Stat", ImGuiTableColumnFlags.WidthFixed, 150)
+            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthFixed, 150)
+            ImGui.TableNextRow()
+            if itemData.AC > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text(" AC: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('teal'), " %s", itemData.AC)
+                ImGui.TableNextRow()
+            end
+
+            if itemData.HP and itemData.HP > 0 then
+                ImGui.TableNextColumn()
+
+                ImGui.Text("HPs: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('pink2'), "%s", itemData.HP)
+            end
+            if itemData.Mana and itemData.Mana > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("Mana: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.Mana)
+            end
+            if itemData.Endurance and itemData.Endurance > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("End: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData['Endurance'])
+            end
+            if itemData.HPRegen > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("HP Regen: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('pink2'), "%s", itemData.HPRegen)
+            end
+            if itemData.ManaRegen > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("Mana Regen: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.ManaRegen)
+            end
+            if itemData.EnduranceRegen > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("Endurance Regen: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.EnduranceRegen)
+            end
+
+            ImGui.EndTable()
+        end
+    end
+    -- stats
+    if hasStats then
+        -- ImGui.SeparatorText('Stats')
+        if ImGui.BeginTable("Stats##itemStats", 2, ImGuiTableFlags.None) then
+            ImGui.TableSetupColumn("Stat##stats", ImGuiTableColumnFlags.WidthFixed, 150)
+            ImGui.TableSetupColumn("Value##stats", ImGuiTableColumnFlags.WidthFixed, 150)
+
+            ImGui.TableNextRow()
+            if itemData['STR'] > 0 then
+                ImGui.TableNextColumn()
+
+                ImGui.Text("STR: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.STR)
+                if itemData.hStr > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hStr)
+                end
+            end
+            if itemData.AGI and itemData.AGI > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("AGI: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.AGI)
+                if itemData.hAgi > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hAgi)
+                end
+                ImGui.TableNextColumn()
+            end
+            if itemData.STA and itemData.STA > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("STA: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.STA)
+                if itemData.hSta > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hSta)
+                end
+            end
+            if itemData.INT and itemData.INT > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("INT: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.INT)
+                if itemData.hInt > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hInt)
+                end
+            end
+            if itemData.WIS and itemData.WIS > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("WIS: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.WIS)
+                if itemData.hWis > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hWis)
+                end
+            end
+            if itemData.DEX and itemData.DEX > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("DEX: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.DEX)
+                if itemData.hDex > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hDex)
+                end
+            end
+            if itemData.CHA and itemData.CHA > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("CHA: ")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('tangarine'), "%s", itemData.CHA)
+                if itemData.hCha > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hCha)
+                end
+            end
+            ImGui.EndTable()
+        end
+    end
+    -- resists
+    if hasResists then
+        ImGui.SeparatorText('Resists')
+        if ImGui.BeginTable("Resists##itemResists", 2, ImGuiTableFlags.None) then
+            ImGui.TableSetupColumn("Stat##res", ImGuiTableColumnFlags.WidthFixed, 150)
+            ImGui.TableSetupColumn("Value##res", ImGuiTableColumnFlags.WidthFixed, 150)
+
+            ImGui.TableNextRow()
+            if itemData['MR'] > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("MR:\t")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('green'), "%s", itemData['MR'])
+                if itemData.hMr > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hMr)
+                end
+            end
+            if itemData['FR'] > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("FR:\t")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('green'), "%s", itemData['FR'])
+                if itemData.hFr > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hFr)
+                end
+            end
+            if itemData['DR'] > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("DR:\t")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('green'), "%s", itemData['DR'])
+                if itemData.hDr > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hDr)
+                end
+            end
+            if itemData['PR'] > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("PR:\t")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('green'), "%s", itemData['PR'])
+                if itemData.hPr > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hPr)
+                end
+            end
+            if itemData['CR'] > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("CR:\t")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('green'), "%s", itemData['CR'])
+                if itemData.hCr > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hCr)
+                end
+            end
+            if itemData['svCor'] > 0 then
+                ImGui.TableNextColumn()
+                ImGui.Text("COR:\t")
+                ImGui.SameLine()
+                ImGui.TextColored(LNS.Colors('green'), "%s", itemData['svCor'])
+                if itemData.hCor > 0 then
+                    ImGui.SameLine()
+                    ImGui.TextColored(LNS.Colors('Yellow'), " + %s", itemData.hCor)
+                end
+            end
+            ImGui.EndTable()
+        end
+    end
+
+    -- Augments
+    if itemData.AugSlots > 0 then
+        -- ImGui.Dummy(10, 10)
+        ImGui.SeparatorText('Augments')
+        for i = 1, itemData.AugSlots do
+            local augSlotName = itemData['AugSlot' .. i] or 'none'
+            local augTypeName = itemData['AugType' .. i] or 'none'
+            if augSlotName ~= 'none' or augTypeName ~= 21 then
+                ImGui.Text("Slot %s: ", i)
+                ImGui.SameLine()
+                ImGui.PushTextWrapPos(290)
+                ImGui.TextColored(LNS.Colors('teal'), "%s Type (%s)", (augSlotName ~= 'none' and augSlotName or 'Empty'), augTypeName)
+                ImGui.PopTextWrapPos()
+            end
+        end
+    end
+
+    if hasCombatEffects or itemData.Clicky or itemData.Spelleffect ~= '' or itemData.Worn ~= 'none' or
+        itemData.Focus1 ~= 'none' or itemData.Focus2 ~= 'none' then
+        -- ImGui.Dummy(10, 10)
+
+        ImGui.SeparatorText('Efx')
+        if itemData.Clicky then
+            ImGui.Dummy(10, 10)
+            ImGui.Text("Charges: ")
+            ImGui.SameLine()
+            ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.Charges)
+            ImGui.Text("Clicky Spell: ")
+            ImGui.SameLine()
+            ImGui.PushTextWrapPos(290)
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.Clicky)
+            if ImGui.IsItemHovered() then
+                if ImGui.IsMouseClicked(ImGuiMouseButton.Left) then
+                    mq.TLO.Spell(itemData.ClickyID).Inspect()
+                end
+            end
+            if itemData.ClickyDesc ~= '' then
+                ImGui.Indent(5)
+                ImGui.TextColored(LNS.Colors('yellow'), itemData.ClickyDesc)
+                ImGui.Unindent(5)
+            end
+            ImGui.PopTextWrapPos()
+        end
+
+        if (itemData.Spelleffect ~= "" and
+                not ((itemData.Spelleffect == itemData.Clicky) or (itemData.Spelleffect == itemData.Worn) or
+                    (itemData.Focus1 == itemData.Spelleffect) or (itemData.Focus2 == itemData.Spelleffect))) then
+            ImGui.Dummy(10, 10)
+            local effectTypeLabel = itemData.EffectType ~= 'None' and itemData.EffectType or "Spell"
+            ImGui.Text("%s Effect: ", effectTypeLabel)
+            ImGui.SameLine()
+            ImGui.PushTextWrapPos(290)
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.Spelleffect)
+            if ImGui.IsItemHovered() then
+                if ImGui.IsMouseClicked(ImGuiMouseButton.Left) then
+                    mq.TLO.Spell(itemData.SpellID).Inspect()
+                end
+            end
+            if itemData.SpellDesc ~= '' then
+                ImGui.Indent(5)
+                ImGui.TextColored(LNS.Colors('yellow'), itemData.SpellDesc)
+                ImGui.Unindent(5)
+            end
+            ImGui.PopTextWrapPos()
+        end
+
+        if itemData.Worn ~= 'none' then
+            ImGui.Dummy(10, 10)
+            ImGui.Text("Worn Effect: ")
+            ImGui.SameLine()
+            ImGui.PushTextWrapPos(290)
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.Worn)
+            if ImGui.IsItemHovered() then
+                if ImGui.IsMouseClicked(ImGuiMouseButton.Left) then
+                    mq.TLO.Spell(itemData.WornID).Inspect()
+                end
+            end
+            if itemData.WornDesc ~= '' then
+                ImGui.Indent(5)
+                ImGui.TextColored(LNS.Colors('yellow'), itemData.WornDesc)
+                ImGui.Unindent(5)
+            end
+            ImGui.PopTextWrapPos()
+        end
+
+        if itemData.Focus1 ~= 'none' then
+            ImGui.Dummy(10, 10)
+            ImGui.Text("Focus Effect: ")
+            ImGui.SameLine()
+            ImGui.PushTextWrapPos(290)
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.Focus1)
+            if ImGui.IsItemHovered() then
+                if ImGui.IsMouseClicked(ImGuiMouseButton.Left) then
+                    mq.TLO.Spell(itemData.Focus1ID).Inspect()
+                end
+            end
+            if itemData.Focus1Desc ~= '' then
+                ImGui.Indent(5)
+                ImGui.TextColored(LNS.Colors('yellow'), itemData.Focus1Desc)
+                ImGui.Unindent(5)
+            end
+            ImGui.PopTextWrapPos()
+        end
+
+        if itemData.Focus2 ~= 'none' then
+            ImGui.Dummy(10, 10)
+            ImGui.Text("Focus2 Effect: ")
+            ImGui.SameLine()
+            ImGui.PushTextWrapPos(290)
+            ImGui.TextColored(LNS.Colors('teal'), "%s", itemData.Focus2)
+            if ImGui.IsItemHovered() then
+                if ImGui.IsMouseClicked(ImGuiMouseButton.Left) then
+                    mq.TLO.Spell(itemData.Focus2ID).Inspect()
+                end
+            end
+            if itemData.Focus2Desc ~= '' then
+                ImGui.Indent(5)
+                ImGui.TextColored(LNS.Colors('yellow'), itemData.Focus2Desc)
+                ImGui.Unindent(5)
+            end
+            ImGui.PopTextWrapPos()
+        end
+    end
+
+    if itemData.isEvolving then
+        ImGui.SeparatorText('Evolving Info')
+        ImGui.Text("Evolving Level: ")
+        ImGui.SameLine()
+        ImGui.TextColored(LNS.Colors("tangarine"), "%d", itemData.EvolvingLevel)
+
+        ImGui.Text("Evolving Max Level: ")
+        ImGui.SameLine()
+        ImGui.TextColored(LNS.Colors("teal"), "%d", itemData.EvolvingMaxLevel)
+
+        ImGui.Text("Evolving Exp: ")
+        ImGui.SameLine()
+        ImGui.TextColored(LNS.Colors("yellow"), "%0.2f%%", itemData.EvolvingExpPct)
+    end
+
+    ImGui.SeparatorText('Value')
+    ImGui.Dummy(10, 10)
+    ImGui.Text("Value: ")
+    ImGui.SameLine()
+    draw_value(itemData.Value or 0)
+    if itemData.TributeValue > 0 then
+        ImGui.Text("Tribute Value: ")
+        ImGui.SameLine()
+        ImGui.TextColored(LNS.Colors('yellow'), "%s", itemData.TributeValue)
+    end
+end
+
+function LNS.Draw_item_info_window(itemID)
+    if LNS.TempSettings.NewItemData[itemID] == nil then
+        LNS.TempSettings.Popped[itemID] = nil
+        return
+    end
+    local itemData = LNS.TempSettings.NewItemData[itemID]
+    local itemName = itemData.Name
+
+    ImGui.SetNextWindowSize(320, 0.0, ImGuiCond.Always)
+    local mouseX, mouseY = ImGui.GetMousePos()
+    ImGui.SetNextWindowPos((mouseX - 30), (mouseY - 5), ImGuiCond.FirstUseEver)
+    local open, show = ImGui.Begin(string.format("%s##iteminfo_%s", itemName, itemID), true)
+    if not open then
+        show = false
+        LNS.TempSettings.Popped[itemID] = nil
+        if LNS.NewItems[itemID] == nil then
+            LNS.TempSettings.NewItemData[itemID] = nil
+        end
+    end
+    if show then
+        LNS.Draw_item_tooltip(itemID)
+        if ImGui.IsWindowFocused() then
+            if ImGui.IsKeyPressed(ImGuiKey.Escape) then
+                show = false
+                LNS.TempSettings.Popped[itemID] = nil
+                if LNS.NewItems[itemID] == nil then
+                    LNS.TempSettings.NewItemData[itemID] = nil
+                end
+            end
+        end
+    end
+    ImGui.End()
+end
+
+---comment
+---@param corpseItem MQItem
+---@param itemRule string|nil
+---@param itemLink string|nil
+---@param corpseID number
+---@param addDB boolean
 function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
     if corpseItem == nil or itemRule == nil then
         Logger.Warn(LNS.guiLoot.console, "\aoInvalid parameters for addNewItem:\ax corpseItem=\at%s\ax, itemRule=\ag%s",
@@ -2842,7 +3958,6 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
         return
     end
     LNS.ItemNames[itemID] = itemName
-
     if LNS.NewItems[itemID] ~= nil then return end
     local isNoDrop       = corpseItem.NoDrop() or corpseItem.NoTrade()
     LNS.TempItemClasses  = LNS.retrieveClassList(corpseItem)
@@ -2875,6 +3990,11 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
         showNewItem = true
     end
 
+    if LNS.TempSettings.NewItemData[itemID] == nil then
+        LNS.TempSettings.NewItemData[itemID] = {}
+        LNS.TempSettings.NewItemData[itemID] = LNS.Get_item_data(corpseItem)
+    end
+
     -- Notify the loot actor of the new item
     Logger.Info(LNS.guiLoot.console, "\agNew Loot\ay Item Detected! \ax[\at %s\ax ]\ao Sending actors", itemName)
     local newMessage = {
@@ -2896,7 +4016,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
         maxStacks  = corpseItem.StackSize() or 0,
         sellPrice  = LNS.valueToCoins(corpseItem.Value()),
         corpse     = corpseID,
-
+        details    = LNS.Get_item_data(corpseItem),
     }
 
     Logger.Info(LNS.guiLoot.console, "\agAdding 1 \ayNEW\ax item: \at%s \ay(\axID: \at%s\at) \axwith rule: \ag%s", itemName, itemID, itemRule)
@@ -3502,6 +4622,7 @@ function LNS.getRule(item, fromFunction, index)
             Link = lootLink,
         }
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
+
         LNS.addNewItem(item, lootRule, itemLink, mq.TLO.Corpse.ID() or 0, false)
         if LNS.Settings.MasterLooting and ruletype ~= 'Personal' then
             LNS.send({
@@ -3686,8 +4807,10 @@ function LNS.getRule(item, fromFunction, index)
     return lootDecision, qKeep, newRule, iCanUse
 end
 
-function LNS.setBuyItem(itemID, qty)
-    LNS.BuyItemsTable[itemID] = qty
+function LNS.setBuyItem(itemName, qty)
+    LNS.TempSettings.BuyItems[itemName] = { Key = itemName, Value = qty, }
+    LNS.Settings.BuyItemsTable[itemName] = qty
+    LNS.BuyItemsTable[itemName] = qty
 end
 
 -- Sets a Global Item rule
@@ -3854,6 +4977,7 @@ function LNS.RegisterActors()
         local corpseradius  = lootMessage.CorpseRadius or LNS.Settings.CorpseRadius
         local lootmycorpse  = lootMessage.LootMyCorpse
         local ignorenearby  = lootMessage.IgnoreNearby
+        local itemDetails   = lootMessage.details or {}
         if ignorenearby == nil then
             ignorenearby = LNS.Settings.IgnoreMyNearCorpses
         end
@@ -4158,7 +5282,7 @@ function LNS.RegisterActors()
                     Rule = rule,
                     Item = itemName,
                 }
-            elseif section == 'GlobalItems' then
+            elseif section == 'GlobalItems' and who ~= MyName then
                 LNS.GlobalItemsRules[itemID]   = rule
                 LNS.GlobalItemsClasses[itemID] = itemClasses
                 LNS.ItemLinks[itemID]          = itemLink
@@ -4171,7 +5295,7 @@ function LNS.RegisterActors()
                     Rule = rule,
                     Item = itemName,
                 }
-            elseif section == 'NormalItems' then
+            elseif section == 'NormalItems' and who ~= MyName then
                 LNS.NormalItemsRules[itemID]   = rule
                 LNS.NormalItemsClasses[itemID] = itemClasses
                 LNS.ItemLinks[itemID]          = itemLink
@@ -4206,7 +5330,7 @@ function LNS.RegisterActors()
                 else
                     LNS.NewItemsCount = 0
                 end
-                local infoMsg = {
+                infoMsg = {
                     Lookup = 'loot.RegisterActors()',
                     Action = 'New Item Rule',
                     Updated = lootMessage.entered,
@@ -4271,7 +5395,9 @@ function LNS.RegisterActors()
             Logger.Info(LNS.guiLoot.console, infoMsg)
             -- LNS.NewItemsCount = LNS.NewItemsCount + 1
             LNS.NewItemsCount = #LNS.TempSettings.NewItemIDs or 0
-
+            if LNS.TempSettings.NewItemData[itemID] == nil then
+                LNS.TempSettings.NewItemData[itemID] = itemDetails
+            end
             if LNS.Settings.AutoShowNewItem then
                 showNewItem = true
             end
@@ -4516,7 +5642,10 @@ function LNS.lootCorpse(corpseID)
                 local itemName = corpseItem.Name() or 'none'
                 local itemLink = corpseItem.ItemLink('CLICKABLE')() or 'NULL'
                 local itemRule, qKeep, newRule, iCanUse = LNS.getRule(corpseItem, 'loot', i)
-
+                if LNS.TempSettings.NewItemData[corpseItemID] == nil then
+                    LNS.TempSettings.NewItemData[corpseItemID] = {}
+                    LNS.TempSettings.NewItemData[corpseItemID] = LNS.Get_item_data(corpseItem)
+                end
                 LNS.addToItemDB(corpseItem)
 
                 iList = string.format("%s (\at%s\ax [\ay%s\ax])", iList, corpseItem.Name() or 'none', itemRule)
@@ -5832,9 +6961,20 @@ function LNS.drawNewItemsTable()
                 ImGui.Indent(2)
 
                 LNS.drawIcon(item.Icon, 20)
-                if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
-                    -- if ImGui.SmallButton(Icons.FA_EYE .. "##" .. itemID) then
-                    mq.cmdf('/executelink %s', item.Link)
+                if ImGui.IsItemHovered() then
+                    ImGui.BeginTooltip()
+                    LNS.Draw_item_tooltip(itemID)
+                    ImGui.Spacing()
+                    ImGui.Separator()
+                    ImGui.Text("Left Click Icon to open In-Game Details window")
+                    ImGui.Text("Right Click to Pop Open Details window.")
+                    ImGui.EndTooltip()
+                    if ImGui.IsMouseClicked(0) then
+                        -- if ImGui.SmallButton(Icons.FA_EYE .. "##" .. itemID) then
+                        mq.cmdf('/executelink %s', item.Link)
+                    elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
+                        LNS.TempSettings.Popped[itemID] = true
+                    end
                 end
                 ImGui.SameLine()
                 ImGui.Text(item.Name or "Unknown")
@@ -8288,6 +9428,11 @@ function LNS.RenderUIs()
 
     if LNS.NewItemsCount > 0 then
         LNS.renderNewItem()
+        for k, v in pairs(LNS.TempSettings.Popped or {}) do
+            if k ~= nil and v then
+                LNS.Draw_item_info_window(k)
+            end
+        end
     end
 
     if LNS.pendingItemData ~= nil then
@@ -8796,6 +9941,7 @@ function LNS.MainLoop()
             LNS.TempSettings.DeletedBuyKeys = {}
             LNS.writeSettings("MainLoop()")
             LNS.TempSettings.NeedSave = false
+            LNS.loadSettings()
             LNS.sendMySettings()
             LNS.SortTables()
         end
