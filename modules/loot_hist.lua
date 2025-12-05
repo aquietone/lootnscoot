@@ -206,7 +206,7 @@ local function loadTheme()
 	if Files.File.Exists(themeFile) then
 		theme = dofile(themeFile)
 	else
-		theme = require('themes')
+		theme = require('lib.themes')
 	end
 	ThemeName = theme.LoadTheme or 'notheme'
 end
