@@ -2,7 +2,7 @@
 local mq                  = require('mq')
 local ImPlot              = require('ImPlot')
 local Set                 = require('mq.Set')
-local ScrollingPlotBuffer = require('scrolling_plot_buffer')
+local ScrollingPlotBuffer = require('lib.scrolling_plot_buffer')
 
 local Module              = { _version = '0.1a', _name = "Perf", _author = 'Derple', }
 Module.__index            = Module
