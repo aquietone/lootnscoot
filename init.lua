@@ -1439,6 +1439,8 @@ function LNS.commandHandler(...)
             LNS.addRule(itemID, 'NormalItems', val, 'All', item.ItemLink('CLICKABLE')())
             Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", item.Name(), val)
         elseif command == 'quit' or command == 'exit' then
+            printf('LootNScoot stopping due to quit command received.')
+            mq.cmdf('/dg /pop 1 custom [%s] LootNScoot exiting due to quit command received.', mq.TLO.Me.CleanName())
             LNS.Terminate = true
         end
         if command == 'buy' and mq.TLO.Cursor() ~= nil then
@@ -9653,7 +9655,12 @@ function LNS.MainLoop()
     while not LNS.Terminate do
         LNS.Zone = mq.TLO.Zone.ShortName()
         LNS.Instance = mq.TLO.Me.Instance()
-        if mq.TLO.MacroQuest.GameState() ~= "INGAME" then LNS.Terminate = true end -- exit sctipt if at char select.
+        if mq.TLO.MacroQuest.GameState() ~= "INGAME" then
+            -- exit sctipt if at char select.
+            printf('LootNScoot Terminate = true due to GameState != INGAME (%s).', mq.TLO.MacroQuest.GameState())
+            mq.cmdf('/dg /pop 5 custom [%s] LootNScoot exiting due to GameState != INGAME (%s).', mq.TLO.Me.CleanName(), mq.TLO.MacroQuest.GameState())
+            LNS.Terminate = true
+        end
         -- LNS.guiLoot.ReportLeft = LNS.Settings.ReportSkippedItems
         LNS.guiLoot.GetSettings(LNS.Settings.HideNames,
             LNS.Settings.RecordData,
@@ -9663,6 +9670,8 @@ function LNS.MainLoop()
         -- check if the director script is running.
         local directorRunning = mq.TLO.Lua.Script(LNS.DirectorScript).Status() == 'RUNNING' or false
         if not directorRunning and Mode == 'directed' then
+            printf('LootNScoot Terminate = true due to director not running (%s).', directorRunning)
+            mq.cmdf('/dg /pop 5 custom [%s] LootNScoot exiting due to director not running (%s).', mq.TLO.Me.CleanName(), directorRunning)
             LNS.Terminate = true
         end
 
