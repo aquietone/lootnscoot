@@ -1827,7 +1827,8 @@ function LNS.Get_item_data(item)
         ManaRegen = item.ManaRegen() or 0,
         EnduranceRegen = item.EnduranceRegen() or 0,
         Accuracy = item.Accuracy() or 0,
-        BonusDmgType = item.DMGBonusType() or 'None',
+        -- https://github.com/macroquest/macroquest/issues/953
+        BonusDmgType = 'None', -- item.DMGBonusType() or 'None',
         SpellShield = item.SpellShield() or 0,
         Clairvoyance = item.Clairvoyance() or 0,
         HealAmount = item.HealAmount() or 0,
@@ -2603,9 +2604,13 @@ function LNS.getRule(item, fromFunction, index)
 
     --handle NoDrop
     if isNoDrop and not settings.Settings.LootNoDrop and not settings.Settings.MasterLooting then
-        Logger.Info(LNS.guiLoot.console, "\axItem is \aoNODROP\ax \at%s\ax and LootNoDrop is \arNOT \axenabled\ax", itemName)
-        if not existingIgnoreRule and not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
-        return 'Ignore', 0, newRule, isEquippable
+        -- if itemName == 'Stuffed Christmas Stocking' then
+        --     Logger.Info(LNS.guiLoot.console, '\agAlways looting Stuffed Christmas Stocking even if LootNoDrop off')
+        -- else
+            Logger.Info(LNS.guiLoot.console, "\axItem is \aoNODROP\ax \at%s\ax and LootNoDrop is \arNOT \axenabled\ax", itemName)
+            if not existingIgnoreRule and not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
+            return 'Ignore', 0, newRule, isEquippable
+        -- end
     end
 
     -- check Classes that can loot
@@ -3007,6 +3012,7 @@ function LNS.lootCorpse(corpseID)
 
         local iList = ""
         local corpseItems = {}
+        local loreCorpseItems = {}
         for i = 1, numItems do
             local corpseItem = mq.TLO.Corpse.Item(i)
             if corpseItem() then
@@ -3023,18 +3029,33 @@ function LNS.lootCorpse(corpseID)
                 iList = string.format("%s (\at%s\ax [\ay%s\ax])", iList, corpseItem.Name() or 'none', itemRule)
 
                 if itemRule ~= 'MasterLooter' and not (itemRule == 'Ignore' or itemRule == 'Ask' or itemRule == 'NULL') then
-                    table.insert(corpseItems, {
-                        Name = itemName,
-                        ID = corpseItemID,
-                        ItemLink = itemLink,
-                        Index = i,
-                        itemRule = itemRule,
-                        qKeep = qKeep,
-                        newRule = newRule,
-                        iCanUse = iCanUse,
-                        CorpseID = corpseID,
-                        mq_item = corpseItem,
-                    })
+                    if corpseItem.Lore() then
+                        table.insert(loreCorpseItems, {
+                            Name = itemName,
+                            ID = corpseItemID,
+                            ItemLink = itemLink,
+                            Index = i,
+                            itemRule = itemRule,
+                            qKeep = qKeep,
+                            newRule = newRule,
+                            iCanUse = iCanUse,
+                            CorpseID = corpseID,
+                            mq_item = corpseItem,
+                        })
+                    else
+                        table.insert(corpseItems, {
+                            Name = itemName,
+                            ID = corpseItemID,
+                            ItemLink = itemLink,
+                            Index = i,
+                            itemRule = itemRule,
+                            qKeep = qKeep,
+                            newRule = newRule,
+                            iCanUse = iCanUse,
+                            CorpseID = corpseID,
+                            mq_item = corpseItem,
+                        })
+                    end
                 elseif (itemRule == 'Ignore' or itemRule == 'Ask' or itemRule == 'NULL') then
                     local eval = itemRule == 'Ignore' and 'Left' or 'Ask'
                     local dbgTbl = {
@@ -3107,25 +3128,27 @@ function LNS.lootCorpse(corpseID)
 
         Logger.Debug(LNS.guiLoot.console, "lootCorpse(): Checked \at%s\ax Found (\ay%s\ax) Items:%s", corpseName, numItems, iList)
 
-        for itemIdx, item in ipairs(corpseItems) do
-            if not item then break end
-            local itemRule = item.itemRule
+        for _,itemList in ipairs({corpseItems, loreCorpseItems}) do
+            for itemIdx, item in ipairs(itemList) do
+                if not item then break end
+                local itemRule = item.itemRule
 
-            Logger.Debug(LNS.guiLoot.console, "\agLooting Corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
-                item.ID, item.Index, itemRule, item.qKeep, item.newRule)
-
-            LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
-            if mq.TLO.Corpse.Item(item.Index)() then
-                Logger.Debug(LNS.guiLoot.console, "\ayRetry looting corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
+                Logger.Debug(LNS.guiLoot.console, "\agLooting Corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
                     item.ID, item.Index, itemRule, item.qKeep, item.newRule)
-                LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
-            end
 
-            mq.delay(1)
-            if mq.TLO.Cursor() then LNS.checkCursor() end
-            if not mq.TLO.Window('LootWnd').Open() then
-                if itemIdx < #corpseItems then Logger.Warn(LNS.guiLoot.console, "\ayCorpse window closed unexpectedly before finishing looting, corpseID=%s", corpseID) end
-                break
+                LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
+                if mq.TLO.Corpse.Item(item.Index)() then
+                    Logger.Debug(LNS.guiLoot.console, "\ayRetry looting corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
+                        item.ID, item.Index, itemRule, item.qKeep, item.newRule)
+                    LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
+                end
+
+                mq.delay(1)
+                if mq.TLO.Cursor() then LNS.checkCursor() end
+                if not mq.TLO.Window('LootWnd').Open() then
+                    if itemIdx < #itemList then Logger.Warn(LNS.guiLoot.console, "\ayCorpse window closed unexpectedly before finishing looting, corpseID=%s", corpseID) end
+                    break
+                end
             end
         end
 
