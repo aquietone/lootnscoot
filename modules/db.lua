@@ -714,7 +714,7 @@ DELETE FROM %s WHERE item_id = ?;
     rules_db:exec("PRAGMA wal_checkpoint;")
     if localName ~= 'PersonalItems' then
         settings.TempSettings.NeedSave = true
-        actors.send({
+        actors.Send({
             action = 'reloadrules',
             who = settings.MyName,
             Server = settings.EqServer,

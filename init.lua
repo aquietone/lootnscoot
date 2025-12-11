@@ -251,7 +251,7 @@ function LNS.InsertMasterLootList(item_name, corpseID, item_id, itemLink, item_i
     LNS.MasterLootList[corpseID].Items[item_name].NoDrop = item_is_nodrop
     LNS.MasterLootList[corpseID].Items[item_name].IsLore = item_is_lore
     if LNS.MasterLootList[corpseID].Items[item_name].Members[settings.MyName] == nil then
-        actors.send({
+        actors.Send({
             who = settings.MyName,
             action = 'check_item',
             item = item_name,
