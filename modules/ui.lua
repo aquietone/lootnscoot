@@ -1498,7 +1498,7 @@ function LNS_UI.drawTabbedTable(label)
                 settings.TempSettings.BulkSetTable = label .. "_Rules"
             end
             if ImGui.BeginCombo("Table", settings.TempSettings.BulkSetTable) then
-                for i, v in ipairs(tableListRules) do
+                for i, v in ipairs(settings.TableListRules) do
                     if ImGui.Selectable(v, settings.TempSettings.BulkSetTable == v) then
                         settings.TempSettings.BulkSetTable = v
                     end
@@ -1979,7 +1979,7 @@ example {hp>=500, name~robe} this will return items with 500 + Hp and has robe i
                         settings.TempSettings.BulkSetTable = "Normal_Rules"
                     end
                     if ImGui.BeginCombo("Table", settings.TempSettings.BulkSetTable) then
-                        for i, v in ipairs(tableListRules) do
+                        for i, v in ipairs(settings.TableListRules) do
                             if ImGui.Selectable(v, settings.TempSettings.BulkSetTable == v) then
                                 settings.TempSettings.BulkSetTable = v
                             end

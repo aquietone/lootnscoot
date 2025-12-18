@@ -5,6 +5,9 @@ local LNS_SETTINGS = {_version = '0.1'}
 LNS_SETTINGS.MyName             = mq.TLO.Me.DisplayName()
 LNS_SETTINGS.EqServer           = string.gsub(mq.TLO.EverQuest.Server(), ' ', '_')
 LNS_SETTINGS.PersonalTableName  = string.format("%s_Rules", LNS_SETTINGS.MyName)
+LNS_SETTINGS.TableListRules              = {
+    "Global_Rules", "Normal_Rules", LNS_SETTINGS.PersonalTableName,
+}
 
 -- tables
 LNS_SETTINGS.SettingsEnum   = {

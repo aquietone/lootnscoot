@@ -146,10 +146,6 @@ LNS.PauseLooting                    = false
 LNS.Zone                            = mq.TLO.Zone.ShortName()
 LNS.Instance                        = mq.TLO.Me.Instance()
 
-local tableListRules                = {
-    "Global_Rules", "Normal_Rules", settings.PersonalTableName,
-}
-
 -- FORWARD DECLARATIONS
 LNS.AllItemColumnListIndex          = {
     [1]  = 'name',
@@ -581,8 +577,9 @@ function LNS.checkCursor()
 end
 
 function LNS.navToID(spawnID)
+    if (mq.TLO.Spawn(spawnID).Distance3D() or 0) < 10 then return end
     mq.cmdf('/nav id %d dist=10 log=off', spawnID)
-    mq.delay(50, function() return (mq.TLO.Spawn(spawnID).Distance3D() or 0) < 20 end)
+    mq.delay(50, function() return (mq.TLO.Spawn(spawnID).Distance3D() or 0) < 10 end)
     if mq.TLO.Navigation.Active() then
         local startTime = os.time()
         while mq.TLO.Navigation.Active() do
@@ -2714,6 +2711,9 @@ function LNS.getRule(item, fromFunction, index)
         return 'MasterLooter', qKeep, newRule, iCanUse
     end
 
+    if lootDecision == 'Ask' then
+        if not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
+    end
     Logger.Debug(LNS.guiLoot.console, "\aoLEAVING getRule()\ax: Rule: \at%s\ax, \ayClasses\ax: \at%s\ax, Item: \ao%s\ax, ID: \ay%s\ax, \atLink: %s",
         lootDecision, lootClasses, itemName, itemID, lootLink)
 
@@ -2971,13 +2971,14 @@ function LNS.lootCorpse(corpseID)
     if mq.TLO.Cursor() then LNS.checkCursor() end
 
     for i = 1, 3 do
+        if not mq.TLO.Target() then return false end
         mq.cmdf('/loot')
-        mq.delay(1000, function() return mq.TLO.Window('LootWnd').Open() end)
+        mq.delay(1000, function() return mq.TLO.Window('LootWnd').Open() or not mq.TLO.Target() end)
         if mq.TLO.Window('LootWnd').Open() then break end
     end
 
     mq.doevents('CantLoot')
-    mq.delay(1000, function() return cantLootID > 0 or mq.TLO.Window('LootWnd').Open() end)
+    mq.delay(1000, function() return cantLootID > 0 or mq.TLO.Window('LootWnd').Open() or not mq.TLO.Target() end)
 
     if not mq.TLO.Window('LootWnd').Open() then
         if mq.TLO.Target() and mq.TLO.Target.CleanName() then
