@@ -1051,7 +1051,7 @@ function LNS_UI.guiExport()
                 ImGui.EndMenu()
             end
 
-            local gCmd = (settings.GroupChannel or 'dgge'):find("dg") and "/dgg" or settings.GroupChannel
+            local gCmd = (settings.GroupChannel or 'dgge'):find("dg") and "dgg" or settings.GroupChannel
             if string.find(gCmd, 'dg') then
                 gCmd = '/' .. gCmd
             elseif string.find(gCmd, 'bc') then

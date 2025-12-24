@@ -2601,13 +2601,9 @@ function LNS.getRule(item, fromFunction, index)
 
     --handle NoDrop
     if isNoDrop and not settings.Settings.LootNoDrop and not settings.Settings.MasterLooting then
-        -- if itemName == 'Stuffed Christmas Stocking' then
-        --     Logger.Info(LNS.guiLoot.console, '\agAlways looting Stuffed Christmas Stocking even if LootNoDrop off')
-        -- else
-            Logger.Info(LNS.guiLoot.console, "\axItem is \aoNODROP\ax \at%s\ax and LootNoDrop is \arNOT \axenabled\ax", itemName)
-            if not existingIgnoreRule and not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
-            return 'Ignore', 0, newRule, isEquippable
-        -- end
+        Logger.Info(LNS.guiLoot.console, "\axItem is \aoNODROP\ax \at%s\ax and LootNoDrop is \arNOT \axenabled\ax", itemName)
+        if not existingIgnoreRule and not skippedLoots[itemLink] then table.insert(skippedLoots, itemLink) skippedLoots[itemLink] = true end
+        return 'Ignore', 0, newRule, isEquippable
     end
 
     -- check Classes that can loot
@@ -2970,6 +2966,7 @@ function LNS.lootCorpse(corpseID)
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
 
+    mq.delay(500, function() return not mq.TLO.Me.Moving() end)
     for i = 1, 3 do
         if not mq.TLO.Target() then return false end
         mq.cmdf('/loot')
@@ -2992,6 +2989,7 @@ function LNS.lootCorpse(corpseID)
     corpseName = corpseName:lower()
 
     mq.delay(1000, function() return (mq.TLO.Corpse.Items() or 0) > 0 end)
+    mq.delay(1)
     local numItems = mq.TLO.Corpse.Items() or 0
     Logger.Debug(LNS.guiLoot.console, "lootCorpse(): Loot window open. Items: %s", numItems)
     if numItems == 0 then
@@ -3280,7 +3278,7 @@ function LNS.lootMobs(limit)
 
             Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Navigating to corpse ID\at %d.', corpseID)
 
-            if mq.TLO.Me.Casting() ~= nil then
+            if mq.TLO.Me.Casting() ~= nil and mq.TLO.Me.Class.ShortName() ~= 'BRD' then
                 return false
             end
 
@@ -3296,8 +3294,10 @@ function LNS.lootMobs(limit)
             check                   = LNS.lootCorpse(corpseID)
             LNS.lootedCorpses[corpseID] = check
             mq.TLO.Window('LootWnd').DoClose()
+            mq.delay(100, function() return not mq.TLO.Window('LootWnd').Open() end)
 
             ::continue::
+            mq.delay(1)
 
             if allItems ~= nil and #allItems > 0 then
                 actors.Send({
