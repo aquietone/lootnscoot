@@ -4,7 +4,7 @@
 local mq              = require 'mq'
 local PackageMan      = require('mq.PackageMan')
 local Files           = require('mq.Utils')
-local success, Logger = pcall(require, 'lib.Write')
+local success, Logger = pcall(require, 'lib.Logger')
 local actors          = require('modules.actor')
 local db              = require('modules.db')
 local perf            = require('modules.performance')
@@ -2979,11 +2979,19 @@ function LNS.lootCorpse(corpseID)
     mq.delay(1000, function() return cantLootID > 0 or mq.TLO.Window('LootWnd').Open() or not mq.TLO.Target() end)
 
     if not mq.TLO.Window('LootWnd').Open() then
-        if mq.TLO.Target() and mq.TLO.Target.CleanName() then
-            Logger.Warn(LNS.guiLoot.console, "lootCorpse(): Can't loot %s right now", mq.TLO.Target.CleanName() or "unknown")
-            cantLootList[corpseID] = os.clock()
+        if cantLootID == 0 and mq.TLO.Target.ID() == corpseID and not mq.TLO.Window('LootWnd').Open() then
+            -- try a little harder
+            mq.cmdf('/loot')
+            mq.delay(1000, function() return mq.TLO.Window('LootWnd').Open() end)
         end
-        return didLootMob
+        cantLootID = 0
+        if not mq.TLO.Window('LootWnd').Open() then
+            if mq.TLO.Target() and mq.TLO.Target.CleanName() then
+                Logger.Warn(LNS.guiLoot.console, "lootCorpse(): Can't loot %s right now", mq.TLO.Target.CleanName() or "unknown")
+                cantLootList[corpseID] = os.clock()
+            end
+            return didLootMob
+        end
     end
 
     local corpseName = mq.TLO.Corpse.CleanName() or 'none'
@@ -3568,8 +3576,8 @@ function LNS.RestockItems()
             ::need_more::
             mq.TLO.Window("MerchantWnd/MW_ItemList").Select(rowNum)()
             Logger.Debug(LNS.guiLoot.console, "\ayRestocking \ax%s \aoHave\ax: \at%s\ax \agBuying\ax: \ay%s", itemName, onHand, tmpQty)
-            mq.delay(3000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() == itemName end)
-            if mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text() ~= itemName then
+            mq.delay(3000, function() return mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text():lower() == itemName:lower() end)
+            if mq.TLO.Window('MerchantWnd/MW_SelectedItemLabel').Text():lower() ~= itemName:lower() then
                 Logger.Warn(LNS.guiLoot.console, "\arFailed\ax to select item: \ay%s\ax, retrying...", itemName)
                 if settings.TempSettings.RestockAttempts == nil then
                     settings.TempSettings.RestockAttempts = 0

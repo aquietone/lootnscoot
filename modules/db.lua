@@ -4,7 +4,7 @@ local SQLite3           = require 'lsqlite3'
 local actors            = require('modules.actor')
 local settings          = require('modules.settings')
 local guiLoot           = require('modules.loot_hist')
-local success, Logger   = pcall(require, 'lib.Write')
+local success, Logger   = pcall(require, 'lib.Logger')
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return

@@ -70,7 +70,7 @@ local ImGui           = require('ImGui')
 local MyClass         = mq.TLO.Me.Class.ShortName()
 local Actors          = require("actors")
 local Files           = require("mq.Utils")
-local success, Logger = pcall(require, 'lib.Write')
+local success, Logger = pcall(require, 'lib.Logger')
 
 if not success then
 	printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
