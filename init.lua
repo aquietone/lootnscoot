@@ -481,10 +481,6 @@ function LNS.loadSettings(firstRun)
         end
     end
 
-    if not Files.File.Exists(db.RulesDB) then
-        -- touch path to create the directory
-        mq.pickle(db.RulesDB .. "touch", {})
-    end
     -- process settings file
 
     for k, v in pairs(settings.Settings) do
@@ -578,6 +574,10 @@ end
 
 function LNS.navToID(spawnID)
     if (mq.TLO.Spawn(spawnID).Distance3D() or 0) < 10 then return end
+    if mq.TLO.Window('LootWnd').Open() then
+        mq.delay(25, function() return not mq.TLO.Window('LootWnd').Open() end)
+        if mq.TLO.Window('LootWnd').Open() then return end
+    end
     mq.cmdf('/nav id %d dist=10 log=off', spawnID)
     mq.delay(50, function() return (mq.TLO.Spawn(spawnID).Distance3D() or 0) < 10 end)
     if mq.TLO.Navigation.Active() then
@@ -2954,12 +2954,13 @@ end
 
 function LNS.lootCorpse(corpseID)
     Logger.Debug(LNS.guiLoot.console, 'Enter lootCorpse')
+    local didLootMob = false
     shouldLootActions.Destroy = settings.Settings.DoDestroy
     shouldLootActions.Tribute = settings.Settings.TributeKeep
     shouldLootActions.Quest   = settings.Settings.QuestKeep
     if corpseID == nil then
         Logger.Warn(LNS.guiLoot.console, "lootCorpse(): No corpseID provided.")
-        return false
+        return didLootMob
     end
     if allItems == nil then allItems = {} end
     skippedLoots = {}
@@ -2968,7 +2969,7 @@ function LNS.lootCorpse(corpseID)
 
     mq.delay(500, function() return not mq.TLO.Me.Moving() end)
     for i = 1, 3 do
-        if not mq.TLO.Target() then return false end
+        if not mq.TLO.Target() then return didLootMob end
         mq.cmdf('/loot')
         mq.delay(1000, function() return mq.TLO.Window('LootWnd').Open() or not mq.TLO.Target() end)
         if mq.TLO.Window('LootWnd').Open() then break end
@@ -2982,7 +2983,7 @@ function LNS.lootCorpse(corpseID)
             Logger.Warn(LNS.guiLoot.console, "lootCorpse(): Can't loot %s right now", mq.TLO.Target.CleanName() or "unknown")
             cantLootList[corpseID] = os.clock()
         end
-        return false
+        return didLootMob
     end
 
     local corpseName = mq.TLO.Corpse.CleanName() or 'none'
@@ -2997,7 +2998,6 @@ function LNS.lootCorpse(corpseID)
         mq.TLO.Window('LootWnd').DoClose()
         mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
         Logger.Debug(LNS.guiLoot.console, "lootCorpse(): \arNo items\ax to loot on corpse \at%s\ax (\ay%s\ax)", corpseName, corpseID)
-        return true
     end
 
     if mq.TLO.Window('LootWnd').Open() and numItems > 0 then
@@ -3006,7 +3006,7 @@ function LNS.lootCorpse(corpseID)
                 mq.cmdf('/lootall')
                 mq.delay("45s", function() return not mq.TLO.Window('LootWnd').Open() end)
             end
-            return false
+            return didLootMob
         end
 
         local iList = ""
@@ -3153,12 +3153,13 @@ function LNS.lootCorpse(corpseID)
 
         mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')
         mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
+        didLootMob = true
     end
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
     LNS.reportSkippedItems(skippedLoots, corpseName, corpseID)
 
-    return true
+    return didLootMob
 end
 
 function LNS.lootMobs(limit)
@@ -3944,8 +3945,8 @@ function LNS.init(args)
         LNS.Terminate = false
     end
     db.SetLNS(LNS)
-    db.PrepareStatements()
     needsSave = LNS.loadSettings(true)
+    db.PrepareStatements()
     mq.cmdf("/squelch /mapfilter CastRadius %d", settings.Settings.CorpseRadius)
     LNS.SortSettings()
     LNS.SortTables()

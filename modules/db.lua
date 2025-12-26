@@ -20,6 +20,11 @@ LNS_DB.HistoryDB                        = string.format('%s/LootNScoot/%s/LootHi
 
 local LNS
 
+if not Files.File.Exists(LNS_DB.RulesDB) then
+    -- touch path to create the directory
+    mq.pickle(LNS_DB.RulesDB .. "touch", {})
+end
+
 function LNS_DB.SetLNS(_LNS)
     LNS = _LNS
 end
