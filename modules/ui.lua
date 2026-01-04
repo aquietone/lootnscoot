@@ -1,9 +1,9 @@
-local mq                = require('mq')
-local Icons             = require('mq.ICONS')
-local actors            = require('modules.actor')
-local perf              = require('modules.performance')
-local settings          = require('modules.settings')
-local success, Logger   = pcall(require, 'lib.Logger')
+local mq              = require('mq')
+local Icons           = require('mq.ICONS')
+local actors          = require('modules.actor')
+local perf            = require('modules.performance')
+local settings        = require('modules.settings')
+local success, Logger = pcall(require, 'lib.Logger')
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return
@@ -1820,6 +1820,60 @@ function LNS_UI.drawItemsTables()
             end
         end
 
+        if ImGui.BeginTabItem("WildCards") then
+            settings.TempSettings.NewWildCard = ImGui.InputTextWithHint("New WildCard", "Enter New WildCard Pattern",
+                settings.TempSettings.NewWildCard or '')
+
+            settings.TempSettings.NewWildCardRule = settings.TempSettings.NewWildCardRule or 'Ask'
+            if ImGui.BeginCombo("Rule", settings.TempSettings.NewWildCardRule) then
+                for i, setting in ipairs(settingList) do
+                    local isSelected = settings.TempSettings.NewWildCardRule == setting
+                    if ImGui.Selectable(setting, isSelected) then
+                        settings.TempSettings.NewWildCardRule = setting
+                    end
+                end
+                ImGui.EndCombo()
+            end
+            ImGui.SameLine()
+            if ImGui.SmallButton(Icons.MD_ADD) then
+                if settings.TempSettings.NewWildCard ~= nil and settings.TempSettings.NewWildCard ~= '' then
+                    settings.TempSettings.AddWildCard = true
+                end
+            end
+
+            ImGui.SeparatorText("WildCard Rules")
+
+            if ImGui.BeginTable("WildCard Table", 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
+                ImGui.TableSetupColumn("Pattern", ImGuiTableColumnFlags.WidthStretch)
+                ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 100)
+                ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 100)
+                ImGui.TableSetupScrollFreeze(0, 1)
+                ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
+
+                for pattern, rule in pairs(LNS.WildCards or {}) do
+                    if pattern ~= nil and rule ~= nil then
+                        ImGui.PushID(pattern)
+                        ImGui.TableNextColumn()
+                        ImGui.Text(pattern)
+                        ImGui.TableNextColumn()
+                        LNS_UI.drawSettingIcon(rule)
+                        ImGui.TableNextColumn()
+                        ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
+                        if ImGui.SmallButton(Icons.MD_DELETE) then
+                            settings.TempSettings.DeleteWildCard = true
+                            settings.TempSettings.DeleteWildCardPattern = pattern
+                        end
+                        ImGui.PopStyleColor()
+                        ImGui.PopID()
+                    end
+                end
+
+                ImGui.EndTable()
+            end
+
+            ImGui.EndTabItem()
+        end
         -- Lookup Items
 
         if LNS.ALLITEMS ~= nil then
