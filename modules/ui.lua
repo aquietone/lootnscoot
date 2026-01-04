@@ -9,17 +9,17 @@ if not success then
     return
 end
 
-local LNS_UI = {_version = '0.1'}
+local LNS_UI                         = { _version = '0.1', }
 
 -- gui
-local fontScale                         = 1
-local iconSize                          = 16
-local tempValues                        = {}
-local iconAnimation                     = mq.FindTextureAnimation('A_DragItem')
-local EQ_ICON_OFFSET                    = 500
-local showSettings                      = false
-local enteredSafeZone                   = false
-local settingList                       = {
+local fontScale                      = 1
+local iconSize                       = 16
+local tempValues                     = {}
+local iconAnimation                  = mq.FindTextureAnimation('A_DragItem')
+local EQ_ICON_OFFSET                 = 500
+local showSettings                   = false
+local enteredSafeZone                = false
+local settingList                    = {
     "Ask",
     "CanUse",
     "Keep",
@@ -30,11 +30,11 @@ local settingList                       = {
     "Tribute",
     "Bank",
 }
-local tmpRules, tmpClasses, tmpLinks    = {}, {}, {}
+local tmpRules, tmpClasses, tmpLinks = {}, {}, {}
 
 -- Pagination state
-local ITEMS_PER_PAGE                    = 25
-local selectedIndex                     = 1
+local ITEMS_PER_PAGE                 = 25
+local selectedIndex                  = 1
 
 local LNS
 
@@ -3421,11 +3421,11 @@ local function RenderBtn()
 
     if showBtn then
         local btnLbl = '##LNSBtn'
-        local cursorX, cursorY = ImGui.GetCursorScreenPos() -- grab location for later to draw button over icon.
+        local cursorX, cursorY = ImGui.GetCursorScreenPos()    -- grab location for later to draw button over icon.
         if LNS.NewItemsCount > 0 then
-            iconAnimation:SetTextureCell(645 - EQ_ICON_OFFSET)   -- gold coin
+            iconAnimation:SetTextureCell(645 - EQ_ICON_OFFSET) -- gold coin
         else
-            iconAnimation:SetTextureCell(644 - EQ_ICON_OFFSET)   -- platinum coin
+            iconAnimation:SetTextureCell(644 - EQ_ICON_OFFSET) -- platinum coin
         end
         if LNS.PauseLooting then
             iconAnimation:SetTextureCell(1436 - EQ_ICON_OFFSET) -- red gem
@@ -3596,8 +3596,6 @@ function LNS_UI.RenderMainUI()
         end
 
         ImGui.End()
-
-        if perf:ShouldRender() then perf:Render() end
     end
 end
 
@@ -3662,6 +3660,8 @@ function LNS_UI.RenderUIs()
     if settings.TempSettings.PastHistory then
         LNS_UI.DrawRecord()
     end
+
+    if perf:ShouldRender() then perf:Render() end
 
     if colCount > 0 then ImGui.PopStyleColor(colCount) end
     if styCount > 0 then ImGui.PopStyleVar(styCount) end
