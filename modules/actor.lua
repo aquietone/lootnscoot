@@ -315,7 +315,6 @@ local function callback(message)
     end
 
     if action == 'updatewildcard' then
-        if who == settings.MyName then return end
         Logger.Debug(guiLoot.console, dbgTbl)
         settings.TempSettings.NeedReloadWildCards = true
         return

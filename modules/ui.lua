@@ -1851,7 +1851,9 @@ function LNS_UI.drawItemsTables()
                 ImGui.TableHeadersRow()
                 ImGui.TableNextRow()
 
-                for pattern, rule in pairs(LNS.WildCards or {}) do
+                for _, entry in ipairs(LNS.WildCards or {}) do
+                    local pattern = entry.wildcard
+                    local rule = entry.rule
                     if pattern ~= nil and rule ~= nil then
                         ImGui.PushID(pattern)
                         ImGui.TableNextColumn()

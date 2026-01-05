@@ -1625,7 +1625,9 @@ end
 function LNS.CheckWildCards(itemName)
     local name = itemName:lower()
 
-    for patternOrig, rule in pairs(LNS.WildCards or {}) do
+    for _, entry in ipairs(LNS.WildCards or {}) do
+        local patternOrig = entry.wildcard
+        local rule = entry.rule
         if patternOrig then
             local pattern = LNS.NormalizePattern(patternOrig)
 

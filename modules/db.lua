@@ -670,12 +670,13 @@ end
 function LNS_DB.LoadWildCardRules()
     -- load wildcard rules
     local Wc_Table = {}
-    local wc_stmt = rules_db:prepare("SELECT * FROM WildCards")
+
+    local wc_stmt = rules_db:prepare("SELECT wildcard, rule FROM wildcards ORDER BY LENGTH(wildcard) DESC, wildcard ASC")
     for row in wc_stmt:nrows() do
         local wildcard = row.wildcard
         local rule = row.rule
         if wildcard and rule then
-            Wc_Table[wildcard] = rule
+            table.insert(Wc_Table, { wildcard = wildcard, rule = rule, })
         end
     end
     wc_stmt:finalize()
@@ -906,7 +907,6 @@ function LNS_DB.AddWildCard(wildcard, rule)
 
     rules_db:exec("COMMIT")
     rules_db:exec("PRAGMA wal_checkpoint;")
-    LNS.WildCards[wildcard] = rule
     actors.Send({
         action = 'updatewildcard',
         who = settings.MyName,
@@ -931,7 +931,6 @@ function LNS_DB.DeleteWildCard(wildcard)
 
     rules_db:exec("COMMIT")
     rules_db:exec("PRAGMA wal_checkpoint;")
-    LNS.WildCards[wildcard] = nil
     actors.Send({
         action = 'updatewildcard',
         who = settings.MyName,
