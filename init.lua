@@ -2330,12 +2330,13 @@ function LNS.checkClasses(decision, allowedClasses, fromFunction, is_new_item)
     return ret
 end
 
-function LNS.checkWearable(isEqupiable, decision, ruletype, nodrop, newrule, isAug, item)
+function LNS.checkWearable(isEquippable, decision, ruletype, nodrop, newrule, isAug, item)
     local msgTbl = {}
     local iCanWear = false
-    if isEqupiable then
+    if isEquippable then
         if ruletype ~= 'Personal' and ((settings.Settings.CanWear and (decision == 'Keep' or decision == 'CanUse')) or
-                (decision == 'Keep' or decision == 'CanUse') or (nodrop and newrule)) then
+                -- (decision == 'Keep' or decision == 'CanUse') or (nodrop and newrule)) then
+                (decision == 'CanUse') or (nodrop and newrule)) then
             if not item.CanUse() then
                 decision = 'Ignore'
                 iCanWear = false
@@ -2699,6 +2700,11 @@ function LNS.getRule(item, fromFunction, index)
 
         Logger.Debug(LNS.guiLoot.console, "\ax\aoItem\ax (\ag%s\ax) Classes: (\at%s)\ax MyClass: (\ay%s\ax) Decision: (\at%s\ax)",
             itemName, lootClasses, LNS.MyClass, lootDecision)
+    end
+
+    if lootRule == 'CanUse' and isEquippable then
+        lootDecision = LNS.checkClasses(lootRule, lootClasses, fromFunction, newRule)
+        iCanUse, lootDecision = LNS.checkWearable(isEquippable, lootRule, ruletype, isNoDrop, newRule, isAug, item)
     end
 
     if ((lootRule == 'Sell' or lootRule == 'Tribute') and ruletype == 'Normal') then
