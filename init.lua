@@ -1600,18 +1600,47 @@ function LNS.UpdateRuleLink(itemID, link, which_table)
     end
 end
 
+function LNS.NormalizePattern(pattern)
+    local out = {}
+    local i = 1
+    local len = #pattern
+
+    while i <= len do
+        local c = pattern:sub(i, i)
+
+        if c == '%' and i < len then
+            -- Preserve Lua pattern escapes exactly
+            table.insert(out, pattern:sub(i, i + 1))
+            i = i + 2
+        else
+            -- Lowercase literal characters only
+            table.insert(out, c:lower())
+            i = i + 1
+        end
+    end
+
+    return table.concat(out)
+end
+
 function LNS.CheckWildCards(itemName)
-    local rule = ''
-    for k, v in pairs(LNS.WildCards or {}) do
-        if k then
-            rule = v or ''
-            local pattern = k:lower()
-            if itemName:lower():match(pattern) then
-                Logger.Debug(LNS.guiLoot.console, "Wildcard match found: \ay%s\ax matches pattern \at%s\ax", itemName, pattern)
-                return rule
+    local name = itemName:lower()
+
+    for patternOrig, rule in pairs(LNS.WildCards or {}) do
+        if patternOrig then
+            local pattern = LNS.NormalizePattern(patternOrig)
+
+            if name:match(pattern) then
+                Logger.Debug(
+                    LNS.guiLoot.console,
+                    "Wildcard match found: \ay%s\ax matches pattern \at%s\ax",
+                    itemName,
+                    patternOrig
+                )
+                return rule or ''
             end
         end
     end
+
     return ''
 end
 
