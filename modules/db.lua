@@ -1,22 +1,22 @@
-local mq                = require('mq')
-local Files             = require('mq.Utils')
-local SQLite3           = require 'lsqlite3'
-local actors            = require('modules.actor')
-local settings          = require('modules.settings')
-local guiLoot           = require('modules.loot_hist')
-local success, Logger   = pcall(require, 'lib.Logger')
+local mq              = require('mq')
+local Files           = require('mq.Utils')
+local SQLite3         = require 'lsqlite3'
+local actors          = require('modules.actor')
+local settings        = require('modules.settings')
+local guiLoot         = require('modules.loot_hist')
+local success, Logger = pcall(require, 'lib.Logger')
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return
 end
 
-local LNS_DB = {_version = '0.1', PreparedStatements = {}}
+local LNS_DB      = { _version = '0.1', PreparedStatements = {}, }
 
 -- paths
-local resourceDir                       = mq.TLO.MacroQuest.Path('resources')() .. "/"
-LNS_DB.RulesDB                          = string.format('%s/LootNScoot/%s/AdvLootRules.db', resourceDir, settings.EqServer)
-LNS_DB.ItemsDB                          = string.format('%s/LootNScoot/%s/Items.db', resourceDir, settings.EqServer)
-LNS_DB.HistoryDB                        = string.format('%s/LootNScoot/%s/LootHistory.db', resourceDir, settings.EqServer)
+local resourceDir = mq.TLO.MacroQuest.Path('resources')() .. "/"
+LNS_DB.RulesDB    = string.format('%s/LootNScoot/%s/AdvLootRules.db', resourceDir, settings.EqServer)
+LNS_DB.ItemsDB    = string.format('%s/LootNScoot/%s/Items.db', resourceDir, settings.EqServer)
+LNS_DB.HistoryDB  = string.format('%s/LootNScoot/%s/LootHistory.db', resourceDir, settings.EqServer)
 
 local LNS
 
@@ -38,6 +38,7 @@ function LNS_DB.OpenDB(db_name)
     db:exec("PRAGMA journal_mode=WAL;")
     return db
 end
+
 local items_db = LNS_DB.OpenDB(LNS_DB.ItemsDB)
 local history_db = LNS_DB.OpenDB(LNS_DB.HistoryDB)
 local rules_db = LNS_DB.OpenDB(LNS_DB.RulesDB)
@@ -50,7 +51,7 @@ function LNS_DB.PrepareStatements()
         end
     end
 
-    local sql  = [[
+    local sql = [[
 INSERT INTO Items (
 item_id, name, nodrop, notrade, tradeskill, quest, lore, augment,
 stackable, sell_value, tribute_value, stack_size, clickable, augtype,
@@ -614,6 +615,10 @@ item_link TEXT
 CREATE TABLE IF NOT EXISTS SafeZones (
 zone TEXT PRIMARY KEY NOT NULL UNIQUE
 );
+CREATE TABLE IF NOT EXISTS WildCards(
+wildcard TEXT PRIMARY KEY NOT NULL UNIQUE,
+rule TEXT NOT NULL
+);
 COMMIT;
 PRAGMA wal_checkpoint;
 ]], settings.PersonalTableName))
@@ -657,6 +662,25 @@ PRAGMA wal_checkpoint;
         end
     end
     sz_stmt:finalize()
+
+    -- load wildcard rules
+    LNS.WildCards = LNS_DB.LoadWildCardRules()
+end
+
+function LNS_DB.LoadWildCardRules()
+    -- load wildcard rules
+    local Wc_Table = {}
+
+    local wc_stmt = rules_db:prepare("SELECT wildcard, rule FROM wildcards ORDER BY LENGTH(wildcard) DESC, wildcard ASC")
+    for row in wc_stmt:nrows() do
+        local wildcard = row.wildcard
+        local rule = row.rule
+        if wildcard and rule then
+            table.insert(Wc_Table, { wildcard = wildcard, rule = rule, })
+        end
+    end
+    wc_stmt:finalize()
+    return Wc_Table
 end
 
 ---comment
@@ -867,6 +891,54 @@ function LNS_DB.AddSafeZone(zoneName)
     return true
 end
 
+function LNS_DB.AddWildCard(wildcard, rule)
+    local stmt = rules_db:prepare("INSERT OR REPLACE INTO WildCards (wildcard, rule) VALUES (?, ?)")
+    if not stmt then
+        printf("Error preparing statement for wildcard: %s", rules_db:errmsg())
+        return
+    end
+    stmt:bind_values(wildcard, rule)
+    rules_db:exec("BEGIN TRANSACTION")
+    local res, err = stmt:step()
+    if res ~= SQLite3.DONE then
+        printf("Error inserting wildcard: %s ", err)
+    end
+    stmt:finalize()
+
+    rules_db:exec("COMMIT")
+    rules_db:exec("PRAGMA wal_checkpoint;")
+    actors.Send({
+        action = 'updatewildcard',
+        who = settings.MyName,
+        Server = settings.EqServer,
+    })
+    return true
+end
+
+function LNS_DB.DeleteWildCard(wildcard)
+    local stmt = rules_db:prepare("DELETE FROM WildCards WHERE wildcard = ?")
+    if not stmt then
+        printf("Error preparing statement for wildcard: %s", rules_db:errmsg())
+        return
+    end
+    stmt:bind_values(wildcard)
+    rules_db:exec("BEGIN TRANSACTION")
+    local res, err = stmt:step()
+    if res ~= SQLite3.DONE then
+        printf("Error deleting wildcard: %s ", err)
+    end
+    stmt:finalize()
+
+    rules_db:exec("COMMIT")
+    rules_db:exec("PRAGMA wal_checkpoint;")
+    actors.Send({
+        action = 'updatewildcard',
+        who = settings.MyName,
+        Server = settings.EqServer,
+    })
+    return true
+end
+
 function LNS_DB.RemoveSafeZone(zoneName)
     local stmt = rules_db:prepare("DELETE FROM SafeZones WHERE zone = ?")
     if not stmt then
@@ -899,7 +971,7 @@ function LNS_DB.GetLowestID(tableName)
     end
 
     stmt:finalize()
-    
+
     -- If the lowest ID is positive, we want to start assigning from -1
     if result > 0 then
         return -1

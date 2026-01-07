@@ -1,25 +1,25 @@
-local mq                = require('mq')
-local Icons             = require('mq.ICONS')
-local actors            = require('modules.actor')
-local perf              = require('modules.performance')
-local settings          = require('modules.settings')
-local success, Logger   = pcall(require, 'lib.Logger')
+local mq              = require('mq')
+local Icons           = require('mq.ICONS')
+local actors          = require('modules.actor')
+local perf            = require('modules.performance')
+local settings        = require('modules.settings')
+local success, Logger = pcall(require, 'lib.Logger')
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return
 end
 
-local LNS_UI = {_version = '0.1'}
+local LNS_UI                         = { _version = '0.1', }
 
 -- gui
-local fontScale                         = 1
-local iconSize                          = 16
-local tempValues                        = {}
-local iconAnimation                     = mq.FindTextureAnimation('A_DragItem')
-local EQ_ICON_OFFSET                    = 500
-local showSettings                      = false
-local enteredSafeZone                   = false
-local settingList                       = {
+local fontScale                      = 1
+local iconSize                       = 16
+local tempValues                     = {}
+local iconAnimation                  = mq.FindTextureAnimation('A_DragItem')
+local EQ_ICON_OFFSET                 = 500
+local showSettings                   = false
+local enteredSafeZone                = false
+local settingList                    = {
     "Ask",
     "CanUse",
     "Keep",
@@ -30,11 +30,11 @@ local settingList                       = {
     "Tribute",
     "Bank",
 }
-local tmpRules, tmpClasses, tmpLinks    = {}, {}, {}
+local tmpRules, tmpClasses, tmpLinks = {}, {}, {}
 
 -- Pagination state
-local ITEMS_PER_PAGE                    = 25
-local selectedIndex                     = 1
+local ITEMS_PER_PAGE                 = 25
+local selectedIndex                  = 1
 
 local LNS
 
@@ -1820,6 +1820,62 @@ function LNS_UI.drawItemsTables()
             end
         end
 
+        if ImGui.BeginTabItem("WildCards") then
+            settings.TempSettings.NewWildCard = ImGui.InputTextWithHint("New WildCard", "Enter New WildCard Pattern",
+                settings.TempSettings.NewWildCard or '')
+
+            settings.TempSettings.NewWildCardRule = settings.TempSettings.NewWildCardRule or 'Ask'
+            if ImGui.BeginCombo("Rule", settings.TempSettings.NewWildCardRule) then
+                for i, setting in ipairs(settingList) do
+                    local isSelected = settings.TempSettings.NewWildCardRule == setting
+                    if ImGui.Selectable(setting, isSelected) then
+                        settings.TempSettings.NewWildCardRule = setting
+                    end
+                end
+                ImGui.EndCombo()
+            end
+            ImGui.SameLine()
+            if ImGui.SmallButton(Icons.MD_ADD) then
+                if settings.TempSettings.NewWildCard ~= nil and settings.TempSettings.NewWildCard ~= '' then
+                    settings.TempSettings.AddWildCard = true
+                end
+            end
+
+            ImGui.SeparatorText("WildCard Rules")
+
+            if ImGui.BeginTable("WildCard Table", 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
+                ImGui.TableSetupColumn("Pattern", ImGuiTableColumnFlags.WidthStretch)
+                ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthFixed, 100)
+                ImGui.TableSetupColumn("Actions", ImGuiTableColumnFlags.WidthFixed, 100)
+                ImGui.TableSetupScrollFreeze(0, 1)
+                ImGui.TableHeadersRow()
+                ImGui.TableNextRow()
+
+                for _, entry in ipairs(LNS.WildCards or {}) do
+                    local pattern = entry.wildcard
+                    local rule = entry.rule
+                    if pattern ~= nil and rule ~= nil then
+                        ImGui.PushID(pattern)
+                        ImGui.TableNextColumn()
+                        ImGui.Text(pattern)
+                        ImGui.TableNextColumn()
+                        LNS_UI.drawSettingIcon(rule)
+                        ImGui.TableNextColumn()
+                        ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
+                        if ImGui.SmallButton(Icons.MD_DELETE) then
+                            settings.TempSettings.DeleteWildCard = true
+                            settings.TempSettings.DeleteWildCardPattern = pattern
+                        end
+                        ImGui.PopStyleColor()
+                        ImGui.PopID()
+                    end
+                end
+
+                ImGui.EndTable()
+            end
+
+            ImGui.EndTabItem()
+        end
         -- Lookup Items
 
         if LNS.ALLITEMS ~= nil then
@@ -3421,11 +3477,11 @@ local function RenderBtn()
 
     if showBtn then
         local btnLbl = '##LNSBtn'
-        local cursorX, cursorY = ImGui.GetCursorScreenPos() -- grab location for later to draw button over icon.
+        local cursorX, cursorY = ImGui.GetCursorScreenPos()    -- grab location for later to draw button over icon.
         if LNS.NewItemsCount > 0 then
-            iconAnimation:SetTextureCell(645 - EQ_ICON_OFFSET)   -- gold coin
+            iconAnimation:SetTextureCell(645 - EQ_ICON_OFFSET) -- gold coin
         else
-            iconAnimation:SetTextureCell(644 - EQ_ICON_OFFSET)   -- platinum coin
+            iconAnimation:SetTextureCell(644 - EQ_ICON_OFFSET) -- platinum coin
         end
         if LNS.PauseLooting then
             iconAnimation:SetTextureCell(1436 - EQ_ICON_OFFSET) -- red gem
@@ -3596,8 +3652,6 @@ function LNS_UI.RenderMainUI()
         end
 
         ImGui.End()
-
-        if perf:ShouldRender() then perf:Render() end
     end
 end
 
@@ -3662,6 +3716,8 @@ function LNS_UI.RenderUIs()
     if settings.TempSettings.PastHistory then
         LNS_UI.DrawRecord()
     end
+
+    if perf:ShouldRender() then perf:Render() end
 
     if colCount > 0 then ImGui.PopStyleColor(colCount) end
     if styCount > 0 then ImGui.PopStyleVar(styCount) end

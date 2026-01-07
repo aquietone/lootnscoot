@@ -1,14 +1,14 @@
-local mq                = require('mq')
-local Actors            = require('actors')
-local settings          = require('modules.settings')
-local guiLoot           = require('modules.loot_hist')
-local success, Logger   = pcall(require, 'lib.Logger')
+local mq              = require('mq')
+local Actors          = require('actors')
+local settings        = require('modules.settings')
+local guiLoot         = require('modules.loot_hist')
+local success, Logger = pcall(require, 'lib.Logger')
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return
 end
 
-local LNS_ACTORS        = {_version = '0.1'}
+local LNS_ACTORS = { _version = '0.1', }
 
 local LNS
 
@@ -251,8 +251,8 @@ local function callback(message)
     if action == 'master_looter' and who ~= settings.MyName and settings.Settings.MasterLooting ~= lootMessage.select then
         settings.Settings.MasterLooting          = lootMessage.select
         settings.TempSettings[who].MasterLooting = lootMessage.select
-        LNS.Boxes[settings.MyName]                   = settings.Settings
-        settings.TempSettings[settings.MyName]            = nil
+        LNS.Boxes[settings.MyName]               = settings.Settings
+        settings.TempSettings[settings.MyName]   = nil
         settings.TempSettings.NeedSave           = true
         settings.TempSettings.UpdateSettings     = true
         Logger.Debug(guiLoot.console, dbgTbl)
@@ -311,6 +311,12 @@ local function callback(message)
         settings.TempSettings.UpdateSettings = true
         Logger.Debug(guiLoot.console, dbgTbl)
 
+        return
+    end
+
+    if action == 'updatewildcard' then
+        Logger.Debug(guiLoot.console, dbgTbl)
+        settings.TempSettings.NeedReloadWildCards = true
         return
     end
 
