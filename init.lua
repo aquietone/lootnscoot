@@ -3600,10 +3600,11 @@ function LNS.SellToVendor(itemID, bag, slot, name)
             and ('/itemnotify %s leftmouseup'):format(bag)
             or ('/itemnotify in pack%s %s leftmouseup'):format(bag, slot)
         mq.cmdf(notify)
-        mq.delay(1000, function() return mq.TLO.Window("MerchantWnd/MW_Sell_Button")() == "TRUE" and mq.TLO.Window("MerchantWnd/MW_Sell_Button").Enabled() end)
-        if mq.TLO.Window("MerchantWnd/MW_SelectedPriceLabel").Text() ~= "0c" then
+        mq.delay(1000,
+            function() return mq.TLO.Window("MerchantWnd/MW_Sell_Button").Enabled() and ((mq.TLO.Window("MerchantWnd/MW_SelectedItemLabel").Text() or "") == itemName) end)
+        if mq.TLO.Window("MerchantWnd/MW_Sell_Button").Enabled() and mq.TLO.Window("MerchantWnd/MW_SelectedPriceLabel").Text() ~= "0c" then
             mq.cmdf('/nomodkey /shiftkey /notify merchantwnd MW_Sell_Button leftmouseup')
-            mq.delay(5000, function() return mq.TLO.Window("MerchantWnd/MW_Sell_Button")() ~= "TRUE" end)
+            mq.delay(5000, function() return (mq.TLO.Window("MerchantWnd/MW_SelectedItemLabel").Text() ~= itemName) end)
         end
     end
 end
