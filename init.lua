@@ -1872,10 +1872,11 @@ function LNS.Get_item_data(item)
         AugType6 = item.AugSlot6() or 'none',
 
         -- bonus efx
-        Spelleffect = item.Spell.Name() or "",
-        Worn = item.Worn.Spell() and (item.Worn.Spell.Name() or '') or 'none',
-        Focus1 = item.Focus() and (item.Focus.Spell.Name() or '') or 'none',
-        Focus2 = item.Focus2() and (item.Focus2.Spell.Name() or '') or 'none',
+        Spelleffect = item.Spell() or "",
+        -- spell userdata should never be nil and yet here we are...
+        Worn = item.Worn and item.Worn.Spell and item.Worn.Spell.Name() or or 'none',
+        Focus1 = item.Focus and item.Focus.Spell and item.Focus.Spell.Name() or 'none',
+        Focus2 = item.Focus2 and item.Focus2.Spell and item.Focus2.Spell.Name() or 'none',
         -- ElementalDamage = item.ElementalDamage() or 0,
         Haste = item.Haste() or 0,
         DmgShield = item.DamShield() or 0,
@@ -1912,17 +1913,17 @@ function LNS.Get_item_data(item)
 
         --descriptions
         SpellDesc = item.Spell.Description() or "",
-        WornDesc = item.Worn.Spell() and (item.Worn.Spell.Description() or '') or '',
-        Focus1Desc = item.Focus() and (item.Focus.Spell.Description() or '') or '',
-        Focus2Desc = item.Focus2() and (item.Focus2.Spell.Description() or '') or '',
-        ClickyDesc = item.Clicky() and (item.Clicky.Spell.Description() or '') or '',
+        WornDesc = item.Worn and item.Worn.Spell and item.Worn.Spell.Description() or '',
+        Focus1Desc = item.Focus and item.Focus.Spell and item.Focus.Spell.Description() or '',
+        Focus2Desc = item.Focus2 and item.Focus2.Spell and item.Focus2.Spell.Description() or '',
+        ClickyDesc = item.Clicky and item.Clicky.Spell and item.Clicky.Spell.Description() or '',
 
         -- links
         SpellID = item.Spell.ID() or 0,
-        WornID = item.Worn.Spell() and (item.Worn.Spell.ID() or 0) or 0,
-        Focus1ID = item.Focus() and (item.Focus.Spell.ID() or 0) or 0,
-        Focus2ID = item.Focus2() and (item.Focus2.Spell.ID() or 0) or 0,
-        ClickyID = item.Clicky() and (item.Clicky.Spell.ID() or 0) or 0,
+        WornID = item.Worn and item.Worn.Spell and item.Worn.Spell.ID() or 0,
+        Focus1ID = item.Focus and item.Focus.Spell and item.Focus.Spell.ID() or 0,
+        Focus2ID = item.Focus2 and item.Focus2.Spell and item.Focus2.Spell.ID() or 0,
+        ClickyID = item.Clicky and item.Clicky.Spell and item.Clicky.Spell.ID() or 0,
 
         CombatEffects = item.CombatEffects() or 0,
         -- slots
