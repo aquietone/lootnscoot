@@ -1874,7 +1874,7 @@ function LNS.Get_item_data(item)
         -- bonus efx
         Spelleffect = item.Spell() or "",
         -- spell userdata should never be nil and yet here we are...
-        Worn = item.Worn and item.Worn.Spell and item.Worn.Spell.Name() or or 'none',
+        Worn = item.Worn and item.Worn.Spell and item.Worn.Spell.Name() or 'none',
         Focus1 = item.Focus and item.Focus.Spell and item.Focus.Spell.Name() or 'none',
         Focus2 = item.Focus2 and item.Focus2.Spell and item.Focus2.Spell.Name() or 'none',
         -- ElementalDamage = item.ElementalDamage() or 0,
