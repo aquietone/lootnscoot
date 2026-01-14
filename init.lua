@@ -3,6 +3,7 @@
 
 local mq              = require 'mq'
 local PackageMan      = require('mq.PackageMan')
+local sql             = PackageMan.Require('lsqlite3')
 local Files           = require('mq.Utils')
 local success, Logger = pcall(require, 'lib.Logger')
 local actors          = require('modules.actor')
