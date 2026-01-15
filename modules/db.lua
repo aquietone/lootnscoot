@@ -451,7 +451,8 @@ function LNS_DB.GetItemFromDB(itemName, itemID, query)
         end
     end
     Logger.Info(guiLoot.console, "loot.GetItemFromDB() \agFound \ay%d\ax items matching the query: \ay%s\ax", rowsFetched, query)
-    stmt:finalize()
+    local pcallSuccess, pcallResult = pcall(function() stmt:finalize() end)
+    if not pcallSuccess then printf('stmt:finalize() failed in GetItemFromDB. success=%s result=%s', pcallSuccess, pcallResult) end
     return rowsFetched
 end
 
