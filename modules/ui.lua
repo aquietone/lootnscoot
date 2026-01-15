@@ -1168,7 +1168,6 @@ function LNS_UI.drawNewItemsTable()
                     ImGui.Text("Right Click to Pop Open Details window.")
                     ImGui.EndTooltip()
                     if ImGui.IsMouseClicked(0) then
-                        -- if ImGui.SmallButton(Icons.FA_EYE .. "##" .. itemID) then
                         mq.cmdf('/executelink %s', item.Link)
                     elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
                         settings.TempSettings.Popped[itemID] = true
@@ -1621,17 +1620,23 @@ function LNS_UI.drawTabbedTable(label)
                         else
                             LNS_UI.drawIcon(4493, iconSize * fontScale)   -- icon
                         end
-                        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
-                            mq.cmdf('/executelink %s', itemLink)
+                        if ImGui.IsItemHovered() then
+                            LNS_UI.DrawRuleToolTip(itemName, setting, classes:upper())
+                            if ImGui.IsMouseClicked(0) then
+                                mq.cmdf('/executelink %s', itemLink)
+                            elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
+                                settings.TempSettings.Popped[itemID] = true
+                            end
                         end
                         ImGui.SameLine(0, 0)
 
                         ImGui.Text(itemName)
                         if ImGui.IsItemHovered() then
                             LNS_UI.DrawRuleToolTip(itemName, setting, classes:upper())
-
-                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
+                            if ImGui.IsMouseClicked(0) then
                                 mq.cmdf('/executelink %s', itemLink)
+                            elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
+                                settings.TempSettings.Popped[itemID] = true
                             end
                         end
                         ImGui.Unindent(2)
@@ -1641,8 +1646,10 @@ function LNS_UI.drawTabbedTable(label)
 
                         if ImGui.IsItemHovered() then
                             LNS_UI.DrawRuleToolTip(itemName, setting, classes:upper())
-                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
+                            if ImGui.IsMouseClicked(0) then
                                 mq.cmdf('/executelink %s', itemLink)
+                            elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
+                                settings.TempSettings.Popped[itemID] = true
                             end
                         end
                         ImGui.Unindent(2)
@@ -1656,8 +1663,10 @@ function LNS_UI.drawTabbedTable(label)
 
                         if ImGui.IsItemHovered() then
                             LNS_UI.DrawRuleToolTip(itemName, setting, classes:upper())
-                            if ImGui.IsMouseClicked(1) and itemLink ~= nil then
+                            if ImGui.IsMouseClicked(0) then
                                 mq.cmdf('/executelink %s', itemLink)
+                            elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
+                                settings.TempSettings.Popped[itemID] = true
                             end
                         end
                         ImGui.Unindent(2)
@@ -2110,8 +2119,20 @@ example {hp>=500, name~robe} this will return items with 500 + Hp and has robe i
                         ImGui.TableNextColumn()
                         ImGui.Indent(2)
                         LNS_UI.drawIcon(item.Icon, iconSize * fontScale)
-                        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(0) then
-                            mq.cmdf('/executelink %s', item.Link)
+                        if ImGui.IsItemHovered() then
+                            ImGui.BeginTooltip()
+                            LNS_UI.Draw_item_tooltip(id)
+                            ImGui.Spacing()
+                            ImGui.Separator()
+                            ImGui.Text("Left Click Icon to open In-Game Details window")
+                            ImGui.Text("Right Click to Pop Open Details window.")
+                            ImGui.EndTooltip()
+                            if ImGui.IsMouseClicked(0) then
+                                -- if ImGui.SmallButton(Icons.FA_EYE .. "##" .. itemID) then
+                                mq.cmdf('/executelink %s', item.Link)
+                            elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
+                                settings.TempSettings.Popped[id] = true
+                            end
                         end
                         ImGui.SameLine()
                         if ImGui.Selectable(item.Name, false) then
@@ -2122,9 +2143,6 @@ example {hp>=500, name~robe} this will return items with 500 + Hp and has robe i
                             settings.TempSettings.ModifyItemName = item.Name
 
                             tempValues = {}
-                        end
-                        if ImGui.IsItemHovered() and ImGui.IsMouseClicked(1) then
-                            mq.cmdf('/executelink %s', item.Link)
                         end
                         ImGui.Unindent(2)
                         ImGui.TableNextColumn()
@@ -2329,9 +2347,12 @@ function LNS_UI.DrawRuleToolTip(name, setting, classes)
     ImGui.SameLine()
     ImGui.TextColored(0.5, 1, 0.5, 1, classes)
 
+    -- ImGui.Separator()
+    -- ImGui.Text("Right Click to View Item Details")
+    ImGui.Spacing()
     ImGui.Separator()
-    ImGui.Text("Right Click to View Item Details")
-
+    ImGui.Text("Left Click Icon to open In-Game Details window")
+    ImGui.Text("Right Click to Pop Open Details window.")
     ImGui.EndTooltip()
 end
 
