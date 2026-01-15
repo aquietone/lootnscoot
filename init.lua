@@ -3032,7 +3032,9 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
                 text = string.format('\ao[\at%s\ax] \at%s \ar%s \ax%s \axCorpse \at%s\ax (\at%s\ax)', os.date('%H:%M:%S'), settings.MyName, string.upper(rule), itemLink, corpseName,
                     mq.TLO.Corpse.ID() or 0)
             end
-            LNS.guiLoot.console:AppendText(text)
+            if LNS.guiLoot.console ~= nil then
+                LNS.guiLoot.console:AppendText(text)
+            end
             perf:OnFrameExec('history', mq.gettime() - startTime)
         end
     end
@@ -3179,7 +3181,9 @@ function LNS.lootCorpse(corpseID)
                                 itemLink,
                                 corpseName, corpseID)
                         end
-                        LNS.guiLoot.console:AppendText(text)
+                        if LNS.guiLoot.console ~= nil then
+                            LNS.guiLoot.console:AppendText(text)
+                        end
                         perf:OnFrameExec('history', mq.gettime() - startTime)
                     end
                     -- local lbl = itemRule
@@ -3566,9 +3570,11 @@ function LNS.eventSell(_, itemName)
         return
     end
 
-    -- Add a rule to mark the item as "Sell"
-    LNS.addRule(itemID, "NormalItems", "Sell", "All", 'NULL')
-    Logger.Info(LNS.guiLoot.console, "Added rule: \ay%s\ax set to \agSell\ax.", itemName)
+    if settings.Settings.AddNewSales then
+        -- Add a rule to mark the item as "Sell"
+        LNS.addRule(itemID, "NormalItems", "Sell", "All", 'NULL')
+        Logger.Info(LNS.guiLoot.console, "Added rule: \ay%s\ax set to \agSell\ax.", itemName)
+    end
 end
 
 function LNS.goToVendor()
