@@ -30,6 +30,7 @@ local function callback(message)
     local itemID        = lootMessage.itemID or 0
     local rule          = lootMessage.rule or 'NULL'
     local section       = lootMessage.section or 'NormalItems'
+    local sections      = lootMessage.sections
     local itemName      = lootMessage.item or 'NULL'
     local itemLink      = lootMessage.link or 'NULL'
     local itemClasses   = lootMessage.classes or 'All'
@@ -61,6 +62,7 @@ local function callback(message)
         Who = who,
         Link = itemLink,
         LNS_Mode = LNS.Mode,
+        Secion = section,
     }
 
     ------- DEBUG MESSAGES PER SECOND ---------
@@ -336,7 +338,7 @@ local function callback(message)
     if action == 'addrule' or action == 'modifyitem' then
         Logger.Debug(guiLoot.console, dbgTbl)
 
-        if section == 'PersonalItems' and who == settings.MyName then
+        if (section == 'PersonalItems' or (sections and sections['PersonalItems'])) and who == settings.MyName then
             LNS.PersonalItemsRules[itemID]   = rule
             LNS.PersonalItemsClasses[itemID] = itemClasses
             LNS.ItemLinks[itemID]            = itemLink
@@ -349,7 +351,7 @@ local function callback(message)
                 Rule = rule,
                 Item = itemName,
             }
-        elseif section == 'GlobalItems' and who ~= settings.MyName then
+        elseif (section == 'GlobalItems' or (sections and sections['GlobalItems'])) and who ~= settings.MyName then
             LNS.GlobalItemsRules[itemID]   = rule
             LNS.GlobalItemsClasses[itemID] = itemClasses
             LNS.ItemLinks[itemID]          = itemLink
@@ -362,7 +364,7 @@ local function callback(message)
                 Rule = rule,
                 Item = itemName,
             }
-        elseif section == 'NormalItems' and who ~= settings.MyName then
+        elseif (section == 'NormalItems' or (sections and sections['NormalItems'])) and who ~= settings.MyName then
             LNS.NormalItemsRules[itemID]   = rule
             LNS.NormalItemsClasses[itemID] = itemClasses
             LNS.ItemLinks[itemID]          = itemLink
@@ -410,8 +412,10 @@ local function callback(message)
             Logger.Info(guiLoot.console, infoMsg)
         end
 
-        settings.TempSettings.GetItem = { Name = itemName, ID = itemID, }
-        settings.TempSettings.DoGet = true
+        if who ~= settings.MyName then
+            settings.TempSettings.GetItem = { Name = itemName, ID = itemID, ItemLink = itemLink }
+            settings.TempSettings.DoGet = true
+        end
 
         -- clean bags of items marked as destroy so we don't collect garbage
         if rule:lower() == 'destroy' then

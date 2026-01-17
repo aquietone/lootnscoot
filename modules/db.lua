@@ -133,6 +133,9 @@ heroicsvpoison                                    = excluded.heroicsvpoison,
 heroicwis                                    = excluded.heroicwis
 ]]
     initPreparedStatement('ADD_ITEM_TO_DB', items_db, sql)
+    initPreparedStatement('GET_ITEM_FROM_DB', items_db, [[
+SELECT * FROM Items WHERE item_id = ? ORDER BY name ASC
+]])
     initPreparedStatement('CHECK_HISTORY', history_db, [[
 SELECT Date, TimeStamp FROM LootHistory
 WHERE Item = ? AND CorpseName = ? AND Action = ? AND Date = ?
@@ -365,8 +368,16 @@ function LNS_DB.LoadIcons()
     return itemIcons
 end
 
-function LNS_DB.GetItemFromDB(itemName, itemID, query)
-    stmt = items_db:prepare(query)
+function LNS_DB.GetItemFromDB(itemName, itemID, query, useItemIDStmt)
+    local stmt
+    local finalizeStmt = false
+    if useItemIDStmt then
+        stmt = LNS_DB.PreparedStatements.GET_ITEM_FROM_DB
+        stmt:bind_values(itemID)
+    else
+        stmt = items_db:prepare(query)
+        finalizeStmt = true
+    end
     if not stmt then
         Logger.Error(guiLoot.console, "Failed to prepare SQL statement: %s", items_db:errmsg())
         return 0
@@ -451,7 +462,9 @@ function LNS_DB.GetItemFromDB(itemName, itemID, query)
         end
     end
     Logger.Info(guiLoot.console, "loot.GetItemFromDB() \agFound \ay%d\ax items matching the query: \ay%s\ax", rowsFetched, query)
-    local pcallSuccess, pcallResult = pcall(function() stmt:finalize() end)
+    local pcallSuccess, pcallResult = pcall(function()
+        if finalizeStmt then stmt:finalize() else stmt:reset() end
+    end)
     if not pcallSuccess then printf('LootNScoot stmt:finalize() failed in GetItemFromDB. success=%s result=%s', pcallSuccess, pcallResult) end
     return rowsFetched
 end

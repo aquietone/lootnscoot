@@ -1395,7 +1395,7 @@ function LNS.GetItemFromDB(itemName, itemID, rules, exact)
         end
     end
 
-    local rowsFetched = db.GetItemFromDB(itemName, itemID, query)
+    local rowsFetched = db.GetItemFromDB(itemName, itemID, query, itemID > 0 and true or false)
     Logger.Info(LNS.guiLoot.console, "loot.GetItemFromDB() \agFound \ay%d\ax items matching the query: \ay%s\ax", rowsFetched, query)
     return rowsFetched
 end
@@ -1660,7 +1660,7 @@ end
 ---@return string classes
 ---@return string link
 ---@return string which_table
-function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
+function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
     if mq_item and mq_item() then
         itemID = mq_item.ID()
         item_link = mq_item.ItemLink('CLICKABLE')() or 'NULL'
@@ -1742,7 +1742,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link)
             which_table = 'Normal'
         end
 
-        if not found then
+        if not found and not skipWildcard then
             if mq_item and mq_item() then
                 local wildCardRule = LNS.CheckWildCards(mq_item.Name()) or ''
                 if wildCardRule ~= '' then
@@ -2075,11 +2075,21 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link, skipMsg)
     local success = false
     if action == 'delete' then
         success = db.DeleteItemRule(action, tableName, itemName, itemID)
+        if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
+            success = db.DeleteItemRule(action, 'GlobalItems', itemName, itemID)
+        end
     else
         success = db.UpsertItemRule(action, tableName, itemName, itemID, classes, link)
+        if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
+            success = db.UpsertItemRule(action, 'GlobalItems', itemName, itemID, classes, link)
+        end
     end
 
     if success and not skipMsg then
+        local sections = {section=1}
+        if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
+            sections['GlobalItems'] = 1
+        end
         -- Notify other actors about the rule change
         actors.Send({
             who     = settings.MyName,
@@ -2089,6 +2099,7 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link, skipMsg)
             itemID  = itemID,
             rule    = action,
             section = section,
+            sections = sections,
             link    = link,
             classes = classes,
         })
@@ -2130,14 +2141,20 @@ function LNS.addRule(itemID, section, rule, classes, link, skipMsg)
     LNS[section .. "Rules"][itemID]   = rule
     LNS[section .. "Classes"][itemID] = classes
     LNS.ItemLinks[itemID]             = link
-    local tblName                     = section == 'GlobalItems' and 'Global_Rules' or 'Normal_Rules'
+
+    if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
+        LNS["GlobalItemsRules"][itemID]   = rule
+        LNS["GlobalItemsClasses"][itemID] = classes
+    end
+
+    local tblName = section == 'GlobalItems' and 'Global_Rules' or 'Normal_Rules'
     if section == 'PersonalItems' then
         tblName = settings.PersonalTableName
     end
     LNS.modifyItemRule(itemID, rule, tblName, classes, link, skipMsg)
-    if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-        LNS.modifyItemRule(itemID, rule, 'Global_Rules', classes, link, skipMsg)
-    end
+    -- if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
+    --     LNS.modifyItemRule(itemID, rule, 'Global_Rules', classes, link, true)
+    -- end
 
     -- Refresh the loot settings to apply the changes
     return true
@@ -2538,7 +2555,7 @@ function LNS.getRule(item, fromFunction, index)
     end
     -- Lookup existing rule in the databases
 
-    local lootRule, lootClasses, lootLink, ruletype = LNS.lookupLootRule(item, itemID, nil, itemLink)
+    local lootRule, lootClasses, lootLink, ruletype = LNS.lookupLootRule(item, itemID, nil, itemLink, false)
     Logger.Debug(LNS.guiLoot.console, "\ax\ao Lookup Rule \axItem: (\at%s\ax) ID: (\ag%s\ax) Rule: (\ay%s\ax) Classes: (\at%s\ax)",
         itemName, itemID, lootRule, lootClasses)
     -- check for always eval
@@ -4401,8 +4418,9 @@ function LNS.MainLoop()
             if settings.TempSettings.GetItem == nil then return end
             local itemName = settings.TempSettings.GetItem.Name or 'None'
             local itemID = settings.TempSettings.GetItem.ID or 0
+            local itemLink = settings.TempSettings.GetItem.ItemLink or 'NULL'
             LNS.GetItemFromDB(itemName, itemID)
-            LNS.lookupLootRule(nil, itemID)
+            LNS.lookupLootRule(nil, itemID, nil, itemLink, true)
             settings.TempSettings.GetItem = nil
         end
 
