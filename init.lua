@@ -2089,22 +2089,22 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link, skipMsg)
     end
 
     if success and not skipMsg then
-        local sections = {section=1}
+        local sections = { section = 1, }
         if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
             sections['GlobalItems'] = 1
         end
         -- Notify other actors about the rule change
         actors.Send({
-            who     = settings.MyName,
-            Server  = settings.EqServer,
-            action  = action ~= 'delete' and 'addrule' or 'deleteitem',
-            item    = itemName,
-            itemID  = itemID,
-            rule    = action,
-            section = section,
+            who      = settings.MyName,
+            Server   = settings.EqServer,
+            action   = action ~= 'delete' and 'addrule' or 'deleteitem',
+            item     = itemName,
+            itemID   = itemID,
+            rule     = action,
+            section  = section,
             sections = sections,
-            link    = link,
-            classes = classes,
+            link     = link,
+            classes  = classes,
         })
     end
 end
@@ -2609,11 +2609,11 @@ function LNS.getRule(item, fromFunction, index)
     lootDecision = lootRule
 
     -- Handle AlwaysAsk setting
-    if alwaysAsk and lootRule == "Ask" then
+    if settings.Settings.AlwaysAsk or lootRule == "Ask" then
         newRule = true
         lootDecision = "Ask"
         dbgTbl = {
-            Lookup = '\ax\ag Check for ALWAYSASK',
+            Lookup = '\ax\ag Check for ASK',
             Decision = lootDecision,
             Classes = lootClasses,
             Item = itemName,
