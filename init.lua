@@ -1733,13 +1733,16 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
         local found = false
         found, rule, classes, lookupLink = db.CheckRulesDB(itemID, db.PreparedStatements.CHECK_DB_PERSONAL)
         which_table = 'Personal'
+        tablename = settings.PersonalTableName
         if not found then
             found, rule, classes, lookupLink = db.CheckRulesDB(itemID, db.PreparedStatements.CHECK_DB_GLOBAL)
             which_table = 'Global'
+            tablename = 'Global_Rules'
         end
         if not found then
             found, rule, classes, lookupLink = db.CheckRulesDB(itemID, db.PreparedStatements.CHECK_DB_NORMAL)
             which_table = 'Normal'
+            tablename = 'Normal_Rules'
         end
 
         if not found and not skipWildcard then
@@ -2079,12 +2082,12 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link, skipMsg)
     if action == 'delete' then
         success = db.DeleteItemRule(action, tableName, itemName, itemID)
         if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-            success = db.DeleteItemRule(action, 'GlobalItems', itemName, itemID)
+            success = db.DeleteItemRule(action, 'Global_Rules', itemName, itemID)
         end
     else
         success = db.UpsertItemRule(action, tableName, itemName, itemID, classes, link)
         if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-            success = db.UpsertItemRule(action, 'GlobalItems', itemName, itemID, classes, link)
+            success = db.UpsertItemRule(action, 'Global_Rules', itemName, itemID, classes, link)
         end
     end
 
