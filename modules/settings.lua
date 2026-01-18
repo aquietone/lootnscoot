@@ -1,16 +1,16 @@
-local mq = require('mq')
+local mq                       = require('mq')
 
-local LNS_SETTINGS = {_version = '0.1'}
+local LNS_SETTINGS             = { _version = '0.1', }
 
-LNS_SETTINGS.MyName             = mq.TLO.Me.DisplayName()
-LNS_SETTINGS.EqServer           = string.gsub(mq.TLO.EverQuest.Server(), ' ', '_')
-LNS_SETTINGS.PersonalTableName  = string.format("%s_Rules", LNS_SETTINGS.MyName)
-LNS_SETTINGS.TableListRules              = {
+LNS_SETTINGS.MyName            = mq.TLO.Me.DisplayName()
+LNS_SETTINGS.EqServer          = string.gsub(mq.TLO.EverQuest.Server(), ' ', '_')
+LNS_SETTINGS.PersonalTableName = string.format("%s_Rules", LNS_SETTINGS.MyName)
+LNS_SETTINGS.TableListRules    = {
     "Global_Rules", "Normal_Rules", LNS_SETTINGS.PersonalTableName,
 }
 
 -- tables
-LNS_SETTINGS.SettingsEnum   = {
+LNS_SETTINGS.SettingsEnum      = {
     checkcorpseonce = 'CheckCorpseOnce',
     ignoremynearcorpses = 'IgnoreMyNearCorpses',
     autoshownewitem = 'AutoShowNewItem',
@@ -64,7 +64,7 @@ LNS_SETTINGS.SettingsEnum   = {
 
 }
 
-LNS_SETTINGS.SettingsNoDraw = {
+LNS_SETTINGS.SettingsNoDraw    = {
     Version = true,
     logger = true,
     LootFile = true,
@@ -79,7 +79,7 @@ LNS_SETTINGS.SettingsNoDraw = {
     MasterLooting = false,
 }
 
-LNS_SETTINGS.Settings       = {
+LNS_SETTINGS.Settings          = {
     Version             = '"' .. tostring(version) .. '"',
     GlobalLootOn        = true,   -- Enable Global Loot Items. not implimented yet
     CombatLooting       = false,  -- Enables looting during combat. Not recommended on the MT
@@ -88,10 +88,10 @@ LNS_SETTINGS.Settings       = {
     SaveBagSlots        = 3,      -- Number of bag slots you would like to keep empty at all times. Stop looting if we hit this number
     TributeKeep         = false,  -- Keep items flagged Tribute
     MinTributeValue     = 100,    -- Minimun Tribute points to keep item if TributeKeep is enabled.
-    MinSellPrice        = -1,     -- Minimum Sell price to keep item. -1                                    = any
+    MinSellPrice        = -1,     -- Minimum Sell price to keep item. -1 = any
     StackPlatValue      = 0,      -- Minimum sell value for full stack
     StackableOnly       = false,  -- Only loot stackable items
-    AlwaysEval          = false,  -- Re-Evaluate all *Non Quest* items. useful to update loot.ini after changing min sell values.
+    AlwaysEval          = false,  -- Re-Evaluate all *Non Quest* items. useful to update loot.ini after changing min sell values. (DEFUNCT)
     BankTradeskills     = false,  -- Toggle flagging Tradeskill items as Bank or not.
     DoLoot              = true,   -- Enable auto looting in standalone mode
     LootForage          = true,   -- Enable Looting of Foraged Items
@@ -129,15 +129,16 @@ LNS_SETTINGS.Settings       = {
     AlwaysGlobal        = false, -- Always assign new rules to global as well as normal rules.
     IgnoreMyNearCorpses = false, -- Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.
     TrackHistory        = true,  -- Enable inserting loot results into history table
+    AlwaysAsk           = false, -- Treat all items as Ask reguardless of their rule.
     -- ProcessingEval   = true, -- Re evaluate when processing items for sell\tribute? this will re check our settings and not sell or tribute items outside the new parameters
-    UseAutoRules        = false, -- let LNS decide loot rules on new items
+    UseAutoRules        = true,  -- let LNS decide loot rules on new items
     BuyItemsTable       = {
         ['Iron Ration'] = 20,
         ['Water Flask'] = 20,
     },
 }
 
-LNS_SETTINGS.Tooltips       = {
+LNS_SETTINGS.Tooltips          = {
     GlobalLootOn        = "Toggle using Global Rules if off we will only use Normal or Personal Rules. This setting is old and will probably be removed in the future.",
     CombatLooting       = "Enables looting during combat. Not recommended on the MT",
     CorpseRadius        = "Radius to activly loot corpses",
@@ -188,9 +189,10 @@ REQUIRES DoDestroy set to true.]],
     AlwaysGlobal        = "Always assign new rules to global as well as normal rules.",
     IgnoreMyNearCorpses = "Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.",
     TrackHistory        = "Enable inserting loot results into history table",
+    AlwaysAsk           = "Treat all items as Ask reguardless of their rule.",
 }
 
-LNS_SETTINGS.TempSettings   = {
+LNS_SETTINGS.TempSettings      = {
     Edit               = {},
     ImportDBFileName   = '',
     ImportDBFilePath   = '',
@@ -212,6 +214,6 @@ LNS_SETTINGS.TempSettings   = {
     SafeZoneWarned     = false,
     Popped             = {},
     NewItemData        = {},
-    NewBuyItem         = ""
+    NewBuyItem         = "",
 }
 return LNS_SETTINGS
