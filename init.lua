@@ -2024,11 +2024,13 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
     Logger.Info(LNS.guiLoot.console, "\agAdding 1 \ayNEW\ax item: \at%s \ay(\axID: \at%s\at) \axwith rule: \ag%s", itemName, itemID, itemRule)
     -- LNS.actorAddRule(itemID, itemName, 'Normal', itemRule, LNS.TempItemClasses, itemLink)
     if addDB then
-        LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink)
+        LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink, true)
     end
-    -- if settings.Settings.AlwaysGlobal then
-    --     LNS.addRule(itemID, 'GlobalItems', itemRule, LNS.TempItemClasses, itemLink)
-    -- end
+    local sections = {NormalItems=1}
+    if settings.Settings.AlwaysGlobal then
+        sections['GlobalItems'] = 1
+    end
+    newMessage.sections = sections
     actors.Send(newMessage)
 end
 
@@ -2039,6 +2041,7 @@ end
 ---@param tableName string The table to modify
 ---@param classes string The classes to apply the rule to
 ---@param link string|nil The item link if available for the item
+---@param skipMsg bool|nil Whether to send addrule/deleterule actor message on success
 function LNS.modifyItemRule(itemID, action, tableName, classes, link, skipMsg)
     if not itemID or not tableName or not action then
         Logger.Warn(LNS.guiLoot.console, "Invalid parameters for modifyItemRule. itemID: %s, tableName: %s, action: %s",
@@ -3758,9 +3761,11 @@ function LNS.eventTribute(_, itemName)
     if LNS.ALLITEMS[itemID] then
         link = LNS.ALLITEMS[itemID].Link
     end
-    -- Add a rule to mark the item as "Tribute"
-    LNS.addRule(itemID, "NormalItems", "Tribute", "All", link)
-    Logger.Info(LNS.guiLoot.console, "Added rule: \ay%s\ax set to \agTribute\ax.", itemName)
+    if settings.Settings.AddNewTributes then
+        -- Add a rule to mark the item as "Tribute"
+        LNS.addRule(itemID, "NormalItems", "Tribute", "All", link)
+        Logger.Info(LNS.guiLoot.console, "Added rule: \ay%s\ax set to \agTribute\ax.", itemName)
+    end
 end
 
 function LNS.TributeToVendor(itemToTrib, bag, slot)

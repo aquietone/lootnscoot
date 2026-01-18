@@ -178,6 +178,12 @@ item_link                                    = excluded.item_link
     initPreparedStatement('CHECK_DB_PERSONAL', rules_db, string.format("SELECT item_rule, item_rule_classes, item_link FROM %s WHERE item_id = ?", settings.PersonalTableName))
     initPreparedStatement('CHECK_DB_NORMAL', rules_db, "SELECT item_rule, item_rule_classes, item_link FROM Normal_Rules WHERE item_id = ?")
     initPreparedStatement('CHECK_DB_GLOBAL', rules_db, "SELECT item_rule, item_rule_classes, item_link FROM Global_Rules WHERE item_id = ?")
+    initPreparedStatement('GET_ITEM_LINK_NORMAL', rules_db, "SELECT item_link FROM Normal_Rules WHERE item_id = ?")
+    initPreparedStatement('GET_ITEM_LINK_GLOBAL', rules_db, "SELECT item_link FROM Global_Rules WHERE item_id = ?")
+    initPreparedStatement('GET_ITEM_LINK_PERSONAL', rules_db, string.format("SELECT item_link FROM %s WHERE item_id = ?", settings.PersonalTableName))
+    initPreparedStatement('UPDATE_RULE_LINK_NORMAL', rules_db, "UPDATE Normal_Rules SET item_link = ? WHERE item_id = ?")
+    initPreparedStatement('UPDATE_RULE_LINK_GLOBAL', rules_db, "UPDATE Global_Rules SET item_link = ? WHERE item_id = ?")
+    initPreparedStatement('UPDATE_RULE_LINK_PERSONAL', rules_db, string.format("UPDATE %s SET item_link = ? WHERE item_id = ?", settings.PersonalTableName))
 end
 
 --- HISTORY DB
@@ -772,14 +778,20 @@ end
 
 function LNS_DB.GetItemLink(itemID, link, which_table)
     local alreadyMatched = false
-    local qry = string.format("SELECT item_link FROM %s WHERE item_id = ?", which_table)
+    -- local qry = string.format("SELECT item_link FROM %s WHERE item_id = ?", which_table)
 
     -- local qry = string.format([[UPDATE %s SET item_link = ? WHERE item_id = ?;]], which_table)
-    local stmt = rules_db:prepare(qry)
-    if not stmt then
-        Logger.Error(guiLoot.console, "\arFailed to prepare SQL statement: %s", rules_db:errmsg())
-        return false
+    -- local stmt = rules_db:prepare(qry)
+    local stmt = LNS_DB.PreparedStatements.GET_ITEM_LINK_NORMAL
+    if which_table == 'Global_Rules' then
+        stmt = LNS_DB.PreparedStatements.GET_ITEM_LINK_GLOBAL
+    elseif which_table == settings.PersonalTableName then
+        stmt = LNS_DB.PreparedStatements.GET_ITEM_LINK_PERSONAL
     end
+    -- if not stmt then
+    --     Logger.Error(guiLoot.console, "\arFailed to prepare SQL statement: %s", rules_db:errmsg())
+    --     return false
+    -- end
     stmt:bind_values(itemID)
 
     for row in stmt:nrows() do
@@ -787,20 +799,27 @@ function LNS_DB.GetItemLink(itemID, link, which_table)
             alreadyMatched = true
         end
     end
-    stmt:finalize()
+    -- stmt:finalize()
+    stmt:reset()
     return alreadyMatched
 end
 
 function LNS_DB.UpdateRuleLink(itemID, link, which_table)
-    local qry = string.format([[UPDATE %s SET item_link = ? WHERE item_id = ?;]], which_table)
-    local stmt = rules_db:prepare(qry)
-    if not stmt then
-        return
+    -- local qry = string.format([[UPDATE %s SET item_link = ? WHERE item_id = ?;]], which_table)
+    -- local stmt = rules_db:prepare(qry)
+    -- if not stmt then
+    --     return
+    -- end
+    local stmt = LNS_DB.PreparedStatements.UPDATE_RULE_LINK_NORMAL
+    if which_table == 'Global_Rules' then
+        stmt = LNS_DB.PreparedStatements.UPDATE_RULE_LINK_GLOBAL
+    elseif which_table == settings.PersonalTableName then
+        stmt = LNS_DB.PreparedStatements.UPDATE_RULE_LINK_PERSONAL
     end
     stmt:bind_values(link, itemID)
     stmt:step()
     stmt:reset()
-    stmt:finalize()
+    -- stmt:finalize()
 
     LNS.ItemLinks[itemID] = link
     Logger.Debug(guiLoot.console, "\aoUpdated link for\ax\at %d\ax to %s", itemID, link)

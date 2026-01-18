@@ -1276,7 +1276,7 @@ function LNS_UI.drawNewItemsTable()
                         Link = item.Link,
                         CorpseID = item.CorpseID,
                     })
-                    LNS.addRule(itemID, ruleTable, tmpRules[itemID], classes, item.Link, true)
+                    LNS.addRule(itemID, ruleTable, tmpRules[itemID], classes, item.Link)
 
                     table.remove(settings.TempSettings.NewItemIDs, idx)
                     table.insert(itemsToRemove, itemID)

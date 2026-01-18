@@ -335,7 +335,7 @@ local function callback(message)
     end
     -- -- Handle actions
 
-    if action == 'addrule' or action == 'modifyitem' then
+    if action == 'addrule' or action == 'modifyitem' or (action == 'new' and sections ~= nil) then
         Logger.Debug(guiLoot.console, dbgTbl)
 
         if (section == 'PersonalItems' or (sections and sections['PersonalItems'])) and who == settings.MyName then
@@ -434,8 +434,8 @@ local function callback(message)
             Item = itemName,
         }
         Logger.Info(guiLoot.console, infoMsg)
-    elseif action == 'new' and who ~= settings.MyName and LNS.NewItems[itemID] == nil then
-        Logger.Debug(guiLoot.console, dbgTbl)
+    end
+    if action == 'new' and who ~= settings.MyName and LNS.NewItems[itemID] == nil then
 
         LNS.NewItems[itemID] = {
             Name       = lootMessage.item,
