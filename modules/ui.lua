@@ -1244,7 +1244,7 @@ function LNS_UI.drawNewItemsTable()
                 ImGui.Indent(2)
 
                 ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                if ImGui.BeginCombo('##Setting' .. itemID, settingList[item.selectedIndex]) then
+                if ImGui.BeginCombo('##Setting' .. itemID, settingList[item.selectedIndex], ImGuiComboFlags.HeightLarge) then
                     for i, setting in ipairs(settingList) do
                         local isSelected = item.selectedIndex == i
                         if ImGui.Selectable(setting, isSelected) then
@@ -3108,7 +3108,7 @@ function LNS_UI.RenderModifyItemWindow()
         end
 
         ImGui.SetNextItemWidth(100)
-        if ImGui.BeginCombo("Rule", tempValues.Rule) then
+        if ImGui.BeginCombo("Rule", tempValues.Rule, ImGuiComboFlags.HeightLarge) then
             for i, v in ipairs(settingList) do
                 if ImGui.Selectable(v, tempValues.Rule == v) then
                     tempValues.Rule = v
@@ -3677,6 +3677,7 @@ function LNS_UI.RenderMainUI()
 end
 
 function LNS_UI.RenderUIs()
+    -- local pcallSuccess, pcallResult = pcall(function()
     local colCount, styCount = LNS.guiLoot.DrawTheme()
 
     if LNS.NewItemDecisions ~= nil then
@@ -3742,6 +3743,10 @@ function LNS_UI.RenderUIs()
 
     if colCount > 0 then ImGui.PopStyleColor(colCount) end
     if styCount > 0 then ImGui.PopStyleVar(styCount) end
+    -- end)
+    -- if not pcallSuccess then
+    --     Logger.Info(LNS.guiLoot.console, "Error in LNS UI: %s", pcallResult)
+    -- end
 end
 
 function LNS_UI.DebugMailBox()

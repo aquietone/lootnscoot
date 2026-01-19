@@ -4130,6 +4130,7 @@ if LNS.guiLoot ~= nil then
 end
 function LNS.MainLoop()
     while not LNS.Terminate do
+        -- local pcallSuccess, pcallResult = pcall(function()
         LNS.Zone = mq.TLO.Zone.ShortName()
         LNS.Instance = mq.TLO.Me.Instance()
         if mq.TLO.MacroQuest.GameState() ~= "INGAME" then
@@ -4148,7 +4149,7 @@ function LNS.MainLoop()
         local directorRunning = mq.TLO.Lua.Script(LNS.DirectorScript).Status() == 'RUNNING' or false
         if not directorRunning and LNS.Mode == 'directed' then
             printf('LootNScoot Terminate = true due to director not running (%s).', directorRunning)
-            mq.cmdf('/dg /pop 5 [%s] LootNScoot exiting due to director not running (%s).', mq.TLO.Me.CleanName(), directorRunning)
+            -- mq.cmdf('/dg /pop 5 [%s] LootNScoot exiting due to director not running (%s).', mq.TLO.Me.CleanName(), directorRunning)
             LNS.Terminate = true
         end
 
@@ -4477,6 +4478,10 @@ function LNS.MainLoop()
         -- if LNS.MyClass:lower() == 'brd' and settings.Settings.DoDestroy then
         --     settings.Settings.DoDestroy = false
         --     Logger.Warn(LNS.guiLoot.console, "\ayBard Detected\ax, \arDisabling\ax [\atDoDestroy\ax].")
+        -- end
+        -- end)
+        -- if not pcallSuccess then
+        --     printf('LNS MainLoop encountered an error: %s', pcallResult)
         -- end
         mq.delay(10)
     end
