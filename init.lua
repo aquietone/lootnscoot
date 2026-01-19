@@ -51,6 +51,11 @@ local NEVER_SELL                        = { ['Diamond Coin'] = true, ['Celestial
 
 local doSell, doBuy, doTribute, areFull = false, false, false, false
 
+-- local SECTIONS = {
+--     ['NormalItems']='Normal_Rules',
+--     ['GlobalItems']='Global_Rules',
+--     ['PersonalItems']=settings.PersonalTableName,
+-- }
 
 local equipSlots = {
     [0] = 'Charm',
@@ -1656,6 +1661,7 @@ end
 ---@param itemID any
 ---@param tablename any|nil
 ---@param item_link string|nil
+---@param skipWildcard bool|nil
 ---@return string rule
 ---@return string classes
 ---@return string link
@@ -4422,15 +4428,10 @@ function LNS.MainLoop()
             end
         end
 
-        if settings.TempSettings.DoGet then
-            settings.TempSettings.DoGet = false
-            if settings.TempSettings.GetItem == nil then return end
-            local itemName = settings.TempSettings.GetItem.Name or 'None'
-            local itemID = settings.TempSettings.GetItem.ID or 0
-            local itemLink = settings.TempSettings.GetItem.ItemLink or 'NULL'
-            LNS.GetItemFromDB(itemName, itemID)
-            LNS.lookupLootRule(nil, itemID, nil, itemLink, true)
-            settings.TempSettings.GetItem = nil
+        if #settings.TempSettings.GetItems > 0 then
+            local itemToGet = table.remove(settings.TempSettings.GetItems, 1)
+            LNS.GetItemFromDB(itemToGet.Name or 'None', itemToGet.ID or 0)
+            LNS.lookupLootRule(nil, itemToGet.ID, nil, itemToGet.ItemLink, true)
         end
 
         if settings.TempSettings.NeedSave then
@@ -4464,9 +4465,6 @@ function LNS.MainLoop()
 
         if LNS.NewItemsCount <= 0 then
             LNS.NewItemsCount = 0
-        end
-
-        if LNS.NewItemsCount == 0 then
             LNS.showNewItem = false
         end
 

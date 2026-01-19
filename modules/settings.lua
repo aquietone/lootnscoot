@@ -214,6 +214,7 @@ LNS_SETTINGS.TempSettings      = {
     SafeZoneWarned     = false,
     Popped             = {},
     NewItemData        = {},
+    GetItems           = {},
     NewBuyItem         = "",
 }
 return LNS_SETTINGS

@@ -413,8 +413,7 @@ local function callback(message)
         end
 
         if who ~= settings.MyName then
-            settings.TempSettings.GetItem = { Name = itemName, ID = itemID, ItemLink = itemLink }
-            settings.TempSettings.DoGet = true
+            table.insert(settings.TempSettings.GetItems, { Name = itemName, ID = itemID, ItemLink = itemLink })
         end
 
         -- clean bags of items marked as destroy so we don't collect garbage
