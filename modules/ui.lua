@@ -1349,6 +1349,7 @@ function LNS_UI.drawTabbedTable(label)
                     settings.TempSettings.ModifyItemTable = label .. "_Items"
                     settings.TempSettings.ModifyClasses = LNS[varSub .. 'Classes'][itemCursor.ID()] or "All"
                     settings.TempSettings.ModifyItemSetting = "Ask"
+                    settings.TempSettings['Search' .. varSub] = itemCursor.Name()
                     tempValues = {}
                     mq.cmdf("/autoinv")
                 end
@@ -1899,6 +1900,7 @@ function LNS_UI.drawItemsTables()
                     if ImGui.IsWindowHovered() and ImGui.IsMouseClicked(0) then
                         if mq.TLO.Cursor() ~= nil then
                             LNS.addToItemDB(mq.TLO.Cursor)
+                            settings.TempSettings['SearchItems'] = mq.TLO.Cursor()
                             Logger.Info(LNS.guiLoot.console, "Added Item to DB: %s", mq.TLO.Cursor.Name())
                             mq.cmdf("/autoinv")
                         end

@@ -529,12 +529,13 @@ end
 
 function guiLoot.lootedReport_GUI()
 	--- Report Window
-	ImGui.SetNextWindowSize(300, 200, ImGuiCond.Appearing)
+	ImGui.SetNextWindowSize(300, 200, ImGuiCond.FirstUseEver)
 	if changed and mq.TLO.Plugin('mq2dannet').IsLoaded() and guiLoot.caller == 'lootnscoot' then
 		mq.cmdf('/dgae /lootutils reload')
 		changed = false
 	end
-	local openRepGUI, showRepGUI = ImGui.Begin("Loot Report##" .. script, true, bit32.bor(
+	local showRepGUI = true
+	guiLoot.showReport, showRepGUI = ImGui.Begin("Loot Report##" .. script, guiLoot.showReport, bit32.bor(
 		ImGuiWindowFlags.NoFocusOnAppearing, ImGuiWindowFlags.NoCollapse))
 	if showRepGUI then
 		ImGui.SetWindowFontScale(ZoomLvl)
@@ -761,10 +762,6 @@ function guiLoot.lootedReport_GUI()
 
 	ImGui.SetWindowFontScale(1)
 	ImGui.End()
-
-	if not openRepGUI then
-		guiLoot.showReport = false
-	end
 end
 
 function guiLoot.lootedConf_GUI()

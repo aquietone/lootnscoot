@@ -4149,7 +4149,7 @@ function LNS.MainLoop()
         LNS.guiLoot.GetSettings(settings.Settings.HideNames,
             settings.Settings.RecordData,
             true, true, 'lootnscoot',
-            settings.Settings.ShowReport, settings.Settings.ReportSkippedItems)
+            LNS.guiLoot.showReport, LNS.guiLoot.ReportSkippedItems)
 
         -- check if the director script is running.
         local directorRunning = mq.TLO.Lua.Script(LNS.DirectorScript).Status() == 'RUNNING' or false
