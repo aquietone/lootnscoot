@@ -4042,6 +4042,10 @@ function LNS.processArgs(args)
         actors.Send({ action = 'Hello', Server = settings.EqServer, who = settings.MyName, })
     elseif args[1] == 'sellstuff' then
         LNS.processItems('Sell')
+    elseif args[1] == 'restock' then
+        LNS.processItems('Buy')
+    elseif args[1] == 'bankstuff' then
+        LNS.processItems('Bank')
     elseif args[1] == 'tributestuff' then
         LNS.processItems('Tribute')
     elseif args[1] == 'cleanup' then
