@@ -2946,14 +2946,14 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         Corpse = corpseName,
     }
     Logger.Debug(LNS.guiLoot.console, dbgTbl)
-    if cItem and not shouldLootActions[actionToTake] then
+    if cItem and not shouldLootActions[actionLower] then
         Logger.Warn(LNS.guiLoot.console, "lootItem():\ay We Don't Belong here!!,\ax either the item is \arMissing\ax or the Action [\at%s\ax] is \arNot\ax a valid loot action.",
-            actionToTake)
+            actionLower)
         return
     end
 
     -- Check to see if we are allowed to loot this item
-    if shouldLootActions[actionToTake] then
+    if shouldLootActions[actionLower] then
         if mq.TLO.Window('ConfirmationDialogBox').Open() then
             Logger.Warn(LNS.guiLoot.console, "lootItem(): ConfirmationDialogBox is open. Closing it.")
             mq.TLO.Window('ConfirmationDialogBox').DoClose()
