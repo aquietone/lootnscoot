@@ -2608,7 +2608,7 @@ function LNS_UI.renderSettingsTables(who)
     end
 
     if ImGui.CollapsingHeader(string.format("Toggles %s##%s", who, who)) then
-        if ImGui.BeginTable("Toggles##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable, ImGuiTableFlags.ScrollY)) then
+        if ImGui.BeginTable("Toggles##1", colCount, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.Resizable)) then
             for i = 1, colCount / 2 do
                 ImGui.TableSetupColumn("Setting##" .. i, ImGuiTableColumnFlags.WidthStretch)
                 ImGui.TableSetupColumn("Value##" .. i, ImGuiTableColumnFlags.WidthFixed, 80)
@@ -3563,115 +3563,111 @@ function LNS_UI.RenderMainUI()
             LNS.ShowUI = false
         end
         if show then
-            local sizeY = ImGui.GetWindowHeight() - 10
-            if ImGui.BeginChild('Main', 0.0, 400, bit32.bor(ImGuiChildFlags.ResizeY, ImGuiChildFlags.Border)) then
-                ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
-                local clicked = false
-                LNS.debugPrint, clicked = LNS_UI.DrawToggle("Debug##Toggle",
-                    LNS.debugPrint,
-                    ImVec4(0.4, 1.0, 0.4, 0.4),
-                    ImVec4(1.0, 0.4, 0.4, 0.4),
-                    16, 36)
-                if clicked then
-                    Logger.Warn(LNS.guiLoot.console, "\ayDebugging\ax is now %s", LNS.debugPrint and "\agon" or "\aroff")
-                end
-                ImGui.SameLine()
+            ImGui.PushStyleColor(ImGuiCol.PopupBg, ImVec4(0.002, 0.009, 0.082, 0.991))
+            local clicked = false
+            LNS.debugPrint, clicked = LNS_UI.DrawToggle("Debug##Toggle",
+                LNS.debugPrint,
+                ImVec4(0.4, 1.0, 0.4, 0.4),
+                ImVec4(1.0, 0.4, 0.4, 0.4),
+                16, 36)
+            if clicked then
+                Logger.Warn(LNS.guiLoot.console, "\ayDebugging\ax is now %s", LNS.debugPrint and "\agon" or "\aroff")
+            end
+            ImGui.SameLine()
 
-                if ImGui.SmallButton(Icons.MD_HELP_OUTLINE) then
-                    settings.TempSettings.ShowHelp = not settings.TempSettings.ShowHelp
-                end
-                if ImGui.IsItemHovered() then
-                    ImGui.SetTooltip("Show/Hide Help Window")
-                end
+            if ImGui.SmallButton(Icons.MD_HELP_OUTLINE) then
+                settings.TempSettings.ShowHelp = not settings.TempSettings.ShowHelp
+            end
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Show/Hide Help Window")
+            end
 
-                ImGui.SameLine()
-                if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
-                    -- loot.guiLoot.showReport = not loot.guiLoot.showReport
-                    settings.Settings.ShowReport = not settings.Settings.ShowReport
-                    LNS.guiLoot.GetSettings(settings.Settings.HideNames,
+            ImGui.SameLine()
+            if ImGui.SmallButton(string.format("%s Report", Icons.MD_INSERT_CHART)) then
+                -- loot.guiLoot.showReport = not loot.guiLoot.showReport
+                settings.Settings.ShowReport = not settings.Settings.ShowReport
+                LNS.guiLoot.GetSettings(settings.Settings.HideNames,
 
-                        settings.Settings.RecordData,
-                        true,
-                        settings.Settings.UseActors,
-                        'lootnscoot',
-                        settings.Settings.ShowReport,
-                        settings.Settings.ReportSkippedItems)
-                    settings.TempSettings.NeedSave = true
-                end
-                if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Report Window") end
+                    settings.Settings.RecordData,
+                    true,
+                    settings.Settings.UseActors,
+                    'lootnscoot',
+                    settings.Settings.ShowReport,
+                    settings.Settings.ReportSkippedItems)
+                settings.TempSettings.NeedSave = true
+            end
+            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Report Window") end
 
-                ImGui.SameLine()
+            ImGui.SameLine()
 
-                if ImGui.SmallButton(Icons.MD_HISTORY .. " Historical") then
-                    settings.TempSettings.PastHistory = not settings.TempSettings.PastHistory
-                end
-                if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Historical Data") end
+            if ImGui.SmallButton(Icons.MD_HISTORY .. " Historical") then
+                settings.TempSettings.PastHistory = not settings.TempSettings.PastHistory
+            end
+            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Historical Data") end
 
-                ImGui.SameLine()
+            ImGui.SameLine()
 
 
-                if ImGui.SmallButton(string.format("%s Console", Icons.FA_TERMINAL)) then
-                    LNS.guiLoot.openGUI = not LNS.guiLoot.openGUI
-                    settings.Settings.ShowConsole = LNS.guiLoot.openGUI
-                    settings.TempSettings.NeedSave = true
-                end
-                if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Console Window") end
+            if ImGui.SmallButton(string.format("%s Console", Icons.FA_TERMINAL)) then
+                LNS.guiLoot.openGUI = not LNS.guiLoot.openGUI
+                settings.Settings.ShowConsole = LNS.guiLoot.openGUI
+                settings.TempSettings.NeedSave = true
+            end
+            if ImGui.IsItemHovered() then ImGui.SetTooltip("Show/Hide Console Window") end
 
-                ImGui.SameLine()
+            ImGui.SameLine()
 
-                local labelBtn = not showSettings and
-                    string.format("%s Settings", Icons.FA_COG) or string.format("%s   Items  ", Icons.FA_SHOPPING_BASKET)
-                if showSettings and LNS.NewItemsCount > 0 then
-                    ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
-                    if ImGui.SmallButton(labelBtn) then
-                        showSettings = not showSettings
-                    end
-                    ImGui.PopStyleColor()
-                else
-                    if ImGui.SmallButton(labelBtn) then
-                        showSettings = not showSettings
-                    end
-                end
-
-                ImGui.SameLine()
-
-                if ImGui.SmallButton(string.format('%s Perf', Icons.FA_AREA_CHART)) then
-                    perf.EnablePerfMonitoring = not perf.EnablePerfMonitoring
-                end
-
-                ImGui.Spacing()
-                ImGui.Separator()
-                ImGui.Spacing()
-                -- Settings Section
-                if showSettings then
-                    if settings.TempSettings.SelectedActor == nil then
-                        settings.TempSettings.SelectedActor = settings.MyName
-                    end
-                    ImGui.Indent(2)
-                    ImGui.TextWrapped("You can change any setting by issuing `/lootutils set settingname value` use [on|off] for true false values.")
-                    ImGui.TextWrapped("You can also change settings for other characters by selecting them from the dropdown.")
-                    ImGui.Unindent(2)
-                    ImGui.Spacing()
-
-                    ImGui.Separator()
-                    ImGui.Spacing()
-                    ImGui.SetNextItemWidth(180)
-                    if ImGui.BeginCombo("Select Actor", settings.TempSettings.SelectedActor) then
-                        for k, v in pairs(LNS.Boxes) do
-                            if ImGui.Selectable(k, settings.TempSettings.SelectedActor == k) then
-                                settings.TempSettings.SelectedActor = k
-                            end
-                        end
-                        ImGui.EndCombo()
-                    end
-                    LNS_UI.renderSettingsSection(settings.TempSettings.SelectedActor)
-                else
-                    -- Items and Rules Section
-                    LNS_UI.drawItemsTables()
+            local labelBtn = not showSettings and
+                string.format("%s Settings", Icons.FA_COG) or string.format("%s   Items  ", Icons.FA_SHOPPING_BASKET)
+            if showSettings and LNS.NewItemsCount > 0 then
+                ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
+                if ImGui.SmallButton(labelBtn) then
+                    showSettings = not showSettings
                 end
                 ImGui.PopStyleColor()
+            else
+                if ImGui.SmallButton(labelBtn) then
+                    showSettings = not showSettings
+                end
             end
-            ImGui.EndChild()
+
+            ImGui.SameLine()
+
+            if ImGui.SmallButton(string.format('%s Perf', Icons.FA_AREA_CHART)) then
+                perf.EnablePerfMonitoring = not perf.EnablePerfMonitoring
+            end
+
+            ImGui.Spacing()
+            ImGui.Separator()
+            ImGui.Spacing()
+            -- Settings Section
+            if showSettings then
+                if settings.TempSettings.SelectedActor == nil then
+                    settings.TempSettings.SelectedActor = settings.MyName
+                end
+                ImGui.Indent(2)
+                ImGui.TextWrapped("You can change any setting by issuing `/lootutils set settingname value` use [on|off] for true false values.")
+                ImGui.TextWrapped("You can also change settings for other characters by selecting them from the dropdown.")
+                ImGui.Unindent(2)
+                ImGui.Spacing()
+
+                ImGui.Separator()
+                ImGui.Spacing()
+                ImGui.SetNextItemWidth(180)
+                if ImGui.BeginCombo("Select Actor", settings.TempSettings.SelectedActor) then
+                    for k, v in pairs(LNS.Boxes) do
+                        if ImGui.Selectable(k, settings.TempSettings.SelectedActor == k) then
+                            settings.TempSettings.SelectedActor = k
+                        end
+                    end
+                    ImGui.EndCombo()
+                end
+                LNS_UI.renderSettingsSection(settings.TempSettings.SelectedActor)
+            else
+                -- Items and Rules Section
+                LNS_UI.drawItemsTables()
+            end
+            ImGui.PopStyleColor()
         end
 
         ImGui.End()
