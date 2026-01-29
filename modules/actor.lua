@@ -447,6 +447,7 @@ local function callback(message)
             Icon       = lootMessage.icon or 0,
             MaxStacks  = lootMessage.maxStacks,
             Aug        = lootMessage.aug,
+            Tribute    = lootMessage.tribute,
             Classes    = itemClasses,
             Races      = itemRaces,
             CorpseID   = lootMessage.corpse,

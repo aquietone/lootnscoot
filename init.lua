@@ -1987,6 +1987,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
         Stackable  = corpseItem.Stackable(),
         MaxStacks  = corpseItem.StackSize() or 0,
         SellPrice  = LNS.valueToCoins(corpseItem.Value()),
+        Tribute    = corpseItem.Tribute() or 0,
         Classes    = LNS.TempItemClasses,
         Races      = LNS.TempItemRaces,
         CorpseID   = corpseID,
@@ -2026,6 +2027,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
         stackable  = corpseItem.Stackable(),
         maxStacks  = corpseItem.StackSize() or 0,
         sellPrice  = LNS.valueToCoins(corpseItem.Value()),
+        tribute    = corpseItem.Tribute() or 0,
         corpse     = corpseID,
         details    = LNS.Get_item_data(corpseItem),
     }

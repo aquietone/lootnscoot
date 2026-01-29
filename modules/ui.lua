@@ -1175,14 +1175,17 @@ function LNS_UI.drawNewItemsTable()
                 end
                 ImGui.SameLine()
                 ImGui.Text(item.Name or "Unknown")
+                ImGui.SameLine()
+                ImGui.Text('Corpse ID: %s', item.CorpseID)
 
                 ImGui.Unindent(2)
                 ImGui.Indent(2)
 
-                if ImGui.BeginTable("SellData", 2, bit32.bor(ImGuiTableFlags.Borders,
+                if ImGui.BeginTable("SellData", 3, bit32.bor(ImGuiTableFlags.Borders,
                         ImGuiTableFlags.Reorderable)) then
-                    ImGui.TableSetupColumn('Value', ImGuiTableColumnFlags.WidthStretch)
-                    ImGui.TableSetupColumn('Stacks', ImGuiTableColumnFlags.WidthFixed, 30)
+                    ImGui.TableSetupColumn('Value', ImGuiTableColumnFlags.WidthFixed, 150)
+                    ImGui.TableSetupColumn('Tribute', 0)
+                    ImGui.TableSetupColumn('Stacks', 0)
                     ImGui.TableHeadersRow()
                     ImGui.TableNextRow()
                     -- Sell Price
@@ -1190,6 +1193,8 @@ function LNS_UI.drawNewItemsTable()
                     if item.SellPrice ~= '0 pp 0 gp 0 sp 0 cp' then
                         ImGui.Text(item.SellPrice or "0")
                     end
+                    ImGui.TableNextColumn()
+                    ImGui.Text('%s', item.Tribute or '0')
                     ImGui.TableNextColumn()
                     ImGui.Text("%s", item.MaxStacks > 0 and item.MaxStacks or "No")
                     ImGui.EndTable()
@@ -1243,17 +1248,22 @@ function LNS_UI.drawNewItemsTable()
 
                 ImGui.Indent(2)
 
+                local update
                 ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                if ImGui.BeginCombo('##Setting' .. itemID, settingList[item.selectedIndex], ImGuiComboFlags.HeightLarge) then
-                    for i, setting in ipairs(settingList) do
-                        local isSelected = item.selectedIndex == i
-                        if ImGui.Selectable(setting, isSelected) then
-                            item.selectedIndex = i
-                            tmpRules[itemID]   = setting
-                        end
+                for idx,setting in ipairs(settingList) do
+                    update = ImGui.RadioButton(setting:sub(1, 1):upper(), idx == item.selectedIdx)
+                    if ImGui.IsItemHovered() then
+                        ImGui.BeginTooltip()
+                        ImGui.Text(setting)
+                        ImGui.EndTooltip()
                     end
-                    ImGui.EndCombo()
+                    if update then
+                        item.selectedIdx = idx
+                        tmpRules[itemID] = setting
+                    end
+                    if idx % 3 ~= 0 then ImGui.SameLine() end
                 end
+
                 ImGui.Unindent(2)
 
                 ImGui.Spacing()
