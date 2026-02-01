@@ -34,7 +34,7 @@ local skippedLoots                      = {}
 local allItems                          = {}
 local foragingLoot                      = false
 -- Constants
-local spawnSearch                       = '%s radius %d zradius 50'
+local spawnSearch                       = '%s radius %d zradius %s'
 local shouldLootActions                 = { Ask = false, CanUse = false, Keep = true, Bank = true, Sell = true, Destroy = false, Ignore = false, Tribute = false, Quest = false, }
 local validActions                      = {
     ask = "Ask",
@@ -592,7 +592,7 @@ function LNS.navToID(spawnID)
         local startTime = os.time()
         while mq.TLO.Navigation.Active() do
             mq.delay(50)
-            if os.difftime(os.time(), startTime) > 5 then
+            if os.difftime(os.time(), startTime) > (settings.Settings.NavTimeout or 5) then
                 break
             end
         end
@@ -3320,13 +3320,13 @@ function LNS.lootMobs(limit)
 
 
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Entering lootMobs function.')
-    local deadCount      = mq.TLO.SpawnCount(string.format('npccorpse radius %s zradius 50', settings.Settings.CorpseRadius or 100))()
-    local mobsNearby     = mq.TLO.SpawnCount(string.format('npc xtarhater radius %s zradius 50', settings.Settings.MobsTooClose + settings.Settings.CorpseRadius))()
+    local deadCount      = mq.TLO.SpawnCount(string.format('npccorpse radius %s zradius %s', settings.Settings.CorpseRadius or 100, settings.Settings.CorpseZRadius or 50))()
+    local mobsNearby     = mq.TLO.SpawnCount(string.format('npc xtarhater radius %s zradius %s', settings.Settings.MobsTooClose + settings.Settings.CorpseRadius, settings.Settings.CorpseZRadius or 50))()
     local corpseList     = {}
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Found %s corpses in range.', deadCount)
 
     -- Handle looting of the player's own corpse
-    local pcCorpseFilter = string.format("pccorpse %s's radius %s zradius 50", mq.TLO.Me.CleanName(), settings.Settings.CorpseRadius)
+    local pcCorpseFilter = string.format("pccorpse %s's radius %s zradius %s", mq.TLO.Me.CleanName(), settings.Settings.CorpseRadius, settings.Settings.CorpseZRadius or 50)
     local myCorpseCount  = mq.TLO.SpawnCount(pcCorpseFilter)()
     local foundMine      = myCorpseCount > 0
 
@@ -3364,10 +3364,10 @@ function LNS.lootMobs(limit)
     -- Add other corpses to the loot list if not limited by the player's own corpse
     if (myCorpseCount == 0 or (myCorpseCount > 0 and settings.Settings.IgnoreMyNearCorpses)) and settings.Settings.DoLoot then
         for i = 1, deadCount do
-            local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', settings.Settings.CorpseRadius))
+            local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', settings.Settings.CorpseRadius, settings.Settings.CorpseZRadius or 50))
             if corpse() and not (LNS.lootedCorpses[corpse.ID()] and settings.Settings.CheckCorpseOnce) then
-                if not LNS.checkLockedCorpse(corpse.ID()) or
-                    (mq.TLO.Navigation.PathLength('spawn id ' .. corpse.ID())() or 100) > settings.Settings.CorpseRadius then
+                if not LNS.checkLockedCorpse(corpse.ID()) and
+                    (mq.TLO.Navigation.PathLength('spawn id ' .. corpse.ID())() or 100) < settings.Settings.CorpseRadius then
                     table.insert(corpseList, corpse)
                 end
             end

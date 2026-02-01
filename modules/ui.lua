@@ -1246,25 +1246,18 @@ function LNS_UI.drawNewItemsTable()
 
                 item.selectedIndex = item.selectedIndex or LNS.getRuleIndex(item.Rule, settingList)
 
-                ImGui.Indent(2)
-
+                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1,1))
                 local update
                 ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
                 for idx,setting in ipairs(settingList) do
-                    update = ImGui.RadioButton(setting:sub(1, 1):upper(), idx == item.selectedIdx)
-                    if ImGui.IsItemHovered() then
-                        ImGui.BeginTooltip()
-                        ImGui.Text(setting)
-                        ImGui.EndTooltip()
-                    end
+                    update = LNS_UI.drawRuleRadioButton(setting, idx, item.selectedIdx)
                     if update then
                         item.selectedIdx = idx
                         tmpRules[itemID] = setting
                     end
                     if idx % 3 ~= 0 then ImGui.SameLine() end
                 end
-
-                ImGui.Unindent(2)
+                ImGui.PopStyleVar()
 
                 ImGui.Spacing()
                 if LNS.tempGlobalRule[itemID] == nil then
@@ -1272,7 +1265,7 @@ function LNS_UI.drawNewItemsTable()
                 end
                 LNS.tempGlobalRule[itemID] = ImGui.Checkbox('Global Rule', LNS.tempGlobalRule[itemID])
 
-                ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth(-1) / 6))
+                -- ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth(-1) / 6))
                 ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.040, 0.294, 0.004, 1.000))
                 if ImGui.Button('Save Rule') then
                     local classes = LNS.tempLootAll[itemID] and "All" or tmpClasses[itemID]
@@ -2366,6 +2359,46 @@ function LNS_UI.DrawRuleToolTip(name, setting, classes)
     ImGui.Text("Left Click Icon to open In-Game Details window")
     ImGui.Text("Right Click to Pop Open Details window.")
     ImGui.EndTooltip()
+end
+
+function LNS_UI.drawRuleRadioButton(setting, idx, selectedIdx)
+    local buttonText = setting
+    if setting == 'Destroy' then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.860, 0.104, 0.104, 1.000)
+        buttonText = Icons.MD_DELETE
+    elseif string.find(setting, 'Quest') then
+        ImGui.PushStyleColor(ImGuiCol.Text, 1.000, 0.914, 0.200, 1.000)
+        buttonText = Icons.MD_SEARCH
+    elseif setting == "Tribute" then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.991, 0.506, 0.230, 1.000)
+        buttonText = Icons.FA_GIFT
+    elseif setting == 'Sell' then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+        buttonText = Icons.MD_ATTACH_MONEY
+    elseif setting == 'Keep' then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.916, 0.094, 0.736, 1.000)
+        buttonText = Icons.MD_FAVORITE_BORDER
+    elseif setting == 'Ignore' then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.976, 0.218, 0.244, 1.000)
+        buttonText = Icons.MD_NOT_INTERESTED
+    elseif setting == 'Bank' then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.162, 0.785, 0.877, 1.000)
+        buttonText = Icons.MD_ACCOUNT_BALANCE
+    elseif setting == 'CanUse' then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0.411, 0.462, 0.678, 1.000)
+        buttonText = Icons.FA_USER_O
+    elseif setting == 'Ask' then
+        ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 1, 1)
+        buttonText = Icons.FA_QUESTION_CIRCLE
+    end
+    local updated = ImGui.RadioButton(buttonText, idx == selectedIdx)
+    ImGui.PopStyleColor()
+    if ImGui.IsItemHovered() then
+        ImGui.BeginTooltip()
+        ImGui.Text(setting)
+        ImGui.EndTooltip()
+    end
+    return updated
 end
 
 function LNS_UI.drawSettingIcon(setting)

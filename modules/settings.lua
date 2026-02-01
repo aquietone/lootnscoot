@@ -19,6 +19,7 @@ LNS_SETTINGS.SettingsEnum      = {
     globallooton = 'GlobalLootOn',
     combatlooting = 'CombatLooting',
     corpseradius = 'CorpseRadius',
+    corpseZradius = 'CorpseZRadius',
     mobstooclose = 'MobsTooClose',
     savebagslots = 'SaveBagSlots',
     tributekeep = 'TributeKeep',
@@ -61,6 +62,7 @@ LNS_SETTINGS.SettingsEnum      = {
     alwaysglobal = 'AlwaysGlobal',
     useautorules = 'UseAutoRules',
     trackhistory = 'TrackHistory',
+    NavTimeout = 'NavTimeout',
 
 }
 
@@ -84,6 +86,7 @@ LNS_SETTINGS.Settings          = {
     GlobalLootOn        = true,   -- Enable Global Loot Items. not implimented yet
     CombatLooting       = false,  -- Enables looting during combat. Not recommended on the MT
     CorpseRadius        = 100,    -- Radius to activly loot corpses
+    CorpseZRadius       = 50,     -- Z Radius to activly loot corpses
     MobsTooClose        = 40,     -- Don't loot if mobs are in this range.
     SaveBagSlots        = 3,      -- Number of bag slots you would like to keep empty at all times. Stop looting if we hit this number
     TributeKeep         = false,  -- Keep items flagged Tribute
@@ -132,16 +135,14 @@ LNS_SETTINGS.Settings          = {
     AlwaysAsk           = false, -- Treat all items as Ask reguardless of their rule.
     -- ProcessingEval   = true, -- Re evaluate when processing items for sell\tribute? this will re check our settings and not sell or tribute items outside the new parameters
     UseAutoRules        = true,  -- let LNS decide loot rules on new items
-    BuyItemsTable       = {
-        ['Iron Ration'] = 20,
-        ['Water Flask'] = 20,
-    },
+    NavTimeout          = 5,     -- Max time to allow for nav'ing to a corpse
+    BuyItemsTable       = {},
 }
 
 LNS_SETTINGS.Tooltips          = {
     GlobalLootOn        = "Toggle using Global Rules if off we will only use Normal or Personal Rules. This setting is old and will probably be removed in the future.",
     CombatLooting       = "Enables looting during combat. Not recommended on the MT",
-    CorpseRadius        = "Radius to activly loot corpses",
+    CorpseZRadius       = "Z Radius to activly loot corpses",
     MobsTooClose        = "Don't loot if mobs are in this range.",
     SaveBagSlots        = "Number of bag slots you would like to keep empty at all times. Stop looting if we hit this number",
     TributeKeep         = "Keep items flagged Tribute",
@@ -190,6 +191,7 @@ REQUIRES DoDestroy set to true.]],
     IgnoreMyNearCorpses = "Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.",
     TrackHistory        = "Enable inserting loot results into history table",
     AlwaysAsk           = "Treat all items as Ask reguardless of their rule.",
+    NavTimeout          = "Max time to allow for nav'ing to a corpse",
 }
 
 LNS_SETTINGS.TempSettings      = {
