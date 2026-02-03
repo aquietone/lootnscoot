@@ -1124,14 +1124,13 @@ function LNS_UI.drawNewItemsTable()
     if LNS.NewItemsCount <= 0 then
         LNS.showNewItem = false
     else
-        if ImGui.BeginTable('##newItemTable', 3, bit32.bor(
+        if ImGui.BeginTable('##newItemTable2', 2, bit32.bor(
                 ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollX,
                 ImGuiTableFlags.Reorderable, ImGuiTableFlags.SizingStretchProp,
                 ImGuiTableFlags.RowBg)) then
             -- Setup Table Columns
-            ImGui.TableSetupColumn('Item', ImGuiTableColumnFlags.WidthStretch, 130)
-            ImGui.TableSetupColumn('Classes', ImGuiTableColumnFlags.NoResize, 80)
-            ImGui.TableSetupColumn('Rule', ImGuiTableColumnFlags.NoResize, 60)
+            ImGui.TableSetupColumn('Item', ImGuiTableColumnFlags.WidthStretch, 120)
+            ImGui.TableSetupColumn('Rule', ImGuiTableColumnFlags.WidthFixed, 130)
             ImGui.TableHeadersRow()
             ImGui.TableNextRow()
 
@@ -1203,32 +1202,45 @@ function LNS_UI.drawNewItemsTable()
                 ImGui.Unindent(2)
 
                 -- Classes
+                -- ImGui.Indent(2)
 
-                ImGui.TableNextColumn()
-
-                ImGui.Indent(2)
-
-                ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1) - 50)
-                tmpClasses[itemID] = ImGui.InputText('##Classes' .. itemID, tmpClasses[itemID] or item.Classes)
-                if ImGui.IsItemHovered() then
-                    ImGui.SetTooltip("Classes: %s", item.Classes)
-                end
-
-                ImGui.SameLine()
-                LNS.tempLootAll[itemID] = ImGui.Checkbox('All', LNS.tempLootAll[itemID] or false)
-
-                ImGui.Unindent(2)
-
-
-                ImGui.Indent(2)
-                if ImGui.BeginTable('ItemFlags', 4, bit32.bor(ImGuiTableFlags.Borders,
+                -- ImGui.TableNextColumn()
+                if ImGui.BeginTable("ClassesTable", 6, bit32.bor(ImGuiTableFlags.Borders,
                         ImGuiTableFlags.Reorderable)) then
+                    ImGui.TableSetupColumn('Classes', ImGuiTableColumnFlags.WidthStretch, 80)
+                    ImGui.TableSetupColumn('Loot All', ImGuiTableColumnFlags.WidthFixed, 50)
                     ImGui.TableSetupColumn('NoDrop', ImGuiTableColumnFlags.WidthFixed, 30)
                     ImGui.TableSetupColumn('Lore', ImGuiTableColumnFlags.WidthFixed, 30)
                     ImGui.TableSetupColumn("Aug", ImGuiTableColumnFlags.WidthFixed, 30)
                     ImGui.TableSetupColumn('TS', ImGuiTableColumnFlags.WidthFixed, 30)
+
                     ImGui.TableHeadersRow()
                     ImGui.TableNextRow()
+                    ImGui.TableNextColumn()
+
+
+                    ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1) - 8)
+                    tmpClasses[itemID] = ImGui.InputText('##Classes' .. itemID, tmpClasses[itemID] or item.Classes)
+                    if ImGui.IsItemHovered() then
+                        ImGui.SetTooltip("Classes: %s", item.Classes)
+                    end
+
+                    ImGui.TableNextColumn()
+                    LNS.tempLootAll[itemID] = ImGui.Checkbox('All', LNS.tempLootAll[itemID] or false)
+
+                    --     -- ImGui.Unindent(2)
+                    --     ImGui.EndTable()
+                    -- end
+
+                    -- -- ImGui.Indent(2)
+                    -- if ImGui.BeginTable('ItemFlags', 4, bit32.bor(ImGuiTableFlags.Borders,
+                    --         ImGuiTableFlags.Reorderable)) then
+                    --     ImGui.TableSetupColumn('NoDrop', ImGuiTableColumnFlags.WidthFixed, 30)
+                    --     ImGui.TableSetupColumn('Lore', ImGuiTableColumnFlags.WidthFixed, 30)
+                    --     ImGui.TableSetupColumn("Aug", ImGuiTableColumnFlags.WidthFixed, 30)
+                    --     ImGui.TableSetupColumn('TS', ImGuiTableColumnFlags.WidthFixed, 30)
+                    --     ImGui.TableHeadersRow()
+                    --     ImGui.TableNextRow()
                     -- Flags (NoDrop, Lore, Augment, TradeSkill)
                     ImGui.TableNextColumn()
                     LNS_UI.drawYesNo(item.NoDrop)
@@ -1240,7 +1252,8 @@ function LNS_UI.drawNewItemsTable()
                     LNS_UI.drawYesNo(item.Tradeskill)
                     ImGui.EndTable()
                 end
-                ImGui.Unindent(2)
+                -- ImGui.Unindent(2)
+
                 -- Rule
                 ImGui.TableNextColumn()
 
@@ -1263,8 +1276,10 @@ function LNS_UI.drawNewItemsTable()
                 if LNS.tempGlobalRule[itemID] == nil then
                     LNS.tempGlobalRule[itemID] = settings.Settings.AlwaysGlobal
                 end
+                ImGui.Indent(10)
                 LNS.tempGlobalRule[itemID] = ImGui.Checkbox('Global Rule', LNS.tempGlobalRule[itemID])
-
+                ImGui.Unindent(10)
+                ImGui.Indent(35)
                 -- ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth(-1) / 6))
                 ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.040, 0.294, 0.004, 1.000))
                 if ImGui.Button('Save Rule') then
@@ -1286,6 +1301,7 @@ function LNS_UI.drawNewItemsTable()
                     Logger.Debug(LNS.guiLoot.console, "\agSaving\ax --\ayNEW ITEM RULE\ax-- Item: \at%s \ax(ID:\ag %s\ax) with rule: \at%s\ax, classes: \at%s\ax, link: \at%s\ax",
                         item.Name, itemID, tmpRules[itemID], tmpClasses[itemID], item.Link)
                 end
+                ImGui.Unindent(35)
                 ImGui.PopStyleColor()
                 ImGui.PopID()
             end
@@ -1700,11 +1716,6 @@ function LNS_UI.drawItemsTables()
             if settings.TempSettings.BuyItems == nil then
                 settings.TempSettings.BuyItems = {}
             end
-            -- ImGui.Text("Delete the Item Name to remove it from the table")
-
-            -- if ImGui.SmallButton("Save Changes##BuyItems") then
-            --     settings.TempSettings.NeedSave = true
-            -- end
 
             ImGui.SeparatorText("Add New Item")
             if ImGui.BeginTable("AddItem", 2, ImGuiTableFlags.Borders) then
@@ -1752,8 +1763,8 @@ function LNS_UI.drawItemsTables()
             ImGui.SeparatorText("Buy Items Table")
             if ImGui.BeginTable("Buy Items", col, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
                 for i = 1, col / 2 do
-                    ImGui.TableSetupColumn("Item##" .. i)
-                    ImGui.TableSetupColumn("Qty##" .. i)
+                    ImGui.TableSetupColumn("Item##" .. i, ImGuiTableColumnFlags.WidthFixed, 150)
+                    ImGui.TableSetupColumn("Qty##" .. i, ImGuiTableColumnFlags.WidthFixed, 160)
                 end
                 ImGui.TableSetupScrollFreeze(col, 1)
                 ImGui.TableHeadersRow()
@@ -2922,7 +2933,7 @@ end
 
 function LNS_UI.renderNewItem()
     if ((settings.Settings.AutoShowNewItem and LNS.NewItemsCount > 0) and LNS.showNewItem) or LNS.showNewItem then
-        ImGui.SetNextWindowSize(600, 400, ImGuiCond.FirstUseEver)
+        ImGui.SetNextWindowSize(450, 185, ImGuiCond.FirstUseEver)
         local open, show = ImGui.Begin('New Items', true)
         if not open then
             show = false
