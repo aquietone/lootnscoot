@@ -2374,6 +2374,15 @@ end
 
 function LNS_UI.drawRuleRadioButton(setting, idx, selectedIdx)
     local buttonText = setting
+    local posX, posY = ImGui.GetCursorPos()
+    if idx == selectedIdx then
+        ImGui.SetCursorPos(posX + 20, posY - 2)
+        -- highlight with a colored square as a background color if selectedIdx == idx
+
+        ImGui.GetWindowDrawList():AddRectFilled(ImGui.GetCursorScreenPosVec(),
+            ImGui.GetCursorScreenPosVec() + 20, IM_COL32(69, 50, 145, 255))
+        ImGui.SetCursorPos(posX, posY)
+    end
     if setting == 'Destroy' then
         ImGui.PushStyleColor(ImGuiCol.Text, 0.860, 0.104, 0.104, 1.000)
         buttonText = Icons.MD_DELETE
