@@ -1246,13 +1246,13 @@ function LNS_UI.drawNewItemsTable()
 
                 item.selectedIndex = item.selectedIndex or LNS.getRuleIndex(item.Rule, settingList)
 
-                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1,1))
+                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1, 1))
                 local update
                 ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                for idx,setting in ipairs(settingList) do
-                    update = LNS_UI.drawRuleRadioButton(setting, idx, item.selectedIdx)
+                for idx, setting in ipairs(settingList) do
+                    update = LNS_UI.drawRuleRadioButton(setting, idx, item.selectedIndex)
                     if update then
-                        item.selectedIdx = idx
+                        item.selectedIndex = idx
                         tmpRules[itemID] = setting
                     end
                     if idx % 3 ~= 0 then ImGui.SameLine() end
