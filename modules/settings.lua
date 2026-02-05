@@ -82,7 +82,7 @@ LNS_SETTINGS.SettingsNoDraw    = {
 }
 
 LNS_SETTINGS.Settings          = {
-    Version             = '"' .. tostring(version) .. '"',
+    Version             = '"' .. tostring(_Version) .. '"',
     GlobalLootOn        = true,   -- Enable Global Loot Items. not implimented yet
     CombatLooting       = false,  -- Enables looting during combat. Not recommended on the MT
     CorpseRadius        = 100,    -- Radius to activly loot corpses

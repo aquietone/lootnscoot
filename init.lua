@@ -9,6 +9,8 @@ local success, Logger = pcall(require, 'lib.Logger')
 local actors          = require('modules.actor')
 local db              = require('modules.db')
 local perf            = require('modules.performance')
+_Version              = 6
+
 local settings        = require('modules.settings')
 local ui              = require('modules.ui')
 -- local MasterLooter = require('MasterLooter')
@@ -17,7 +19,6 @@ if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return
 end
-local version                           = 6
 local SettingsFile                      = string.format('%s/LootNScoot/%s/%s.lua', mq.configDir, settings.EqServer, settings.MyName)
 local lootDBUpdateFile                  = string.format('%s/LootNScoot/%s/DB_Updated.lua', mq.configDir, settings.EqServer)
 local zoneID                            = 0
@@ -477,14 +478,14 @@ function LNS.loadSettings(firstRun)
     -- check if the DB structure needs updating
 
     if not Files.File.Exists(lootDBUpdateFile) then
-        tmpSettings.Version = version
+        tmpSettings.Version = _Version
         needSave            = true
-        mq.pickle(lootDBUpdateFile, { version = version, })
+        mq.pickle(lootDBUpdateFile, { version = _Version, })
     else
         settings.TempSettings.VersionInfo = dofile(lootDBUpdateFile)
-        if settings.TempSettings.VersionInfo.version < version then
+        if settings.TempSettings.VersionInfo.version < _Version then
             needDBUpdate        = true
-            tmpSettings.Version = version
+            tmpSettings.Version = _Version
             needSave            = true
         end
     end
@@ -1156,6 +1157,7 @@ function LNS.enterNewItemRuleInfo(data_table)
 end
 
 function LNS.EnterNegIDRule(itemName, rule, classes, link, tableName)
+    local newID = db.GetLowestID(tableName) or -1
     if db.EnterNegIDRule(itemName, rule, classes, link, tableName) then
         LNS.ItemNames[newID] = itemName
 
@@ -1314,7 +1316,6 @@ end
 ---@param itemName string|nil The name of the item to retrieve. [string]
 ---@param itemID integer|nil The ID of the item to retrieve. [integer] [optional]
 ---@param rules boolean|nil If true, only load items with rules (exact name matches) [boolean] [optional]
----@param db any DB Connection SQLite3 [optional]
 ---@return integer Quantity of items found
 function LNS.GetItemFromDB(itemName, itemID, rules, exact)
     if not itemID and not itemName then return 0 end
@@ -1661,7 +1662,7 @@ end
 ---@param itemID any
 ---@param tablename any|nil
 ---@param item_link string|nil
----@param skipWildcard bool|nil
+---@param skipWildcard boolean|nil
 ---@return string rule
 ---@return string classes
 ---@return string link
@@ -1676,13 +1677,17 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
         return 'NULL', 'All', 'NULL', 'None'
     end
     local which_table = 'Normal'
+    local iData = {}
+    _, iData = LNS.findItem(nil, itemID)
 
     -- check lua tables first
     -- local link = LNS.ALLITEMS[itemID] and LNS.ALLITEMS[itemID].Link or 'NULL'
     local link = LNS.ItemLinks[itemID] or 'NULL'
 
     if not LNS.ALLITEMS[itemID] then
-        LNS.ALLITEMS[itemID] = {}
+        LNS.ALLITEMS[itemID] = {
+            Name = mq_item and mq_item.Name() or iData[itemID].item_name or 'Unknown',
+        }
     end
 
     if item_link and item_link ~= link and LNS.ALLITEMS[itemID] then
@@ -1759,24 +1764,19 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
             if mq_item and mq_item() then
                 local wildCardRule = LNS.CheckWildCards(mq_item.Name()) or ''
                 if wildCardRule ~= '' then
-                    classes            = classes ~= 'NULL' and classes or 'All'
-                    lookupLink         = item_link
-                    found              = true
-                    which_table        = 'Normal'
+                    classes       = classes ~= 'NULL' and classes or 'All'
+                    lookupLink    = item_link
+                    found         = true
+                    which_table   = 'Normal'
+                    rule          = wildCardRule
 
-                    local isEquippable = (mq_item.WornSlots() or 0) > 0
-                    local isNoDrop     = mq_item.NoDrop() or mq_item.NoTrade()
-                    local addToDB      = true
+                    local addToDB = true
 
                     -- NODROP
-                    if isNoDrop then
+                    if mq_item.NoDrop() or mq_item.NoTrade() then
                         addToDB = (settings.Settings.LootNoDropNew and settings.Settings.LootNoDrop) or false
-                        -- if not (isEquippable and addToDB) then
-                        --     wildCardRule = "Ask"
-                        -- end
                     end
                     LNS.addNewItem(mq_item, wildCardRule, item_link, mq.TLO.Corpse.ID() or 0, addToDB)
-                    rule = wildCardRule
                 end
             end
         end
@@ -1786,9 +1786,6 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
             classes = 'None'
             lookupLink = 'NULL'
         end
-        -- never called with a table name
-        -- else
-        --     _, rule, classes, lookupLink = checkDB(itemID, tablename)
     end
 
     -- if SQL has the item add the rules to the lua table for next time
@@ -1800,7 +1797,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
         LNS[localTblName .. 'Rules'][itemID]   = rule
         LNS[localTblName .. 'Classes'][itemID] = classes
         LNS.ItemLinks[itemID]                  = lookupLink
-        LNS.ItemNames[itemID]                  = LNS.ALLITEMS[itemID].Name or (mq_item and mq_item.Name() or "Unknown")
+        LNS.ItemNames[itemID]                  = mq_item and mq_item.Name() or iData[itemID].item_name or 'Unknown'
     end
     return rule, classes, lookupLink, which_table
 end

@@ -12,6 +12,7 @@ local LNS_ACTORS = { _version = '0.1', }
 
 local LNS
 
+local infoMsg = {}
 function LNS_ACTORS.SetLNS(_LNS)
     LNS = _LNS
 end
