@@ -189,6 +189,7 @@ end
 --- HISTORY DB
 
 function LNS_DB.LoadHistoricalData()
+    if history_db == nil then LNS_DB.OpenDB(LNS_DB.HistoryDB) end
     local historicalDates = {}
     history_db:exec([[
 BEGIN TRANSACTION;
@@ -217,6 +218,8 @@ COMMIT;
 end
 
 function LNS_DB.LoadDateHistory(lookup_Date)
+    if history_db == nil then LNS_DB.OpenDB(LNS_DB.HistoryDB) end
+
     local historyDataDate = {}
     local stmt = history_db:prepare("SELECT * FROM LootHistory WHERE Date = ?")
     if not stmt then
@@ -233,6 +236,8 @@ function LNS_DB.LoadDateHistory(lookup_Date)
 end
 
 function LNS_DB.LoadItemHistory(lookup_name)
+    if history_db == nil then LNS_DB.OpenDB(LNS_DB.HistoryDB) end
+
     local historyItemData = {}
     local stmt = history_db:prepare("SELECT * FROM LootHistory WHERE Item LIKE ?")
     if not stmt then
@@ -288,6 +293,8 @@ end
 --- ITEMS DB
 
 function LNS_DB.SetupItemsTable()
+    if items_db == nil then LNS_DB.OpenDB(LNS_DB.ItemsDB) end
+
     items_db:exec("BEGIN TRANSACTION")
     items_db:exec([[
 CREATE TABLE IF NOT EXISTS Items (
@@ -363,6 +370,8 @@ link TEXT
 end
 
 function LNS_DB.LoadIcons()
+    if items_db == nil then LNS_DB.OpenDB(LNS_DB.ItemsDB) end
+
     local itemIcons = {}
     local stmt = items_db:prepare("SELECT item_id, icon FROM Items")
 
@@ -377,6 +386,7 @@ end
 function LNS_DB.GetItemFromDB(itemName, itemID, query, useItemIDStmt)
     local stmt
     local finalizeStmt = false
+    if items_db == nil then LNS_DB.OpenDB(LNS_DB.ItemsDB) end
     if useItemIDStmt then
         stmt = LNS_DB.PreparedStatements.GET_ITEM_FROM_DB
         stmt:bind_values(itemID)
@@ -476,6 +486,7 @@ function LNS_DB.GetItemFromDB(itemName, itemID, query, useItemIDStmt)
 end
 
 function LNS_DB.AddItemToDB(itemID, itemName, value, itemIcon)
+    if items_db == nil then LNS_DB.OpenDB(LNS_DB.ItemsDB) end
     items_db:exec("BEGIN TRANSACTION")
     local success, errmsg = pcall(function()
         LNS_DB.PreparedStatements.ADD_ITEM_TO_DB:bind_values(
@@ -557,7 +568,7 @@ end
 function LNS_DB.ResolveItemIDs(namesTable)
     local resolved = {}
     local seenCount = {}
-
+    if items_db == nil then LNS_DB.OpenDB(LNS_DB.ItemsDB) end
     local stmt = items_db:prepare("SELECT item_id, name FROM Items")
     for row in stmt:nrows() do
         if namesTable[row.name] then
@@ -608,6 +619,7 @@ end
 --- RULES DB
 
 function LNS_DB.LoadRuleDB()
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
     -- Creating tables
     rules_db:exec(string.format([[
 BEGIN TRANSACTION;
@@ -690,7 +702,7 @@ end
 function LNS_DB.LoadWildCardRules()
     -- load wildcard rules
     local Wc_Table = {}
-
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
     local wc_stmt = rules_db:prepare("SELECT wildcard, rule FROM wildcards ORDER BY LENGTH(wildcard) DESC, wildcard ASC")
     for row in wc_stmt:nrows() do
         local wildcard = row.wildcard
@@ -714,6 +726,7 @@ function LNS_DB.BulkSet(item_table, setting, classes, which_table, delete_items)
     if which_table == 'Personal_Rules' then which_table = settings.PersonalTableName end
     local localName = which_table == 'Normal_Rules' and 'NormalItems' or 'GlobalItems'
     localName = which_table == settings.PersonalTableName and 'PersonalItems' or localName
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
 
     local qry = string.format([[
 INSERT INTO %s (item_id, item_name, item_rule, item_rule_classes, item_link)
@@ -853,6 +866,8 @@ function LNS_DB.CheckRulesDB(id, stmt)
 end
 
 function LNS_DB.DeleteItemRule(action, tableName, itemName, itemID)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
+
     local sql = string.format("DELETE FROM %s WHERE item_id = ?", tableName)
     local stmt = rules_db:prepare(sql)
     if not stmt then
@@ -878,6 +893,8 @@ function LNS_DB.DeleteItemRule(action, tableName, itemName, itemID)
 end
 
 function LNS_DB.UpsertItemRule(action, tableName, itemName, itemID, classes, link)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
+
     local stmt
     -- UPSERT operation
     if tableName == 'Normal_Rules' then
@@ -906,6 +923,8 @@ function LNS_DB.UpsertItemRule(action, tableName, itemName, itemID, classes, lin
 end
 
 function LNS_DB.AddSafeZone(zoneName)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
+
     local stmt = rules_db:prepare("INSERT OR IGNORE INTO SafeZones (zone) VALUES (?)")
     if not stmt then
         printf("Error preparing statement for safe zone: %s", rules_db:errmsg())
@@ -925,6 +944,8 @@ function LNS_DB.AddSafeZone(zoneName)
 end
 
 function LNS_DB.AddWildCard(wildcard, rule)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
+
     local stmt = rules_db:prepare("INSERT OR REPLACE INTO WildCards (wildcard, rule) VALUES (?, ?)")
     if not stmt then
         printf("Error preparing statement for wildcard: %s", rules_db:errmsg())
@@ -949,6 +970,8 @@ function LNS_DB.AddWildCard(wildcard, rule)
 end
 
 function LNS_DB.DeleteWildCard(wildcard)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
+
     local stmt = rules_db:prepare("DELETE FROM WildCards WHERE wildcard = ?")
     if not stmt then
         printf("Error preparing statement for wildcard: %s", rules_db:errmsg())
@@ -973,6 +996,7 @@ function LNS_DB.DeleteWildCard(wildcard)
 end
 
 function LNS_DB.RemoveSafeZone(zoneName)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
     local stmt = rules_db:prepare("DELETE FROM SafeZones WHERE zone = ?")
     if not stmt then
         printf("Error preparing statement for safe zone: %s", rules_db:errmsg())
@@ -992,6 +1016,7 @@ function LNS_DB.RemoveSafeZone(zoneName)
 end
 
 function LNS_DB.GetLowestID(tableName)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
     local query = string.format("SELECT MIN(item_id) as min_id FROM %s;", tableName)
     local stmt = rules_db:prepare(query)
     if not stmt then
@@ -1015,6 +1040,7 @@ function LNS_DB.GetLowestID(tableName)
 end
 
 function LNS_DB.EnterNegIDRule(itemName, rule, classes, link, tableName)
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
     Logger.Info(guiLoot.console, "Entering rule for missing item \ay%s\ax", itemName)
     local newID = LNS_DB.GetLowestID(tableName) or -1
     Logger.Debug(guiLoot.console, "Assigned temporary ID \at%s\ax for missing item \ay%s\ax", newID, itemName)
@@ -1134,6 +1160,7 @@ function LNS_DB.ImportOldRulesDB(path)
     end
 
     tmpNormalDB = newNormal
+    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
 
     -- insert into the current rules DB
     local qry = string.format([[
