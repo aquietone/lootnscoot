@@ -1261,16 +1261,41 @@ function LNS_UI.drawNewItemsTable()
 
                 ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1, 1))
                 local update
-                ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                for idx, setting in ipairs(settingList) do
-                    update = LNS_UI.drawRuleRadioButton(setting, idx, item.selectedIndex)
+                local totalWidth = ImGui.GetColumnWidth(-1)
+                local colWidth = totalWidth / 3 -- Calculate 1/3 of the width for alignment
+
+                for i, setting in ipairs(settingList) do
+                    --Calculate which "sub-column" we are in (0, 1, or 2)
+                    local colIdx = (i - 1) % 3
+
+                    if colIdx > 0 then
+                        --This snaps the button to exactly 33% or 66% of the column width
+                        ImGui.SameLine(colIdx * colWidth)
+                    end
+
+                    -- We use colWidth - spacing to ensure the button doesn't bleed into the next slot
+                    ImGui.SetNextItemWidth(colWidth - ImGui.GetStyle().ItemSpacing.x)
+                    update = LNS_UI.drawRuleRadioButton(setting, i, item.selectedIndex)
+
                     if update then
-                        item.selectedIndex = idx
+                        item.selectedIndex = i
                         tmpRules[itemID] = setting
                     end
-                    if idx % 3 ~= 0 then ImGui.SameLine() end
                 end
                 ImGui.PopStyleVar()
+
+                -- ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1, 1))
+                -- local update
+                -- ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
+                -- for idx, setting in ipairs(settingList) do
+                --     update = LNS_UI.drawRuleRadioButton(setting, idx, item.selectedIndex)
+                --     if update then
+                --         item.selectedIndex = idx
+                --         tmpRules[itemID] = setting
+                --     end
+                --     if idx % 3 ~= 0 then ImGui.SameLine() end
+                -- end
+                -- ImGui.PopStyleVar()
 
                 ImGui.Spacing()
                 if LNS.tempGlobalRule[itemID] == nil then

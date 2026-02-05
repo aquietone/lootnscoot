@@ -152,7 +152,7 @@ LNS.PauseLooting           = false
 LNS.Zone                   = mq.TLO.Zone.ShortName()
 LNS.Instance               = mq.TLO.Me.Instance()
 LNS.WildCards              = {}
-
+LNS.IsLooting              = false
 -- FORWARD DECLARATIONS
 LNS.AllItemColumnListIndex = {
     [1]  = 'name',
@@ -1681,6 +1681,10 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
     -- local link = LNS.ALLITEMS[itemID] and LNS.ALLITEMS[itemID].Link or 'NULL'
     local link = LNS.ItemLinks[itemID] or 'NULL'
 
+    if not LNS.ALLITEMS[itemID] then
+        LNS.ALLITEMS[itemID] = {}
+    end
+
     if item_link and item_link ~= link and LNS.ALLITEMS[itemID] then
         LNS.ALLITEMS[itemID].Link = item_link
     end
@@ -1755,12 +1759,24 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
             if mq_item and mq_item() then
                 local wildCardRule = LNS.CheckWildCards(mq_item.Name()) or ''
                 if wildCardRule ~= '' then
-                    classes = classes ~= 'NULL' and classes or 'All'
-                    lookupLink = item_link
-                    found = true
-                    which_table = 'Normal'
+                    classes            = classes ~= 'NULL' and classes or 'All'
+                    lookupLink         = item_link
+                    found              = true
+                    which_table        = 'Normal'
+
+                    local isEquippable = (mq_item.WornSlots() or 0) > 0
+                    local isNoDrop     = mq_item.NoDrop() or mq_item.NoTrade()
+                    local addToDB      = true
+
+                    -- NODROP
+                    if isNoDrop then
+                        addToDB = (settings.Settings.LootNoDropNew and settings.Settings.LootNoDrop) or false
+                        -- if not (isEquippable and addToDB) then
+                        --     wildCardRule = "Ask"
+                        -- end
+                    end
+                    LNS.addNewItem(mq_item, wildCardRule, item_link, mq.TLO.Corpse.ID() or 0, addToDB)
                     rule = wildCardRule
-                    LNS.addNewItem(mq_item, wildCardRule, item_link, mq.TLO.Corpse.ID() or 0, true)
                 end
             end
         end
@@ -1784,7 +1800,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
         LNS[localTblName .. 'Rules'][itemID]   = rule
         LNS[localTblName .. 'Classes'][itemID] = classes
         LNS.ItemLinks[itemID]                  = lookupLink
-        LNS.ItemNames[itemID]                  = LNS.ALLITEMS[itemID].Name
+        LNS.ItemNames[itemID]                  = LNS.ALLITEMS[itemID].Name or (mq_item and mq_item.Name() or "Unknown")
     end
     return rule, classes, lookupLink, which_table
 end
@@ -3086,7 +3102,7 @@ function LNS.lootCorpse(corpseID)
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
 
-    mq.delay(500, function() return not mq.TLO.Me.Moving() end)
+    mq.delay(500, function() return not mq.TLO.Me.Moving() and not mq.TLO.Me.Casting() end)
     for i = 1, 3 do
         if not mq.TLO.Target() then return didLootMob end
         mq.cmdf('/loot')
@@ -3340,6 +3356,7 @@ function LNS.lootMobs(limit)
     if settings.Settings.LootMyCorpse and not settings.Settings.IgnoreMyNearCorpses and foundMine then
         Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Found my own corpse, attempting to loot it.')
         for i = 1, myCorpseCount do
+            LNS.IsLooting = true
             local corpse = mq.TLO.NearestSpawn(string.format("%d, %s", i, pcCorpseFilter))
             if corpse() then
                 if (corpse.DisplayName():lower() == mq.TLO.Me.DisplayName():lower()) then
@@ -3365,6 +3382,8 @@ function LNS.lootMobs(limit)
     -- Add other corpses to the loot list if not limited by the player's own corpse
     if (myCorpseCount == 0 or (myCorpseCount > 0 and settings.Settings.IgnoreMyNearCorpses)) and settings.Settings.DoLoot then
         for i = 1, deadCount do
+            LNS.IsLooting = true
+
             local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', settings.Settings.CorpseRadius, settings.Settings.CorpseZRadius or 50))
             if corpse() and not (LNS.lootedCorpses[corpse.ID()] and settings.Settings.CheckCorpseOnce) then
                 if not LNS.checkLockedCorpse(corpse.ID()) and
@@ -3389,6 +3408,8 @@ function LNS.lootMobs(limit)
     -- Process the collected corpse list
     local counter = 0
     if #corpseList > 0 then
+        LNS.IsLooting = true
+
         Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Attempting to loot \at%d\ax corpses.', #corpseList)
         for _, corpse in ipairs(corpseList) do
             local check = false
@@ -4502,6 +4523,48 @@ function LNS.MainLoop()
         mq.exit()
     end
 end
+
+---@class LNSDataType
+---@field Looting boolean
+---@field Paused boolean
+---@field Mode string
+---@type DataType
+local LNSDataType = mq.DataType.new('LNS', {
+    Members = {
+
+        Looting = function(self)
+            return 'bool', LNS.IsLooting
+        end,
+
+        Paused = function(self)
+            return 'bool', LNS.PauseLooting
+        end,
+
+        Mode = function(self)
+            return 'string', LNS.Mode
+        end,
+
+        ---Checks if the current zone or specified zone is marked as a safe zone
+        ---@param param string|nil zone short name or nil
+        ---@return string
+        ---@return boolean
+        SafeZone = function(param, self)
+            if param and param:len() > 0 then
+                return 'bool', LNS.SafeZones[param] or false
+            end
+            return 'bool', LNS.SafeZones[mq.TLO.Zone.ShortName()] or false
+        end,
+    },
+    ToString = function(self)
+        return 'LootNScoot'
+    end,
+})
+
+function LNS.TLOHandler(param)
+    return LNSDataType, LNS.PauseLooting
+end
+
+mq.AddTopLevelObject('LNS', LNS.TLOHandler)
 
 LNS.init({ ..., })
 LNS.MainLoop()

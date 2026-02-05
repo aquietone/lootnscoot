@@ -413,7 +413,7 @@ local function callback(message)
         end
 
         if who ~= settings.MyName then
-            table.insert(settings.TempSettings.GetItems, { Name = itemName, ID = itemID, ItemLink = itemLink })
+            table.insert(settings.TempSettings.GetItems, { Name = itemName, ID = itemID, ItemLink = itemLink, })
         end
 
         -- clean bags of items marked as destroy so we don't collect garbage
@@ -435,7 +435,6 @@ local function callback(message)
         Logger.Info(guiLoot.console, infoMsg)
     end
     if action == 'new' and who ~= settings.MyName and LNS.NewItems[itemID] == nil then
-
         LNS.NewItems[itemID] = {
             Name       = lootMessage.item,
             Rule       = rule,
@@ -532,6 +531,7 @@ function LNS_ACTORS.FinishedLooting()
         }, 'loot_module')
     end
     LNS.LootNow = false
+    LNS.IsLooting = false
 end
 
 function LNS_ACTORS.InformProcessing()
