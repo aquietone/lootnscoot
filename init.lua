@@ -57,7 +57,7 @@ local doSell, doBuy, doTribute, areFull = false, false, false, false
 --     ['PersonalItems']=settings.PersonalTableName,
 -- }
 
-local equipSlots = {
+local equipSlots                        = {
     [0] = 'Charm',
     [1] = 'Ears',
     [2] = 'Head',
@@ -2037,7 +2037,7 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
     if addDB then
         LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink, true)
     end
-    local sections = {NormalItems=1}
+    local sections = { NormalItems = 1, }
     if settings.Settings.AlwaysGlobal then
         sections['GlobalItems'] = 1
     end
@@ -3321,7 +3321,8 @@ function LNS.lootMobs(limit)
 
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Entering lootMobs function.')
     local deadCount      = mq.TLO.SpawnCount(string.format('npccorpse radius %s zradius %s', settings.Settings.CorpseRadius or 100, settings.Settings.CorpseZRadius or 50))()
-    local mobsNearby     = mq.TLO.SpawnCount(string.format('npc xtarhater radius %s zradius %s', settings.Settings.MobsTooClose + settings.Settings.CorpseRadius, settings.Settings.CorpseZRadius or 50))()
+    local mobsNearby     = mq.TLO.SpawnCount(string.format('npc xtarhater radius %s zradius %s', settings.Settings.MobsTooClose + settings.Settings.CorpseRadius,
+        settings.Settings.CorpseZRadius or 50))()
     local corpseList     = {}
     -- Logger.Debug(loot.guiLoot.console, 'lootMobs(): Found %s corpses in range.', deadCount)
 
@@ -3392,6 +3393,11 @@ function LNS.lootMobs(limit)
         for _, corpse in ipairs(corpseList) do
             local check = false
             local corpseID = corpse.ID() or 0
+
+            if LNS.PauseLooting then
+                actors.FinishedLooting()
+                return false
+            end
 
             if not mq.TLO.Spawn(corpseID)() then
                 Logger.Info(LNS.guiLoot.console, 'lootMobs(): Corpse ID \ay%d \axis \arNO Longer Valid.\ax \atMoving to Next Corpse...', corpseID)
