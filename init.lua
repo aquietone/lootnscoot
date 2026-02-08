@@ -650,6 +650,19 @@ function LNS.setupEvents()
     mq.event("Tribute", "#*#We graciously accept your #1# as tribute, thank you!#*#", LNS.eventTribute)
 end
 
+function LNS.InCombat()
+    if mq.TLO.Me.CombatState():lower() == "combat" then return true end
+
+    local xtCount = mq.TLO.Me.XTarget() or 0
+    for i = 1, xtCount do
+        local xtarg = mq.TLO.Me.XTarget(i)
+        if xtarg and xtarg.ID() > 0 and not xtarg.Dead() and (xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater") then
+            return true
+        end
+    end
+    return false
+end
+
 ------------------------------------
 --      Main command handler
 ------------------------------------
@@ -3357,7 +3370,7 @@ function LNS.lootMobs(limit)
     end
 
     -- Stop looting if conditions aren't met
-    if (deadCount + myCorpseCount) == 0 or (mobsNearby > 0 and not settings.Settings.CombatLooting) or (mq.TLO.Me.Combat() and not settings.Settings.CombatLooting) then
+    if (deadCount + myCorpseCount) == 0 or (mobsNearby > 0 and not settings.Settings.CombatLooting) or (not settings.Settings.CombatLooting and LNS.InCombat()) then
         actors.FinishedLooting()
         return false
     end
