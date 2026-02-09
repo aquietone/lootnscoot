@@ -1699,7 +1699,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
 
     if not LNS.ALLITEMS[itemID] then
         LNS.ALLITEMS[itemID] = {
-            Name = mq_item and mq_item.Name() or iData[itemID].item_name or 'Unknown',
+            Name = (mq_item and mq_item.Name()) or (iData[itemID] and iData[itemID].item_name) or 'Unknown',
         }
     end
 
