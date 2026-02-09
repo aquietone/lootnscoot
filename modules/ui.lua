@@ -1131,7 +1131,7 @@ function LNS_UI.drawNewItemsTable()
             -- Setup Table Columns
             ImGui.TableSetupColumn('Item', ImGuiTableColumnFlags.WidthStretch, 120)
             ImGui.TableSetupColumn('Rule', ImGuiTableColumnFlags.WidthFixed, 130)
-            ImGui.TableHeadersRow()
+            -- ImGui.TableHeadersRow()
             ImGui.TableNextRow()
 
             -- Iterate Over New Items
@@ -1154,30 +1154,35 @@ function LNS_UI.drawNewItemsTable()
                 end
                 -- Item Name and Link
                 ImGui.TableNextColumn()
-
-                ImGui.Indent(2)
-
-                LNS_UI.drawIcon(item.Icon, 20)
-                if ImGui.IsItemHovered() then
-                    ImGui.BeginTooltip()
-                    LNS_UI.Draw_item_tooltip(itemID)
-                    ImGui.Spacing()
-                    ImGui.Separator()
-                    ImGui.Text("Left Click Icon to open In-Game Details window")
-                    ImGui.Text("Right Click to Pop Open Details window.")
-                    ImGui.EndTooltip()
-                    if ImGui.IsMouseClicked(0) then
-                        mq.cmdf('/executelink %s', item.Link)
-                    elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
-                        settings.TempSettings.Popped[itemID] = true
+                if ImGui.BeginTable('##Itemdetail' .. itemID, 3, bit32.bor(ImGuiTableFlags.None)) then
+                    ImGui.TableSetupColumn("##icon", ImGuiTableColumnFlags.WidthFixed, 25)
+                    ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch, 100)
+                    ImGui.TableSetupColumn("CorpseID", ImGuiTableColumnFlags.WidthFixed, 100)
+                    ImGui.TableHeadersRow()
+                    ImGui.TableNextRow()
+                    ImGui.TableNextColumn()
+                    LNS_UI.drawIcon(item.Icon, 20)
+                    if ImGui.IsItemHovered() then
+                        ImGui.BeginTooltip()
+                        LNS_UI.Draw_item_tooltip(itemID)
+                        ImGui.Spacing()
+                        ImGui.Separator()
+                        ImGui.Text("Left Click Icon to open In-Game Details window")
+                        ImGui.Text("Right Click to Pop Open Details window.")
+                        ImGui.EndTooltip()
+                        if ImGui.IsMouseClicked(0) then
+                            mq.cmdf('/executelink %s', item.Link)
+                        elseif ImGui.IsItemClicked(ImGuiMouseButton.Right) then
+                            settings.TempSettings.Popped[itemID] = true
+                        end
                     end
+                    ImGui.TableNextColumn()
+                    ImGui.Text(item.Name or "Unknown")
+                    ImGui.TableNextColumn()
+                    ImGui.Text('%s', item.CorpseID)
+                    ImGui.EndTable()
                 end
-                ImGui.SameLine()
-                ImGui.Text(item.Name or "Unknown")
-                ImGui.SameLine()
-                ImGui.Text('Corpse ID: %s', item.CorpseID)
 
-                ImGui.Unindent(2)
                 ImGui.Indent(2)
 
                 if ImGui.BeginTable("SellData", 3, bit32.bor(ImGuiTableFlags.Borders,
@@ -1256,53 +1261,83 @@ function LNS_UI.drawNewItemsTable()
 
                 -- Rule
                 ImGui.TableNextColumn()
+                if ImGui.BeginTable("RuleTable", 1) then
+                    ImGui.TableSetupColumn("Rule", ImGuiTableColumnFlags.WidthStretch, 100)
+                    ImGui.TableHeadersRow()
+                    ImGui.TableNextColumn()
+                    item.selectedIndex = item.selectedIndex or LNS.getRuleIndex(item.Rule, settingList)
 
-                item.selectedIndex = item.selectedIndex or LNS.getRuleIndex(item.Rule, settingList)
+                    ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1, 1))
+                    local update
+                    local totalWidth = ImGui.GetColumnWidth(-1)
+                    local colWidth = totalWidth / 3 -- Calculate 1/3 of the width for alignment
 
-                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1, 1))
-                local update
-                ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
-                for idx, setting in ipairs(settingList) do
-                    update = LNS_UI.drawRuleRadioButton(setting, idx, item.selectedIndex)
-                    if update then
-                        item.selectedIndex = idx
-                        tmpRules[itemID] = setting
+                    for i, setting in ipairs(settingList) do
+                        --Calculate which "sub-column" we are in (0, 1, or 2)
+                        local colIdx = (i - 1) % 3
+
+                        if colIdx > 0 then
+                            --This snaps the button to exactly 33% or 66% of the column width
+                            ImGui.SameLine(colIdx * colWidth)
+                        end
+
+                        -- We use colWidth - spacing to ensure the button doesn't bleed into the next slot
+                        ImGui.SetNextItemWidth(colWidth - ImGui.GetStyle().ItemSpacing.x)
+                        update = LNS_UI.drawRuleRadioButton(setting, i, item.selectedIndex)
+
+                        if update then
+                            item.selectedIndex = i
+                            tmpRules[itemID] = setting
+                        end
                     end
-                    if idx % 3 ~= 0 then ImGui.SameLine() end
-                end
-                ImGui.PopStyleVar()
+                    ImGui.PopStyleVar()
 
-                ImGui.Spacing()
-                if LNS.tempGlobalRule[itemID] == nil then
-                    LNS.tempGlobalRule[itemID] = settings.Settings.AlwaysGlobal
-                end
-                ImGui.Indent(10)
-                LNS.tempGlobalRule[itemID] = ImGui.Checkbox('Global Rule', LNS.tempGlobalRule[itemID])
-                ImGui.Unindent(10)
-                ImGui.Indent(35)
-                -- ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth(-1) / 6))
-                ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.040, 0.294, 0.004, 1.000))
-                if ImGui.Button('Save Rule') then
-                    local classes = LNS.tempLootAll[itemID] and "All" or tmpClasses[itemID]
-                    local ruleTable = LNS.tempGlobalRule[itemID] and "GlobalItems" or "NormalItems"
-                    LNS.enterNewItemRuleInfo({
-                        ID = itemID,
-                        RuleType = ruleTable,
-                        ItemName = item.Name,
-                        Rule = tmpRules[itemID],
-                        Classes = classes,
-                        Link = item.Link,
-                        CorpseID = item.CorpseID,
-                    })
-                    LNS.addRule(itemID, ruleTable, tmpRules[itemID], classes, item.Link)
+                    -- ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImVec2(1, 1))
+                    -- local update
+                    -- ImGui.SetNextItemWidth(ImGui.GetColumnWidth(-1))
+                    -- for idx, setting in ipairs(settingList) do
+                    --     update = LNS_UI.drawRuleRadioButton(setting, idx, item.selectedIndex)
+                    --     if update then
+                    --         item.selectedIndex = idx
+                    --         tmpRules[itemID] = setting
+                    --     end
+                    --     if idx % 3 ~= 0 then ImGui.SameLine() end
+                    -- end
+                    -- ImGui.PopStyleVar()
 
-                    table.remove(settings.TempSettings.NewItemIDs, idx)
-                    table.insert(itemsToRemove, itemID)
-                    Logger.Debug(LNS.guiLoot.console, "\agSaving\ax --\ayNEW ITEM RULE\ax-- Item: \at%s \ax(ID:\ag %s\ax) with rule: \at%s\ax, classes: \at%s\ax, link: \at%s\ax",
-                        item.Name, itemID, tmpRules[itemID], tmpClasses[itemID], item.Link)
+                    ImGui.Spacing()
+                    if LNS.tempGlobalRule[itemID] == nil then
+                        LNS.tempGlobalRule[itemID] = settings.Settings.AlwaysGlobal
+                    end
+                    ImGui.Indent(10)
+                    LNS.tempGlobalRule[itemID] = ImGui.Checkbox('Global Rule', LNS.tempGlobalRule[itemID])
+                    ImGui.Unindent(10)
+                    ImGui.Indent(35)
+                    -- ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth(-1) / 6))
+                    ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.040, 0.294, 0.004, 1.000))
+                    if ImGui.Button('Save Rule') then
+                        local classes = LNS.tempLootAll[itemID] and "All" or tmpClasses[itemID]
+                        local ruleTable = LNS.tempGlobalRule[itemID] and "GlobalItems" or "NormalItems"
+                        LNS.enterNewItemRuleInfo({
+                            ID = itemID,
+                            RuleType = ruleTable,
+                            ItemName = item.Name,
+                            Rule = tmpRules[itemID],
+                            Classes = classes,
+                            Link = item.Link,
+                            CorpseID = item.CorpseID,
+                        })
+                        LNS.addRule(itemID, ruleTable, tmpRules[itemID], classes, item.Link)
+
+                        table.remove(settings.TempSettings.NewItemIDs, idx)
+                        table.insert(itemsToRemove, itemID)
+                        Logger.Debug(LNS.guiLoot.console, "\agSaving\ax --\ayNEW ITEM RULE\ax-- Item: \at%s \ax(ID:\ag %s\ax) with rule: \at%s\ax, classes: \at%s\ax, link: \at%s\ax",
+                            item.Name, itemID, tmpRules[itemID], tmpClasses[itemID], item.Link)
+                    end
+                    ImGui.Unindent(35)
+                    ImGui.PopStyleColor()
                 end
-                ImGui.Unindent(35)
-                ImGui.PopStyleColor()
+                ImGui.EndTable()
                 ImGui.PopID()
             end
 

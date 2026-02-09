@@ -9,6 +9,8 @@ local success, Logger = pcall(require, 'lib.Logger')
 local actors          = require('modules.actor')
 local db              = require('modules.db')
 local perf            = require('modules.performance')
+_Version              = 6
+
 local settings        = require('modules.settings')
 local ui              = require('modules.ui')
 -- local MasterLooter = require('MasterLooter')
@@ -17,7 +19,6 @@ if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return
 end
-local version                           = 6
 local SettingsFile                      = string.format('%s/LootNScoot/%s/%s.lua', mq.configDir, settings.EqServer, settings.MyName)
 local lootDBUpdateFile                  = string.format('%s/LootNScoot/%s/DB_Updated.lua', mq.configDir, settings.EqServer)
 local zoneID                            = 0
@@ -152,7 +153,7 @@ LNS.PauseLooting           = false
 LNS.Zone                   = mq.TLO.Zone.ShortName()
 LNS.Instance               = mq.TLO.Me.Instance()
 LNS.WildCards              = {}
-
+LNS.IsLooting              = false
 -- FORWARD DECLARATIONS
 LNS.AllItemColumnListIndex = {
     [1]  = 'name',
@@ -477,14 +478,14 @@ function LNS.loadSettings(firstRun)
     -- check if the DB structure needs updating
 
     if not Files.File.Exists(lootDBUpdateFile) then
-        tmpSettings.Version = version
+        tmpSettings.Version = _Version
         needSave            = true
-        mq.pickle(lootDBUpdateFile, { version = version, })
+        mq.pickle(lootDBUpdateFile, { version = _Version, })
     else
         settings.TempSettings.VersionInfo = dofile(lootDBUpdateFile)
-        if settings.TempSettings.VersionInfo.version < version then
+        if settings.TempSettings.VersionInfo.version < _Version then
             needDBUpdate        = true
-            tmpSettings.Version = version
+            tmpSettings.Version = _Version
             needSave            = true
         end
     end
@@ -648,6 +649,19 @@ function LNS.setupEvents()
     mq.event("Forage", "You have scrounged up #*#", LNS.eventForage)
     mq.event("Novalue", "#*#give you absolutely nothing for the #1#.#*#", LNS.eventNovalue)
     mq.event("Tribute", "#*#We graciously accept your #1# as tribute, thank you!#*#", LNS.eventTribute)
+end
+
+function LNS.InCombat()
+    if mq.TLO.Me.CombatState():lower() == "combat" then return true end
+
+    local xtCount = mq.TLO.Me.XTarget() or 0
+    for i = 1, xtCount do
+        local xtarg = mq.TLO.Me.XTarget(i)
+        if xtarg and xtarg.ID() > 0 and not xtarg.Dead() and (xtarg.Aggressive() or xtarg.TargetType():lower() == "auto hater") then
+            return true
+        end
+    end
+    return false
 end
 
 ------------------------------------
@@ -1156,6 +1170,7 @@ function LNS.enterNewItemRuleInfo(data_table)
 end
 
 function LNS.EnterNegIDRule(itemName, rule, classes, link, tableName)
+    local newID = db.GetLowestID(tableName) or -1
     if db.EnterNegIDRule(itemName, rule, classes, link, tableName) then
         LNS.ItemNames[newID] = itemName
 
@@ -1314,7 +1329,6 @@ end
 ---@param itemName string|nil The name of the item to retrieve. [string]
 ---@param itemID integer|nil The ID of the item to retrieve. [integer] [optional]
 ---@param rules boolean|nil If true, only load items with rules (exact name matches) [boolean] [optional]
----@param db any DB Connection SQLite3 [optional]
 ---@return integer Quantity of items found
 function LNS.GetItemFromDB(itemName, itemID, rules, exact)
     if not itemID and not itemName then return 0 end
@@ -1661,7 +1675,7 @@ end
 ---@param itemID any
 ---@param tablename any|nil
 ---@param item_link string|nil
----@param skipWildcard bool|nil
+---@param skipWildcard boolean|nil
 ---@return string rule
 ---@return string classes
 ---@return string link
@@ -1676,10 +1690,18 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
         return 'NULL', 'All', 'NULL', 'None'
     end
     local which_table = 'Normal'
+    local iData = {}
+    _, iData = LNS.findItem(nil, itemID)
 
     -- check lua tables first
     -- local link = LNS.ALLITEMS[itemID] and LNS.ALLITEMS[itemID].Link or 'NULL'
     local link = LNS.ItemLinks[itemID] or 'NULL'
+
+    if not LNS.ALLITEMS[itemID] then
+        LNS.ALLITEMS[itemID] = {
+            Name = mq_item and mq_item.Name() or iData[itemID].item_name or 'Unknown',
+        }
+    end
 
     if item_link and item_link ~= link and LNS.ALLITEMS[itemID] then
         LNS.ALLITEMS[itemID].Link = item_link
@@ -1755,12 +1777,19 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
             if mq_item and mq_item() then
                 local wildCardRule = LNS.CheckWildCards(mq_item.Name()) or ''
                 if wildCardRule ~= '' then
-                    classes = classes ~= 'NULL' and classes or 'All'
-                    lookupLink = item_link
-                    found = true
-                    which_table = 'Normal'
-                    rule = wildCardRule
-                    LNS.addNewItem(mq_item, wildCardRule, item_link, mq.TLO.Corpse.ID() or 0, true)
+                    classes       = classes ~= 'NULL' and classes or 'All'
+                    lookupLink    = item_link
+                    found         = true
+                    which_table   = 'Normal'
+                    rule          = wildCardRule
+
+                    local addToDB = true
+
+                    -- NODROP
+                    if mq_item.NoDrop() or mq_item.NoTrade() then
+                        addToDB = (settings.Settings.LootNoDropNew and settings.Settings.LootNoDrop) or false
+                    end
+                    LNS.addNewItem(mq_item, wildCardRule, item_link, mq.TLO.Corpse.ID() or 0, addToDB)
                 end
             end
         end
@@ -1770,9 +1799,6 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
             classes = 'None'
             lookupLink = 'NULL'
         end
-        -- never called with a table name
-        -- else
-        --     _, rule, classes, lookupLink = checkDB(itemID, tablename)
     end
 
     -- if SQL has the item add the rules to the lua table for next time
@@ -1784,7 +1810,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
         LNS[localTblName .. 'Rules'][itemID]   = rule
         LNS[localTblName .. 'Classes'][itemID] = classes
         LNS.ItemLinks[itemID]                  = lookupLink
-        LNS.ItemNames[itemID]                  = LNS.ALLITEMS[itemID].Name
+        LNS.ItemNames[itemID]                  = mq_item and mq_item.Name() or iData[itemID].item_name or 'Unknown'
     end
     return rule, classes, lookupLink, which_table
 end
@@ -3086,7 +3112,7 @@ function LNS.lootCorpse(corpseID)
 
     if mq.TLO.Cursor() then LNS.checkCursor() end
 
-    mq.delay(500, function() return not mq.TLO.Me.Moving() end)
+    mq.delay(500, function() return not mq.TLO.Me.Moving() and not mq.TLO.Me.Casting() end)
     for i = 1, 3 do
         if not mq.TLO.Target() then return didLootMob end
         mq.cmdf('/loot')
@@ -3340,6 +3366,7 @@ function LNS.lootMobs(limit)
     if settings.Settings.LootMyCorpse and not settings.Settings.IgnoreMyNearCorpses and foundMine then
         Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Found my own corpse, attempting to loot it.')
         for i = 1, myCorpseCount do
+            LNS.IsLooting = true
             local corpse = mq.TLO.NearestSpawn(string.format("%d, %s", i, pcCorpseFilter))
             if corpse() then
                 if (corpse.DisplayName():lower() == mq.TLO.Me.DisplayName():lower()) then
@@ -3357,7 +3384,7 @@ function LNS.lootMobs(limit)
     end
 
     -- Stop looting if conditions aren't met
-    if (deadCount + myCorpseCount) == 0 or (mobsNearby > 0 and not settings.Settings.CombatLooting) or (mq.TLO.Me.Combat() and not settings.Settings.CombatLooting) then
+    if (deadCount + myCorpseCount) == 0 or (mobsNearby > 0 and not settings.Settings.CombatLooting) or (not settings.Settings.CombatLooting and LNS.InCombat()) then
         actors.FinishedLooting()
         return false
     end
@@ -3365,6 +3392,8 @@ function LNS.lootMobs(limit)
     -- Add other corpses to the loot list if not limited by the player's own corpse
     if (myCorpseCount == 0 or (myCorpseCount > 0 and settings.Settings.IgnoreMyNearCorpses)) and settings.Settings.DoLoot then
         for i = 1, deadCount do
+            LNS.IsLooting = true
+
             local corpse = mq.TLO.NearestSpawn(('%d,' .. spawnSearch):format(i, 'npccorpse', settings.Settings.CorpseRadius, settings.Settings.CorpseZRadius or 50))
             if corpse() and not (LNS.lootedCorpses[corpse.ID()] and settings.Settings.CheckCorpseOnce) then
                 if not LNS.checkLockedCorpse(corpse.ID()) and
@@ -3389,6 +3418,8 @@ function LNS.lootMobs(limit)
     -- Process the collected corpse list
     local counter = 0
     if #corpseList > 0 then
+        LNS.IsLooting = true
+
         Logger.Debug(LNS.guiLoot.console, 'lootMobs(): Attempting to loot \at%d\ax corpses.', #corpseList)
         for _, corpse in ipairs(corpseList) do
             local check = false
@@ -4502,6 +4533,48 @@ function LNS.MainLoop()
         mq.exit()
     end
 end
+
+---@class LNSDataType
+---@field Looting boolean
+---@field Paused boolean
+---@field Mode string
+---@type DataType
+local LNSDataType = mq.DataType.new('LNS', {
+    Members = {
+
+        Looting = function(self)
+            return 'bool', LNS.IsLooting
+        end,
+
+        Paused = function(self)
+            return 'bool', LNS.PauseLooting
+        end,
+
+        Mode = function(self)
+            return 'string', LNS.Mode
+        end,
+
+        ---Checks if the current zone or specified zone is marked as a safe zone
+        ---@param param string|nil zone short name or nil
+        ---@return string
+        ---@return boolean
+        SafeZone = function(param, self)
+            if param and param:len() > 0 then
+                return 'bool', LNS.SafeZones[param] or false
+            end
+            return 'bool', LNS.SafeZones[mq.TLO.Zone.ShortName()] or false
+        end,
+    },
+    ToString = function(self)
+        return 'LootNScoot'
+    end,
+})
+
+function LNS.TLOHandler(param)
+    return LNSDataType, LNS.PauseLooting
+end
+
+mq.AddTopLevelObject('LNS', LNS.TLOHandler)
 
 LNS.init({ ..., })
 LNS.MainLoop()
