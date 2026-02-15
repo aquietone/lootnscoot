@@ -3591,7 +3591,8 @@ local function RenderBtn()
     ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, ImVec2(9, 9))
     ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 0)
     local openBtn, showBtn = ImGui.Begin(string.format("LootNScoot##Mini"), true,
-        bit32.bor(ImGuiWindowFlags.AlwaysAutoResize, ImGuiWindowFlags.NoTitleBar, ImGuiWindowFlags.NoCollapse))
+        bit32.bor(ImGuiWindowFlags.AlwaysAutoResize, ImGuiWindowFlags.NoTitleBar, ImGuiWindowFlags.NoCollapse,
+                ImGuiWindowFlags.NoFocusOnAppearing))
     if not openBtn then
         showBtn = false
     end
