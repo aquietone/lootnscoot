@@ -17,7 +17,6 @@ sequenceDiagram
     DB->>ItemsDB: CREATE INDEX idx_item_id
     
     DB->>RulesDB: CREATE TABLE Global_Rules
-    DB->>RulesDB: CREATE TABLE Normal_Rules
     DB->>RulesDB: CREATE TABLE Personal_Rules
     DB->>RulesDB: CREATE TABLE SafeZones
     DB->>RulesDB: CREATE TABLE WildCards
@@ -59,9 +58,7 @@ sequenceDiagram
         LNS->>DB: UpsertItemRule(action, tableName, itemName, itemID, classes, link)
         DB->>RulesDB: BEGIN TRANSACTION
         
-        alt Normal Rules
-            DB->>RulesDB: INSERT INTO Normal_Rules ... ON CONFLICT DO UPDATE
-        else Global Rules
+        alt Global Rules
             DB->>RulesDB: INSERT INTO Global_Rules ... ON CONFLICT DO UPDATE
         else Personal Rules
             DB->>RulesDB: INSERT INTO Personal_Rules ... ON CONFLICT DO UPDATE
@@ -193,29 +190,19 @@ sequenceDiagram
         LNS->>DB: ImportOldRulesDB(path)
         DB->>DB: Open old database file
         DB->>DB: Load Global_Rules with negative IDs
-        DB->>DB: Load Normal_Rules with negative IDs
-        
+
         DB->>ItemsDB: ResolveItemIDs(nameSet)
         Note over DB,ItemsDB: Match item names to real IDs
         ItemsDB-->>DB: Resolved ID mappings
-        
+
         DB->>RulesDB: BEGIN TRANSACTION
-        
+
         loop For each Global Rule
             alt Real ID found
                 DB->>RulesDB: INSERT INTO Global_Rules (real_id, ...)
             else No ID match
                 DB->>RulesDB: INSERT INTO Global_Rules (negative_id, ...)
                 DB->>DB: Add to GlobalItemsMissing
-            end
-        end
-        
-        loop For each Normal Rule
-            alt Real ID found
-                DB->>RulesDB: INSERT INTO Normal_Rules (real_id, ...)
-            else No ID match
-                DB->>RulesDB: INSERT INTO Normal_Rules (negative_id, ...)
-                DB->>DB: Add to NormalItemsMissing
             end
         end
         

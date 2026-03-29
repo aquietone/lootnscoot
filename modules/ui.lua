@@ -709,41 +709,6 @@ function LNS_UI.renderMissingItemsTables()
 
         ImGui.EndTable()
     end
-    ImGui.Separator()
-    ImGui.Text("Imported Normal Rules")
-    if ImGui.BeginTable("ImportedData##Normal", 4, bit32.bor(ImGuiTableFlags.ScrollY, ImGuiTableFlags.Borders), ImVec2(0.0, 300)) then
-        ImGui.TableSetupColumn("Item ID##n", ImGuiTableColumnFlags.WidthFixed, 40)
-        ImGui.TableSetupColumn("Item Name##n", ImGuiTableColumnFlags.WidthStretch, 100)
-        ImGui.TableSetupColumn("Item Rule##n", ImGuiTableColumnFlags.WidthFixed, 60)
-        ImGui.TableSetupColumn("Item Classes##n", ImGuiTableColumnFlags.WidthFixed, 60)
-        ImGui.TableHeadersRow()
-        ImGui.TableNextRow()
-
-        for _, v in ipairs(settings.TempSettings.SortedMissingNormalNames or {}) do
-            if LNS.NormalItemsMissing[v.id] ~= nil then
-                ImGui.TableNextColumn()
-                ImGui.TextColored(ImVec4(1.000, 0.557, 0.000, 1.000), "%s", LNS.NormalItemsMissing[v.id].item_id)
-                ImGui.TableNextColumn()
-                ImGui.PushStyleColor(ImGuiCol.Text, ImVec4(0.370, 0.704, 1.000, 1.000))
-                if ImGui.Selectable(string.format("%s", LNS.NormalItemsMissing[v.id].item_name), false) then
-                    settings.TempSettings.ModifyItemRule = true
-                    settings.TempSettings.ModifyItemName = LNS.NormalItemsMissing[v.id].item_name
-                    settings.TempSettings.ModifyItemLink = nil
-                    settings.TempSettings.ModifyItemID = LNS.NormalItemsMissing[v.id].item_id
-                    settings.TempSettings.ModifyItemTable = "Normal_Items"
-                    settings.TempSettings.ModifyClasses = LNS.NormalItemsMissing[v.id].item_classes
-                    settings.TempSettings.ModifyItemSetting = LNS.NormalItemsMissing[v.id].item_rule
-                end
-                ImGui.PopStyleColor()
-                ImGui.TableNextColumn()
-                ImGui.Text(LNS.NormalItemsMissing[v.id].item_rule or 'Unknown')
-                ImGui.TableNextColumn()
-                ImGui.Text(LNS.NormalItemsMissing[v.id].item_classes or 'Unknown')
-            end
-        end
-
-        ImGui.EndTable()
-    end
 end
 
 function LNS_UI.renderImportDBWindow()
@@ -1306,18 +1271,12 @@ function LNS_UI.drawNewItemsTable()
                     -- ImGui.PopStyleVar()
 
                     ImGui.Spacing()
-                    if LNS.tempGlobalRule[itemID] == nil then
-                        LNS.tempGlobalRule[itemID] = settings.Settings.AlwaysGlobal
-                    end
-                    ImGui.Indent(10)
-                    LNS.tempGlobalRule[itemID] = ImGui.Checkbox('Global Rule', LNS.tempGlobalRule[itemID])
-                    ImGui.Unindent(10)
                     ImGui.Indent(35)
                     -- ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth(-1) / 6))
                     ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.040, 0.294, 0.004, 1.000))
                     if ImGui.Button('Save Rule') then
                         local classes = LNS.tempLootAll[itemID] and "All" or tmpClasses[itemID]
-                        local ruleTable = LNS.tempGlobalRule[itemID] and "GlobalItems" or "NormalItems"
+                        local ruleTable = "GlobalItems"
                         LNS.enterNewItemRuleInfo({
                             ID = itemID,
                             RuleType = ruleTable,
@@ -1549,7 +1508,7 @@ function LNS_UI.drawTabbedTable(label)
             ImGui.SameLine()
             ImGui.SetNextItemWidth(100)
             if settings.TempSettings.BulkSetTable == nil then
-                settings.TempSettings.BulkSetTable = label .. "_Rules"
+                settings.TempSettings.BulkSetTable = label == "Personal" and settings.PersonalTableName or "Global_Rules"
             end
             if ImGui.BeginCombo("Table", settings.TempSettings.BulkSetTable) then
                 for i, v in ipairs(settings.TableListRules) do
@@ -1576,6 +1535,13 @@ function LNS_UI.drawTabbedTable(label)
                 end
             end
 
+            if settings.TempSettings.BulkSetTable == settings.PersonalTableName then
+                if LNS.TempBulkSharePersonal == nil then LNS.TempBulkSharePersonal = false end
+                LNS.TempBulkSharePersonal = ImGui.Checkbox("Share to Others##bulktab", LNS.TempBulkSharePersonal)
+                if ImGui.IsItemHovered() then
+                    ImGui.SetTooltip("Also set these personal rules on all other logged-in characters")
+                end
+            end
             ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.4, 1.0, 0.4, 0.4))
             if ImGui.Button("Set Selected") then
                 settings.TempSettings.BulkSet = {}
@@ -1596,6 +1562,11 @@ function LNS_UI.drawTabbedTable(label)
                     end
                 end
                 settings.TempSettings.doBulkSet = true
+                if LNS.TempBulkSharePersonal and settings.TempSettings.BulkSetTable == settings.PersonalTableName then
+                    for itemID, data in pairs(settings.TempSettings.BulkSet) do
+                        LNS.sharePersonalRuleToOthers(itemID, data.Rule, settings.TempSettings.BulkClasses, data.Link)
+                    end
+                end
             end
             ImGui.PopStyleColor()
 
@@ -1753,47 +1724,52 @@ function LNS_UI.drawItemsTables()
             end
 
             ImGui.SeparatorText("Add New Item")
-            if ImGui.BeginTable("AddItem", 2, ImGuiTableFlags.Borders) then
-                ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthFixed, 280)
-                ImGui.TableSetupColumn("Qty", ImGuiTableColumnFlags.WidthFixed, 150)
-                ImGui.TableHeadersRow()
-                ImGui.TableNextRow()
 
-                ImGui.TableNextColumn()
+            ImGui.SetNextItemWidth(200)
+            ImGui.PushID("NewBuyItem")
+            settings.TempSettings.NewBuyItem = ImGui.InputTextWithHint("##BuyItemName", "Item Name",
+                settings.TempSettings.NewBuyItem or '')
+            ImGui.PopID()
+            if ImGui.IsItemHovered() and mq.TLO.Cursor() ~= nil then
+                settings.TempSettings.NewBuyItem = mq.TLO.Cursor()
+                mq.cmdf("/autoinv")
+            end
 
-                ImGui.SetNextItemWidth(150)
-                ImGui.PushID("NewBuyItem")
-                settings.TempSettings.NewBuyItem = ImGui.InputText("New Item##BuyItems", settings.TempSettings.NewBuyItem)
-                ImGui.PopID()
-                if ImGui.IsItemHovered() and mq.TLO.Cursor() ~= nil then
-                    settings.TempSettings.NewBuyItem = mq.TLO.Cursor()
-                    mq.cmdf("/autoinv")
-                end
-                ImGui.SameLine()
-                ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.4, 1.0, 0.4, 0.4))
-                if ImGui.SmallButton(Icons.MD_ADD) then
-                    LNS.BuyItemsTable[settings.TempSettings.NewBuyItem] = settings.TempSettings.NewBuyQty
-                    LNS.setBuyItem(settings.TempSettings.NewBuyItem, settings.TempSettings.NewBuyQty)
+            ImGui.SameLine()
+            ImGui.SetNextItemWidth(80)
+            settings.TempSettings.NewBuyQty = ImGui.InputInt("Qty##BuyItems", (settings.TempSettings.NewBuyQty or 1), 1, 50)
+            if settings.TempSettings.NewBuyQty > 1000 then settings.TempSettings.NewBuyQty = 1000 end
+
+            ImGui.SameLine()
+            ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.4, 1.0, 0.4, 0.4))
+            if ImGui.SmallButton(Icons.MD_ADD) then
+                local buyName = settings.TempSettings.NewBuyItem
+                local buyQty = settings.TempSettings.NewBuyQty
+                if buyName and buyName ~= '' then
+                    LNS.BuyItemsTable[buyName] = buyQty
+                    LNS.setBuyItem(buyName, buyQty)
                     settings.TempSettings.NeedSave = true
-                    settings.TempSettings.NewBuyItem = ""
-                    settings.TempSettings.NewBuyQty = 1
+                    if LNS.TempShareBuyItem then
+                        LNS.shareBuyItemToOthers(buyName, buyQty)
+                    end
                 end
-                ImGui.PopStyleColor()
+                settings.TempSettings.NewBuyItem = ""
+                settings.TempSettings.NewBuyQty = 1
+            end
+            ImGui.PopStyleColor()
 
-                ImGui.SameLine()
-                ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
-                if ImGui.SmallButton(Icons.MD_DELETE_SWEEP) then
-                    settings.TempSettings.NewBuyItem = ""
-                end
-                ImGui.PopStyleColor()
-                ImGui.TableNextColumn()
-                ImGui.SetNextItemWidth(120)
+            ImGui.SameLine()
+            ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(1.0, 0.4, 0.4, 0.4))
+            if ImGui.SmallButton(Icons.MD_DELETE_SWEEP) then
+                settings.TempSettings.NewBuyItem = ""
+            end
+            ImGui.PopStyleColor()
 
-                settings.TempSettings.NewBuyQty = ImGui.InputInt("New Qty##BuyItems", (settings.TempSettings.NewBuyQty or 1),
-                    1, 50)
-                if settings.TempSettings.NewBuyQty > 1000 then settings.TempSettings.NewBuyQty = 1000 end
-
-                ImGui.EndTable()
+            ImGui.SameLine()
+            if LNS.TempShareBuyItem == nil then LNS.TempShareBuyItem = false end
+            LNS.TempShareBuyItem = ImGui.Checkbox("Share to Others##buy", LNS.TempShareBuyItem)
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Also add buy items on all other logged-in characters")
             end
             ImGui.SeparatorText("Buy Items Table")
             if ImGui.BeginTable("Buy Items", col, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.ScrollY), ImVec2(0.0, 0.0)) then
@@ -1867,8 +1843,6 @@ function LNS_UI.drawItemsTables()
 
         LNS_UI.drawTabbedTable("Global")
 
-        -- Normal Items
-        LNS_UI.drawTabbedTable("Normal")
 
         -- Missing Items
 
@@ -2092,7 +2066,7 @@ example {hp>=500, name~robe} this will return items with 500 + Hp and has robe i
                     ImGui.SameLine()
                     ImGui.SetNextItemWidth(100)
                     if settings.TempSettings.BulkSetTable == nil then
-                        settings.TempSettings.BulkSetTable = "Normal_Rules"
+                        settings.TempSettings.BulkSetTable = "Global_Rules"
                     end
                     if ImGui.BeginCombo("Table", settings.TempSettings.BulkSetTable) then
                         for i, v in ipairs(settings.TableListRules) do
@@ -2118,6 +2092,13 @@ example {hp>=500, name~robe} this will return items with 500 + Hp and has robe i
                         end
                     end
 
+                    if settings.TempSettings.BulkSetTable == settings.PersonalTableName then
+                        if LNS.TempBulkSharePersonal == nil then LNS.TempBulkSharePersonal = false end
+                        LNS.TempBulkSharePersonal = ImGui.Checkbox("Share to Others##bulk", LNS.TempBulkSharePersonal)
+                        if ImGui.IsItemHovered() then
+                            ImGui.SetTooltip("Also set these personal rules on all other logged-in characters")
+                        end
+                    end
                     ImGui.PushStyleColor(ImGuiCol.Button, ImVec4(0.4, 1.0, 0.4, 0.4))
                     if ImGui.Button("Set Selected") then
                         settings.TempSettings.BulkSet = {}
@@ -2130,6 +2111,11 @@ example {hp>=500, name~robe} this will return items with 500 + Hp and has robe i
                             end
                         end
                         settings.TempSettings.doBulkSet = true
+                        if LNS.TempBulkSharePersonal and settings.TempSettings.BulkSetTable == settings.PersonalTableName then
+                            for itemID, data in pairs(settings.TempSettings.BulkSet) do
+                                LNS.sharePersonalRuleToOthers(itemID, data.Rule, settings.TempSettings.BulkClasses, data.Link)
+                            end
+                        end
                     end
                     ImGui.PopStyleColor()
 
@@ -3138,7 +3124,7 @@ function LNS_UI.RenderModifyItemWindow()
         settings.TempSettings.ModifyItemTable = settings.PersonalTableName
     end
     if settings.TempSettings.ModifyItemTable == nil then
-        settings.TempSettings.ModifyItemTable = settings.TempSettings.LastModTable or 'Normal_Items'
+        settings.TempSettings.ModifyItemTable = settings.TempSettings.LastModTable or 'Global_Items'
     end
     -- local missingTable = settings.TempSettings.ModifyItemTable:gsub("_Items", "")
     local classes = settings.TempSettings.ModifyClasses
@@ -3184,10 +3170,6 @@ function LNS_UI.RenderModifyItemWindow()
         if ImGui.RadioButton("Global Items", settings.TempSettings.ModifyItemTable == "Global_Items") then
             settings.TempSettings.ModifyItemTable = "Global_Items"
         end
-        ImGui.SameLine()
-        if ImGui.RadioButton("Normal Items", settings.TempSettings.ModifyItemTable == "Normal_Items") then
-            settings.TempSettings.ModifyItemTable = "Normal_Items"
-        end
 
         if tempValues.Classes == nil and classes ~= nil then
             tempValues.Classes = classes
@@ -3226,23 +3208,32 @@ function LNS_UI.RenderModifyItemWindow()
             end
         end
 
+        if settings.TempSettings.ModifyItemTable == settings.PersonalTableName then
+            if LNS.TempSharePersonal == nil then LNS.TempSharePersonal = false end
+            LNS.TempSharePersonal = ImGui.Checkbox("Share to Other Characters", LNS.TempSharePersonal)
+            if ImGui.IsItemHovered() then
+                ImGui.SetTooltip("Also set this personal rule on all other logged-in characters")
+            end
+        end
+
         if ImGui.Button("Set Rule") then
             local newRule = tempValues.Rule == "Quest" and questRule or tempValues.Rule
             if tempValues.Classes == nil or tempValues.Classes == '' or LNS.TempModClass then
                 tempValues.Classes = "All"
             end
-            -- loot.modifyItemRule(loot.TempSettings.ModifyItemID, newRule, loot.TempSettings.ModifyItemTable, tempValues.Classes, item.Link)
             if settings.TempSettings.ModifyItemTable == settings.PersonalTableName then
                 LNS.PersonalItemsRules[settings.TempSettings.ModifyItemID] = newRule
                 LNS.setPersonalItem(settings.TempSettings.ModifyItemID, newRule, tempValues.Classes, item.Link)
+                if LNS.TempSharePersonal then
+                    LNS.sharePersonalRuleToOthers(settings.TempSettings.ModifyItemID, newRule, tempValues.Classes, item.Link)
+                end
             elseif settings.TempSettings.ModifyItemTable == "Global_Items" then
                 LNS.GlobalItemsRules[settings.TempSettings.ModifyItemID] = newRule
                 LNS.setGlobalItem(settings.TempSettings.ModifyItemID, newRule, tempValues.Classes, item.Link)
             else
-                LNS.NormalItemsRules[settings.TempSettings.ModifyItemID] = newRule
-                LNS.setNormalItem(settings.TempSettings.ModifyItemID, newRule, tempValues.Classes, item.Link)
+                LNS.GlobalItemsRules[settings.TempSettings.ModifyItemID] = newRule
+                LNS.setGlobalItem(settings.TempSettings.ModifyItemID, newRule, tempValues.Classes, item.Link)
             end
-            -- loot.setNormalItem(loot.TempSettings.ModifyItemID, newRule,  tempValues.Classes, item.Link)
             settings.TempSettings.ModifyItemRule = false
             settings.TempSettings.ModifyItemID = nil
             settings.TempSettings.LastModTable = settings.TempSettings.ModifyItemTable
@@ -3251,6 +3242,7 @@ function LNS_UI.RenderModifyItemWindow()
             settings.TempSettings.ModifyItemName = nil
             settings.TempSettings.ModifyItemLink = nil
             LNS.TempModClass = false
+            LNS.TempSharePersonal = false
             settings.TempSettings.LastModID = 0
             ImGui.End()
             return
@@ -3262,11 +3254,14 @@ function LNS_UI.RenderModifyItemWindow()
             if settings.TempSettings.ModifyItemTable == settings.PersonalTableName then
                 LNS.PersonalItemsRules[settings.TempSettings.ModifyItemID] = nil
                 LNS.setPersonalItem(settings.TempSettings.ModifyItemID, 'delete', 'All', 'NULL')
+                if LNS.TempSharePersonal then
+                    LNS.sharePersonalRuleToOthers(settings.TempSettings.ModifyItemID, 'delete', 'All', 'NULL')
+                end
             elseif settings.TempSettings.ModifyItemTable == "Global_Items" then
                 -- loot.GlobalItemsRules[loot.TempSettings.ModifyItemID] = nil
                 LNS.setGlobalItem(settings.TempSettings.ModifyItemID, 'delete', 'All', 'NULL')
             else
-                LNS.setNormalItem(settings.TempSettings.ModifyItemID, 'delete', 'All', 'NULL')
+                LNS.setGlobalItem(settings.TempSettings.ModifyItemID, 'delete', 'All', 'NULL')
             end
             settings.TempSettings.ModifyItemRule = false
             settings.TempSettings.ModifyItemID = nil
@@ -3275,6 +3270,7 @@ function LNS_UI.RenderModifyItemWindow()
             settings.TempSettings.ModifyItemMatches = nil
             settings.TempSettings.ModifyItemName = nil
             settings.TempSettings.LastModID = 0
+            LNS.TempSharePersonal = false
 
             ImGui.PopStyleColor()
 
@@ -3292,6 +3288,7 @@ function LNS_UI.RenderModifyItemWindow()
             settings.TempSettings.ModifyItemLink = nil
             settings.TempSettings.ModifyItemMatches = nil
             settings.TempSettings.LastModID = 0
+            LNS.TempSharePersonal = false
         end
 
         if settings.TempSettings.ModifyItemMatches ~= nil then
@@ -3340,11 +3337,11 @@ item_link = row.link or 'NULL',
                             LNS.GlobalItemsClasses[oldID] = nil
                             LNS.setGlobalItem(oldID, 'delete', 'All', 'NULL')
                         else
-                            LNS.setNormalItem(id, newRule, tempValues.Classes, LNS.ItemLinks[id])
-                            LNS.NormalItemsMissing[oldID] = nil
-                            LNS.NormalItemsRules[oldID] = nil
-                            LNS.NormalItemsClasses[oldID] = nil
-                            LNS.setNormalItem(oldID, 'delete', 'All', 'NULL')
+                            LNS.setGlobalItem(id, newRule, tempValues.Classes, LNS.ItemLinks[id])
+                            LNS.GlobalItemsMissing[oldID] = nil
+                            LNS.GlobalItemsRules[oldID] = nil
+                            LNS.GlobalItemsClasses[oldID] = nil
+                            LNS.setGlobalItem(oldID, 'delete', 'All', 'NULL')
                         end
 
                         LNS.ItemNames[oldID] = nil

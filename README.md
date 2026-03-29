@@ -40,8 +40,8 @@ All configs, tables, etc are kept separate between the new version and the old. 
 - A new rules DB accounts for using item IDs. Unfortunately, this invalidates the old rules table since we never had the ID data.
 - NEW Rules Section (Personal Rules)
   - This is a per character set of rules for items.
-  - These rules will override all other rule sets. 
-  - Order of Authority `Personal > Global > Normal`
+  - These rules will override all other rule sets.
+  - Order of Authority `Personal > Global`
 
 ### Config and DB Locations
 - **Config Files:**
@@ -105,8 +105,6 @@ All configs, tables, etc are kept separate between the new version and the old. 
  - You can edit any characters settings from the window, clicking save will send them the new settings and they will save them.
  - You can clone a characters settings from one char to another. making setting up new groups easier.
 - Added `IgnoreBagSlot` setting. setting this will ignore anything in that slot\bag when it comes to selling\tributeing\banking\cleanup.
-- AlwaysGlobal: (default off)
- - This will also make a global rule for new items when looting and when acknowledging the new item rules. 
 
 ### COMMANDS
 - `/lns` or `/lootutils`

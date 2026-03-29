@@ -6,7 +6,7 @@ LNS_SETTINGS.MyName            = mq.TLO.Me.DisplayName()
 LNS_SETTINGS.EqServer          = string.gsub(mq.TLO.EverQuest.Server(), ' ', '_')
 LNS_SETTINGS.PersonalTableName = string.format("%s_Rules", LNS_SETTINGS.MyName)
 LNS_SETTINGS.TableListRules    = {
-    "Global_Rules", "Normal_Rules", LNS_SETTINGS.PersonalTableName,
+    "Global_Rules", LNS_SETTINGS.PersonalTableName,
 }
 
 -- tables
@@ -59,7 +59,6 @@ LNS_SETTINGS.SettingsEnum      = {
     maxcorpsespercycle = 'MaxCorpsesPerCycle',
     ignorebagslot = 'IgnoreBagSlot',
     processingeval = 'ProcessingEval',
-    alwaysglobal = 'AlwaysGlobal',
     useautorules = 'UseAutoRules',
     trackhistory = 'TrackHistory',
     NavTimeout = 'NavTimeout',
@@ -129,7 +128,6 @@ LNS_SETTINGS.Settings          = {
     ShowReport          = false,
     MaxCorpsesPerCycle  = 5,     -- Maximum number of corpses to loot per cycle
     IgnoreBagSlot       = 0,     -- Ignore this Bag Slot when buying, selling, tributing and destroying of items.
-    AlwaysGlobal        = false, -- Always assign new rules to global as well as normal rules.
     IgnoreMyNearCorpses = false, -- Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.
     TrackHistory        = true,  -- Enable inserting loot results into history table
     AlwaysAsk           = false, -- Treat all items as Ask reguardless of their rule.
@@ -140,7 +138,7 @@ LNS_SETTINGS.Settings          = {
 }
 
 LNS_SETTINGS.Tooltips          = {
-    GlobalLootOn        = "Toggle using Global Rules if off we will only use Normal or Personal Rules. This setting is old and will probably be removed in the future.",
+    GlobalLootOn        = "Toggle using Global Rules if off we will only use Personal Rules. This setting is old and will probably be removed in the future.",
     CombatLooting       = "Enables looting during combat. Not recommended on the MT",
     CorpseZRadius       = "Z Radius to activly loot corpses",
     MobsTooClose        = "Don't loot if mobs are in this range.",
@@ -150,7 +148,7 @@ LNS_SETTINGS.Tooltips          = {
     MinSellPrice        = "Minimum Sell price to keep item. -1 = any",
     StackPlatValue      = "Minimum sell value for full stack",
     StackableOnly       = "Only loot stackable items",
-    AlwaysEval          = "Re-Evaluate all *Non Quest* (Normal Item Rules) items. useful to update loot.ini after changing min sell values.",
+    AlwaysEval          = "Re-Evaluate all *Non Quest* (Global Item Rules) items. useful to update loot.ini after changing min sell values.",
     BankTradeskills     = "Toggle flagging Tradeskill items as Bank or not.",
     DoLoot              = "Enable auto looting in standalone mode",
     LootForage          = "Enable Looting of Foraged Items",
@@ -177,17 +175,16 @@ REQUIRES DoDestroy set to true.]],
     AutoTag             = "Automatically tag items to sell if they meet the MinSellPrice",
     AutoRestock         = "Automatically restock items from the BuyItems list after selling",
     LootMyCorpse        = "Loot your own corpse if its nearby (Does not check for REZ)",
-    LootAugments        = "Loot Augments Overrides Normal Rules for Augments, Global and Personal Rules will override this setting",
+    LootAugments        = "Loot Augments Overrides Global Rules for Augments, Personal Rules will override this setting",
     CheckCorpseOnce     = "Check Corpse once and move on. Ignore the next time it is in range if enabled",
     AutoShowNewItem     = "Automatically show new items in the looted window",
-    KeepSpells          = "Keep spells reguardless of Normal Rule Global or Personal Rules will override this setting",
+    KeepSpells          = "Keep spells regardless of Global Rule. Personal Rules will override this setting",
     CanWear             = "(Applies to No Drop New Items) Only loot items you can wear",
     ShowInfoMessages    = "Show or Hide [INFO] Messages in the loot console",
     ShowConsole         = "Show or Hide the Loot Console window",
     ShowReport          = "Prints report to the Console also toggles the report table window open if its closed.",
     IgnoreBagSlot       = "gnore this Bag Slot when buying, selling, tributing and destroying of items.",
     MaxCorpsesPerCycle  = "Maximum number of corpses to loot per cycle.",
-    AlwaysGlobal        = "Always assign new rules to global as well as normal rules.",
     IgnoreMyNearCorpses = "Ignore my own corpses when looting nearby corpses, some servers you spawn after death with all your gear so this setting is handy.",
     TrackHistory        = "Enable inserting loot results into history table",
     AlwaysAsk           = "Treat all items as Ask reguardless of their rule.",
