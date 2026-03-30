@@ -15,6 +15,12 @@ local settings        = require('modules.settings')
 local ui              = require('modules.ui')
 -- local MasterLooter = require('MasterLooter')
 
+-- check for Nav
+if not mq.TLO.Plugin("MQ2Nav").IsLoaded() then
+    print("\arWARNING!!\ax \ayMQ2Nav\ax is \arNOT\ax loaded. \ayPlease Load `/plugin Nav` and try again.")
+    mq.exit()
+end
+
 if not success then
     printf('\arERROR: Write.lua could not be loaded\n%s\ax', Logger)
     return
@@ -51,12 +57,6 @@ local validActions                      = {
 local NEVER_SELL                        = { ['Diamond Coin'] = true, ['Celestial Crest'] = true, ['Gold Coin'] = true, ['Taelosian Symbols'] = true, ['Planar Symbols'] = true, }
 
 local doSell, doBuy, doTribute, areFull = false, false, false, false
-
--- local SECTIONS = {
---     ['NormalItems']='Normal_Rules',
---     ['GlobalItems']='Global_Rules',
---     ['PersonalItems']=settings.PersonalTableName,
--- }
 
 local equipSlots                        = {
     [0] = 'Charm',
@@ -115,13 +115,9 @@ LNS.CurrentPage            = LNS.CurrentPage or 1
 LNS.BuyItemsTable          = {}
 LNS.ALLITEMS               = {}
 LNS.GlobalItemsRules       = {}
-LNS.NormalItemsRules       = {}
-LNS.NormalItemsClasses     = {}
 LNS.GlobalItemsClasses     = {}
-LNS.NormalItemsMissing     = {}
 LNS.GlobalItemsMissing     = {}
 LNS.GlobalMissingNames     = {}
-LNS.NormalMissingNames     = {}
 LNS.HasMissingItems        = false
 LNS.NewItems               = {}
 LNS.PersonalItemsRules     = {}
@@ -360,9 +356,7 @@ end
 function LNS.SortTables()
     settings.TempSettings.SortedGlobalItemKeys     = {}
     settings.TempSettings.SortedBuyItemKeys        = {}
-    settings.TempSettings.SortedNormalItemKeys     = {}
     settings.TempSettings.SortedMissingGlobalNames = {}
-    settings.TempSettings.SortedMissingNormalNames = {}
 
     for k in pairs(LNS.GlobalItemsRules) do
         table.insert(settings.TempSettings.SortedGlobalItemKeys, k)
@@ -374,11 +368,6 @@ function LNS.SortTables()
     end
     table.sort(settings.TempSettings.SortedBuyItemKeys, function(a, b) return a < b end)
 
-    for k in pairs(LNS.NormalItemsRules) do
-        table.insert(settings.TempSettings.SortedNormalItemKeys, k)
-    end
-    table.sort(settings.TempSettings.SortedNormalItemKeys, function(a, b) return a < b end)
-
     local tmpTbl = {}
     for name, id in pairs(LNS.GlobalMissingNames) do
         table.insert(tmpTbl, { name = name, id = id, })
@@ -387,16 +376,6 @@ function LNS.SortTables()
         return a.name < b.name
     end)
     settings.TempSettings.SortedMissingGlobalNames = tmpTbl
-
-
-    tmpTbl = {}
-    for name, id in pairs(LNS.NormalMissingNames) do
-        table.insert(tmpTbl, { name = name, id = id, })
-    end
-    table.sort(tmpTbl, function(a, b)
-        return a.name < b.name
-    end)
-    settings.TempSettings.SortedMissingNormalNames = tmpTbl
 end
 
 function LNS.SortKeys(input_table)
@@ -451,9 +430,7 @@ end
 function LNS.loadSettings(firstRun)
     if firstRun == nil then firstRun = false end
     if firstRun then
-        LNS.NormalItemsRules     = {}
         LNS.GlobalItemsRules     = {}
-        LNS.NormalItemsClasses   = {}
         LNS.GlobalItemsClasses   = {}
         LNS.ItemLinks            = {}
         LNS.BuyItemsTable        = {}
@@ -762,10 +739,7 @@ function LNS.commandHandler(...)
         end
     end
     if args[1] == 'lowest' then
-        local normal_low = db.GetLowestID('Normal_Rules') or 0
         local global_low = db.GetLowestID('Global_Rules') or 0
-        -- local personal_low = db.GetLowestID(string.format('%s_Rules', settings.MyName)) or 0
-        Logger.Info(LNS.guiLoot.console, string.format("Lowest Normal Item ID: \ay%s\ax", normal_low or 'None'))
         Logger.Info(LNS.guiLoot.console, string.format("Lowest Global Item ID: \ay%s\ax", global_low or 'None'))
         -- Logger.Info(LNS.guiLoot.console, "Lowest Personal Item ID: \ay%s\ax", personal_low or 'None')
 
@@ -863,21 +837,17 @@ function LNS.commandHandler(...)
             if not item() and args[3] then
                 local itemID = LNS.resolveItemIDbyName(args[3], false)
                 if itemID then
-                    LNS.addRule(itemID, 'NormalItems', rule, 'All', 'NULL')
+                    LNS.addRule(itemID, 'GlobalItems', rule, 'All', 'NULL')
                     Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", args[3], rule)
                 else
-                    -- get lowest item ID from the table multiply times -1 and subtract one to make a unique negative ID
-                    -- local newID = db.GetLowestID('Normal_Rules') or -1
-                    LNS.EnterNegIDRule(args[3], rule, 'All', 'NULL', 'Normal_Rules')
-                    -- then add rule as a missing item for now.
-                    -- LNS.addRule(newID, 'NormalItems', rule, 'All', 'NULL')
+                    LNS.EnterNegIDRule(args[3], rule, 'All', 'NULL', 'Global_Rules')
 
                     Logger.Warn(LNS.guiLoot.console, "Item \ar%s\ax not found in DB. adding rule as a missing item.", args[3])
                 end
             end
             if item() then
                 local itemID = item.ID()
-                LNS.addRule(itemID, 'NormalItems', rule, 'All', item.ItemLink('CLICKABLE')())
+                LNS.addRule(itemID, 'GlobalItems', rule, 'All', item.ItemLink('CLICKABLE')())
                 Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", item.Name(), rule)
             end
             return
@@ -961,12 +931,12 @@ function LNS.commandHandler(...)
             LNS.markTradeSkillAsBank()
         elseif validActions[command] and item() then
             local itemID = item.ID()
-            LNS.addRule(itemID, 'NormalItems', validActions[command], 'All', item.ItemLink('CLICKABLE')())
+            LNS.addRule(itemID, 'GlobalItems', validActions[command], 'All', item.ItemLink('CLICKABLE')())
             Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", item.Name(), validActions[command])
         elseif string.find(command, "quest%|") and item() then
             local itemID = item.ID()
             local val    = string.gsub(command, "quest", "Quest")
-            LNS.addRule(itemID, 'NormalItems', val, 'All', item.ItemLink('CLICKABLE')())
+            LNS.addRule(itemID, 'GlobalItems', val, 'All', item.ItemLink('CLICKABLE')())
             Logger.Info(LNS.guiLoot.console, "Setting \ay%s\ax to \ay%s\ax", item.Name(), val)
         elseif command == 'quit' or command == 'exit' then
             printf('LootNScoot stopping due to quit command received.')
@@ -990,7 +960,7 @@ function LNS.commandHandler(...)
             Logger.Debug(LNS.guiLoot.console, "lootID: %s", lootID)
             if lootID then
                 if LNS.ALLITEMS[lootID] then
-                    LNS.addRule(lootID, 'NormalItems', validActions[action], 'All', LNS.ALLITEMS[lootID].Link)
+                    LNS.addRule(lootID, 'GlobalItems', validActions[action], 'All', LNS.ALLITEMS[lootID].Link)
                     Logger.Info(LNS.guiLoot.console, "Setting \ay%s (%s)\ax to \ay%s\ax", item_name, lootID, validActions[action])
                 end
             end
@@ -1126,7 +1096,7 @@ function LNS.enterNewItemRuleInfo(data_table)
     local modMessage = {
         who        = settings.MyName,
         action     = 'modifyitem',
-        section    = "NormalItems",
+        section    = "GlobalItems",
         item       = item,
         itemID     = itemID,
         rule       = rule,
@@ -1137,7 +1107,7 @@ function LNS.enterNewItemRuleInfo(data_table)
         hasChanged = false,
         Server     = settings.EqServer,
     }
-    if (classes ~= (LNS.NormalItemsClasses[itemID] or 'new') or rule ~= (LNS.NormalItemsRules[itemID] or 'new')) and rule ~= 'Ignore' and rule ~= 'Ask' then
+    if (classes ~= (LNS.GlobalItemsClasses[itemID] or 'new') or rule ~= (LNS.GlobalItemsRules[itemID] or 'new')) and rule ~= 'Ignore' and rule ~= 'Ask' then
         modMessage.hasChanged = true
         dbgTbl = {
             Check  = 'loot.enterNewItemRuleInfo() \ax\agChanges Made to Item:',
@@ -1163,9 +1133,6 @@ function LNS.enterNewItemRuleInfo(data_table)
         Logger.Debug(LNS.guiLoot.console, dbgTbl)
     end
 
-    if settings.Settings.AlwaysGlobal then
-        modMessage.section = "GlobalItems"
-    end
     actors.Send(modMessage)
 end
 
@@ -1184,16 +1151,6 @@ function LNS.EnterNegIDRule(itemName, rule, classes, link, tableName)
                 item_classes = classes,
             }
             LNS.GlobalMissingNames[itemName] = newID
-        elseif tableName == 'Normal_Rules' then
-            LNS.NormalItemsRules[newID] = rule
-            LNS.NormalItemsClasses[newID] = classes
-            LNS.NormalItemsMissing[newID] = {
-                item_id      = newID,
-                item_name    = itemName,
-                item_rule    = rule,
-                item_classes = classes,
-            }
-            LNS.NormalMissingNames[itemName] = newID
         end
         LNS.enterNewItemRuleInfo({
             ID       = newID,
@@ -1689,7 +1646,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
     if itemID == nil or itemID == 0 then
         return 'NULL', 'All', 'NULL', 'None'
     end
-    local which_table = 'Normal'
+    local which_table = 'Global'
     local iData = {}
     _, iData = LNS.findItem(nil, itemID)
 
@@ -1722,34 +1679,6 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
             end
             return LNS.GlobalItemsRules[itemID], LNS.GlobalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Global'
         end
-        if LNS.NormalItemsRules[itemID] then
-            if link ~= 'NULL' or (item_link and link ~= item_link) then
-                LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], 'Normal_Rules')
-            end
-            return LNS.NormalItemsRules[itemID], LNS.NormalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Normal'
-        end
-        -- Never called with a tablename
-        -- elseif tablename == 'Global_Rules' then
-        --     if LNS.GlobalItemsRules[itemID] then
-        --         if link ~= 'NULL' or (item_link and link ~= item_link) then
-        --             LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], 'Global_Rules')
-        --         end
-        --         return LNS.GlobalItemsRules[itemID], LNS.GlobalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Global'
-        --     end
-        -- elseif tablename == 'Normal_Rules' then
-        --     if LNS.NormalItemsRules[itemID] then
-        --         if link ~= 'NULL' or (item_link and link ~= item_link) then
-        --             LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], 'Normal_Rules')
-        --         end
-        --         return LNS.NormalItemsRules[itemID], LNS.NormalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Normal'
-        --     end
-        -- elseif tablename == settings.PersonalTableName then
-        --     if LNS.PersonalItemsRules[itemID] then
-        --         if link ~= 'NULL' or (item_link and link ~= item_link) then
-        --             LNS.UpdateRuleLink(itemID, LNS.ItemLinks[itemID], settings.PersonalTableName)
-        --         end
-        --         return LNS.PersonalItemsRules[itemID], LNS.PersonalItemsClasses[itemID], LNS.ItemLinks[itemID], 'Personal'
-        --     end
     end
 
     local rule       = 'NULL'
@@ -1767,12 +1696,6 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
             which_table = 'Global'
             tablename = 'Global_Rules'
         end
-        if not found then
-            found, rule, classes, lookupLink = db.CheckRulesDB(itemID, db.PreparedStatements.CHECK_DB_NORMAL)
-            which_table = 'Normal'
-            tablename = 'Normal_Rules'
-        end
-
         if not found and not skipWildcard then
             if mq_item and mq_item() then
                 local wildCardRule = LNS.CheckWildCards(mq_item.Name()) or ''
@@ -1780,7 +1703,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
                     classes       = classes ~= 'NULL' and classes or 'All'
                     lookupLink    = item_link
                     found         = true
-                    which_table   = 'Normal'
+                    which_table   = 'Global'
                     rule          = wildCardRule
 
                     local addToDB = true
@@ -1804,7 +1727,7 @@ function LNS.lookupLootRule(mq_item, itemID, tablename, item_link, skipWildcard)
     -- if SQL has the item add the rules to the lua table for next time
 
     if rule ~= 'NULL' then
-        local localTblName                     = tablename == 'Global_Rules' and 'GlobalItems' or 'NormalItems'
+        local localTblName                     = 'GlobalItems'
         localTblName                           = tablename == settings.PersonalTableName and 'PersonalItems' or localTblName
 
         LNS[localTblName .. 'Rules'][itemID]   = rule
@@ -2059,14 +1982,10 @@ function LNS.addNewItem(corpseItem, itemRule, itemLink, corpseID, addDB)
     }
 
     Logger.Info(LNS.guiLoot.console, "\agAdding 1 \ayNEW\ax item: \at%s \ay(\axID: \at%s\at) \axwith rule: \ag%s", itemName, itemID, itemRule)
-    -- LNS.actorAddRule(itemID, itemName, 'Normal', itemRule, LNS.TempItemClasses, itemLink)
     if addDB then
-        LNS.addRule(itemID, 'NormalItems', itemRule, LNS.TempItemClasses, itemLink, true)
+        LNS.addRule(itemID, 'GlobalItems', itemRule, LNS.TempItemClasses, itemLink, true)
     end
-    local sections = { NormalItems = 1, }
-    if settings.Settings.AlwaysGlobal then
-        sections['GlobalItems'] = 1
-    end
+    local sections = { GlobalItems = 1, }
     newMessage.sections = sections
     actors.Send(newMessage)
 end
@@ -2086,8 +2005,10 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link, skipMsg)
         return
     end
 
-    local section = tableName == "Normal_Rules" and "NormalItems" or "GlobalItems"
-    section = tableName == settings.PersonalTableName and 'PersonalItems' or section
+    local section = "GlobalItems"
+    if tableName == settings.PersonalTableName then
+        section = 'PersonalItems'
+    end
     -- Validate RulesDB
     if not db.RulesDB or type(db.RulesDB) ~= "string" then
         Logger.Warn(LNS.guiLoot.console, "Invalid RulesDB path: %s", tostring(db.RulesDB))
@@ -2115,21 +2036,12 @@ function LNS.modifyItemRule(itemID, action, tableName, classes, link, skipMsg)
     local success = false
     if action == 'delete' then
         success = db.DeleteItemRule(action, tableName, itemName, itemID)
-        if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-            success = db.DeleteItemRule(action, 'Global_Rules', itemName, itemID)
-        end
     else
         success = db.UpsertItemRule(action, tableName, itemName, itemID, classes, link)
-        if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-            success = db.UpsertItemRule(action, 'Global_Rules', itemName, itemID, classes, link)
-        end
     end
 
     if success and not skipMsg then
         local sections = { section = 1, }
-        if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-            sections['GlobalItems'] = 1
-        end
         -- Notify other actors about the rule change
         actors.Send({
             who      = settings.MyName,
@@ -2182,19 +2094,11 @@ function LNS.addRule(itemID, section, rule, classes, link, skipMsg)
     LNS[section .. "Classes"][itemID] = classes
     LNS.ItemLinks[itemID]             = link
 
-    if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-        LNS["GlobalItemsRules"][itemID]   = rule
-        LNS["GlobalItemsClasses"][itemID] = classes
-    end
-
-    local tblName = section == 'GlobalItems' and 'Global_Rules' or 'Normal_Rules'
+    local tblName                     = 'Global_Rules'
     if section == 'PersonalItems' then
         tblName = settings.PersonalTableName
     end
     LNS.modifyItemRule(itemID, rule, tblName, classes, link, skipMsg)
-    -- if settings.Settings.AlwaysGlobal and section == 'NormalItems' then
-    --     LNS.modifyItemRule(itemID, rule, 'Global_Rules', classes, link, true)
-    -- end
 
     -- Refresh the loot settings to apply the changes
     return true
@@ -2411,7 +2315,7 @@ function LNS.checkWearable(isEquippable, decision, ruletype, nodrop, newrule, is
             end
         end
     else
-        if nodrop and settings.Settings.CanWear and ruletype == 'Normal' and not isAug then
+        if nodrop and settings.Settings.CanWear and ruletype == 'Global' and not isAug then
             decision = 'Ignore'
             iCanWear = false
         end
@@ -2576,30 +2480,13 @@ function LNS.getRule(item, fromFunction, index)
             end
         end
     end
-    if LNS.NormalMissingNames[itemName] then
-        if LNS.findItem(itemName) == 1 then
-            local negID = LNS.NormalMissingNames[itemName] or 0
-            if negID < 0 then
-                LNS.modifyItemRule(itemID,
-                    LNS.NormalItemsMissing[negID].item_rule,
-                    'Normal_Rules',
-                    LNS.NormalItemsMissing[negID].item_classes,
-                    itemLink)
-
-                Logger.Info(LNS.guiLoot.console, "\arItem \ax%s\ar is missing from the database. Re-adding with \ayImported rule\ax: \ag%s\ax",
-                    itemName, LNS.NormalItemsMissing[negID].item_rule)
-                LNS.NormalMissingNames[itemName] = nil
-                LNS.NormalItemsMissing[negID] = nil
-            end
-        end
-    end
     -- Lookup existing rule in the databases
 
     local lootRule, lootClasses, lootLink, ruletype = LNS.lookupLootRule(item, itemID, nil, itemLink, false)
     Logger.Debug(LNS.guiLoot.console, "\ax\ao Lookup Rule \axItem: (\at%s\ax) ID: (\ag%s\ax) Rule: (\ay%s\ax) Classes: (\at%s\ax)",
         itemName, itemID, lootRule, lootClasses)
     -- check for always eval
-    if settings.Settings.AlwaysEval and ruletype == 'Normal' then
+    if settings.Settings.AlwaysEval and ruletype == 'Global' then
         if lootRule ~= "Quest" and lootRule ~= "Keep" and lootRule ~= "Destroy" and lootRule ~= 'CanUse' and lootRule ~= 'Ask' and lootRule ~= 'Bank' then
             lootRule = 'NULL'
         end
@@ -2613,7 +2500,7 @@ function LNS.getRule(item, fromFunction, index)
     if newRule then
         Logger.Info(LNS.guiLoot.console, "\ax\ag NEW RULE Detected!\ax Item: (\at%s\ax)", itemName, lootRule)
         lootClasses = LNS.retrieveClassList(item)
-        ruletype = 'Normal'
+        ruletype = 'Global'
         local addToDB = true
         lootRule = "Ask"
 
@@ -2766,7 +2653,7 @@ function LNS.getRule(item, fromFunction, index)
         iCanUse, lootDecision = LNS.checkWearable(isEquippable, lootRule, ruletype, isNoDrop, newRule, isAug, item)
     end
 
-    if ((lootRule == 'Sell' or lootRule == 'Tribute') and ruletype == 'Normal') then
+    if ((lootRule == 'Sell' or lootRule == 'Tribute') and ruletype == 'Global') then
         Logger.Debug(LNS.guiLoot.console, "\ax\ag Checking Decision for \aySELL\ax or \ayTRIBUTE\ax: \at%s\ax", lootRule)
         lootDecision = LNS.checkDecision(item, lootRule)
     end
@@ -2788,7 +2675,7 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     -- Handle augments
-    if settings.Settings.LootAugments and isAug and ruletype == 'Normal' and not settings.Settings.MasterLooting then
+    if settings.Settings.LootAugments and isAug and ruletype == 'Global' and not settings.Settings.MasterLooting then
         lootDecision = "Keep"
         dbgTbl = {
             Lookup = '\ax\ag Check for AUGMENTS',
@@ -2802,7 +2689,7 @@ function LNS.getRule(item, fromFunction, index)
     end
 
     -- Handle Spell Drops
-    if settings.Settings.KeepSpells and LNS.checkSpells(itemName) and ruletype == 'Normal' and not settings.Settings.MasterLooting then
+    if settings.Settings.KeepSpells and LNS.checkSpells(itemName) and ruletype == 'Global' and not settings.Settings.MasterLooting then
         lootDecision = "Keep"
         dbgTbl = {
             Lookup = '\ax\ag Check for SPELLS',
@@ -2860,9 +2747,25 @@ function LNS.getRule(item, fromFunction, index)
 end
 
 function LNS.setBuyItem(itemName, qty)
+    if settings.TempSettings.BuyItems == nil then
+        settings.TempSettings.BuyItems = {}
+    end
     settings.TempSettings.BuyItems[itemName] = { Key = itemName, Value = qty, }
     settings.Settings.BuyItemsTable[itemName] = qty
     LNS.BuyItemsTable[itemName] = qty
+end
+
+-- Broadcasts a buy item to all other characters so they add it to their own buy lists
+function LNS.shareBuyItemToOthers(itemName, qty)
+    if not itemName or itemName == '' then return end
+    actors.Send({
+        who    = settings.MyName,
+        Server = settings.EqServer,
+        action = 'share_buy_item',
+        item   = itemName,
+        qty    = qty or 1,
+    })
+    Logger.Info(LNS.guiLoot.console, "\agShared\ax buy item \at%s\ax (qty: \ay%s\ax) to other characters.", itemName, qty or 1)
 end
 
 -- Sets a Global Item rule
@@ -2883,23 +2786,6 @@ function LNS.setGlobalItem(itemID, val, classes, link)
     end
 end
 
--- Sets a Normal Item rule
-function LNS.setNormalItem(itemID, val, classes, link)
-    if itemID == nil then
-        Logger.Warn(LNS.guiLoot.console, "Invalid itemID for setNormalItem.")
-        return
-    end
-    LNS.NormalItemsRules[itemID] = val ~= 'delete' and val or nil
-    if val ~= 'delete' then
-        LNS.NormalItemsClasses[itemID] = classes or 'All'
-        LNS.ItemLinks[itemID]          = link or (LNS.ItemLinks[itemID] or 'NULL')
-    else
-        LNS.NormalItemsClasses[itemID] = nil
-        LNS.NormalItemsMissing[settings.TempSettings.ModifyItemID] = nil
-    end
-    LNS.modifyItemRule(itemID, val, 'Normal_Rules', classes, link)
-end
-
 function LNS.setPersonalItem(itemID, val, classes, link)
     if itemID == nil then
         Logger.Warn(LNS.guiLoot.console, "Invalid itemID for setPersonalItem.")
@@ -2913,6 +2799,26 @@ function LNS.setPersonalItem(itemID, val, classes, link)
         LNS.PersonalItemsClasses[itemID] = nil
     end
     LNS.modifyItemRule(itemID, val, settings.PersonalTableName, classes, link)
+end
+
+-- Broadcasts a personal rule to all other characters so they set it in their own personal tables
+function LNS.sharePersonalRuleToOthers(itemID, rule, classes, link)
+    if itemID == nil then return end
+    local itemName = LNS.ItemNames[itemID] or 'Unknown'
+    classes = classes or 'All'
+    link = link or LNS.ItemLinks[itemID] or 'NULL'
+    actors.Send({
+        who     = settings.MyName,
+        Server  = settings.EqServer,
+        action  = 'share_personal_rule',
+        item    = itemName,
+        itemID  = itemID,
+        rule    = rule,
+        section = 'PersonalItems',
+        link    = link,
+        classes = classes,
+    })
+    Logger.Info(LNS.guiLoot.console, "\agShared\ax personal rule for \at%s\ax (\ay%s\ax) to other characters.", itemName, rule)
 end
 
 function LNS.GetTableSize(tbl)
@@ -2960,8 +2866,8 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
     corpseName           = tmpLabel
     local eval           = type(actionToTake) == 'string' and actionToTake or '?'
     local dbgTbl         = {}
-    local rule           = isGlobalItem and LNS.GlobalItemsRules[cItemID] or
-        (isPersonalItem and LNS.PersonalItemsRules[cItemID] or (LNS.NormalItemsRules[cItemID] or nil))
+    local rule           = isPersonalItem and LNS.PersonalItemsRules[cItemID] or
+        (isGlobalItem and LNS.GlobalItemsRules[cItemID] or nil)
     if allItems == nil then allItems = {} end
     dbgTbl = {
         Lookup = 'loot.lootItem()',
@@ -3640,7 +3546,7 @@ function LNS.eventSell(_, itemName)
 
     if settings.Settings.AddNewSales then
         -- Add a rule to mark the item as "Sell"
-        LNS.addRule(itemID, "NormalItems", "Sell", "All", 'NULL')
+        LNS.addRule(itemID, "GlobalItems", "Sell", "All", 'NULL')
         Logger.Info(LNS.guiLoot.console, "Added rule: \ay%s\ax set to \agSell\ax.", itemName)
     end
 end
@@ -3711,8 +3617,8 @@ function LNS.markTradeSkillAsBank()
     for i = 1, 10 do
         local bagSlot = mq.TLO.InvSlot('pack' .. i).Item
         if bagSlot.ID() and bagSlot.Tradeskills() then
-            LNS.NormalItemsRules[bagSlot.ID()] = 'Bank'
-            LNS.addRule(bagSlot.ID(), 'NormalItems', 'Bank', 'All', bagSlot.ItemLink('CLICKABLE')())
+            LNS.GlobalItemsRules[bagSlot.ID()] = 'Bank'
+            LNS.addRule(bagSlot.ID(), 'GlobalItems', 'Bank', 'All', bagSlot.ItemLink('CLICKABLE')())
         end
     end
 end
@@ -3811,7 +3717,7 @@ function LNS.eventTribute(_, itemName)
     end
     if settings.Settings.AddNewTributes then
         -- Add a rule to mark the item as "Tribute"
-        LNS.addRule(itemID, "NormalItems", "Tribute", "All", link)
+        LNS.addRule(itemID, "GlobalItems", "Tribute", "All", link)
         Logger.Info(LNS.guiLoot.console, "Added rule: \ay%s\ax set to \agTribute\ax.", itemName)
     end
 end
@@ -3913,7 +3819,7 @@ function LNS.processItems(action)
         if not item or not item.ID() then return end
         local itemID     = item.ID()
         local tradeskill = item.Tradeskills()
-        local rule       = LNS.NormalItemsRules[itemID] or "Ignore"
+        local rule       = LNS.GlobalItemsRules[itemID] or "Ignore"
         if LNS.PersonalItemsRules[itemID] then
             rule = LNS.PersonalItemsRules[itemID]
         elseif LNS.GlobalItemsRules[itemID] then

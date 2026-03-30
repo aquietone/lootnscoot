@@ -127,7 +127,7 @@ sequenceDiagram
 - Reports skipped items
 
 ### getRule()
-- Looks up existing loot rules from database (Personal > Global > Normal)
+- Looks up existing loot rules from database (Personal > Global)
 - Applies auto-rules for new items if configured
 - Validates lore items (already have?)
 - Checks nodrop settings
@@ -146,7 +146,7 @@ sequenceDiagram
 - Reports to console/chat
 
 ### Database Checks
-- lookupLootRule: Checks Personal_Rules > Global_Rules > Normal_Rules
+- lookupLootRule: Checks Personal_Rules > Global_Rules
 - CheckRulesDB: Queries SQLite database for item rules
 - insertIntoHistory: Records looted/ignored items with timestamp
 

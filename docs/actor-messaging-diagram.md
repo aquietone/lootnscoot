@@ -151,14 +151,6 @@ sequenceDiagram
             CharC->>CharC: Update GlobalItemsRules[itemID]
         end
         
-        alt Normal Rule
-            Actors-->>CharB: Receive addrule (Normal)
-            CharB->>CharB: Update NormalItemsRules[itemID]
-            CharB->>CharB: Get item from DB
-            Actors-->>CharC: Receive addrule (Normal)
-            CharC->>CharC: Update NormalItemsRules[itemID]
-        end
-        
         alt Rule is Destroy
             CharB->>CharB: Mark NeedsCleanup = true
             CharC->>CharC: Mark NeedsCleanup = true
@@ -389,7 +381,6 @@ sequenceDiagram
 ### Rule Distribution
 - Personal rules: Stay local (not broadcast)
 - Global rules: Shared with all characters
-- Normal rules: Shared with all characters (unless AlwaysGlobal)
 - Bulk operations use reloadrules for efficiency
 
 ### New Item Discovery

@@ -30,7 +30,7 @@ local function callback(message)
     local action        = lootMessage.action or ''
     local itemID        = lootMessage.itemID or 0
     local rule          = lootMessage.rule or 'NULL'
-    local section       = lootMessage.section or 'NormalItems'
+    local section       = lootMessage.section or 'GlobalItems'
     local sections      = lootMessage.sections
     local itemName      = lootMessage.item or 'NULL'
     local itemLink      = lootMessage.link or 'NULL'
@@ -334,6 +334,42 @@ local function callback(message)
         LNS.ItemLinks                           = lootMessage.bulkLink or {}
         return
     end
+    -- Handle shared personal rule from another character
+    if action == 'share_personal_rule' and who ~= settings.MyName then
+        Logger.Debug(guiLoot.console, dbgTbl)
+        LNS.ItemNames[itemID] = itemName
+        LNS.setPersonalItem(itemID, rule, itemClasses, itemLink)
+        Logger.Info(guiLoot.console, {
+            Lookup = 'loot.RegisterActors()',
+            Action = action,
+            RuleType = "Shared Personal Rule",
+            Classes = itemClasses,
+            Rule = rule,
+            Item = itemName,
+            From = who,
+        })
+        return
+    end
+
+    -- Handle shared buy item from another character
+    if action == 'share_buy_item' and who ~= settings.MyName then
+        Logger.Debug(guiLoot.console, dbgTbl)
+        local buyName = lootMessage.item or ''
+        local buyQty = lootMessage.qty or 1
+        if buyName ~= '' then
+            LNS.setBuyItem(buyName, buyQty)
+            settings.TempSettings.NeedSave = true
+            Logger.Info(guiLoot.console, {
+                Lookup = 'loot.RegisterActors()',
+                Action = action,
+                Item = buyName,
+                Qty = buyQty,
+                From = who,
+            })
+        end
+        return
+    end
+
     -- -- Handle actions
 
     if action == 'addrule' or action == 'modifyitem' or (action == 'new' and sections ~= nil) then
@@ -361,19 +397,6 @@ local function callback(message)
                 Lookup = 'loot.RegisterActors()',
                 Action = action,
                 RuleType = "Global Rule",
-                Classes = itemClasses,
-                Rule = rule,
-                Item = itemName,
-            }
-        elseif (section == 'NormalItems' or (sections and sections['NormalItems'])) and who ~= settings.MyName then
-            LNS.NormalItemsRules[itemID]   = rule
-            LNS.NormalItemsClasses[itemID] = itemClasses
-            LNS.ItemLinks[itemID]          = itemLink
-            LNS.ItemNames[itemID]          = itemName
-            infoMsg                        = {
-                Lookup = 'loot.RegisterActors()',
-                Action = action,
-                RuleType = "Normal Rule",
                 Classes = itemClasses,
                 Rule = rule,
                 Item = itemName,

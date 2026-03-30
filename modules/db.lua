@@ -145,16 +145,6 @@ ORDER BY Date DESC, TimeStamp DESC LIMIT 1
 INSERT INTO LootHistory (Item, CorpseName, Action, Date, TimeStamp, Link, Looter, Zone)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ]])
-    initPreparedStatement('INSERT_RULE_NORMAL', rules_db, [[
-INSERT INTO Normal_Rules
-(item_id, item_name, item_rule, item_rule_classes, item_link)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT(item_id) DO UPDATE SET
-item_name                                    = excluded.item_name,
-item_rule                                    = excluded.item_rule,
-item_rule_classes                                    = excluded.item_rule_classes,
-item_link                                    = excluded.item_link
-]])
     initPreparedStatement('INSERT_RULE_GLOBAL', rules_db, [[
 INSERT INTO Global_Rules
 (item_id, item_name, item_rule, item_rule_classes, item_link)
@@ -176,12 +166,9 @@ item_rule_classes                                    = excluded.item_rule_classe
 item_link                                    = excluded.item_link
 ]], settings.PersonalTableName))
     initPreparedStatement('CHECK_DB_PERSONAL', rules_db, string.format("SELECT item_rule, item_rule_classes, item_link FROM %s WHERE item_id = ?", settings.PersonalTableName))
-    initPreparedStatement('CHECK_DB_NORMAL', rules_db, "SELECT item_rule, item_rule_classes, item_link FROM Normal_Rules WHERE item_id = ?")
     initPreparedStatement('CHECK_DB_GLOBAL', rules_db, "SELECT item_rule, item_rule_classes, item_link FROM Global_Rules WHERE item_id = ?")
-    initPreparedStatement('GET_ITEM_LINK_NORMAL', rules_db, "SELECT item_link FROM Normal_Rules WHERE item_id = ?")
     initPreparedStatement('GET_ITEM_LINK_GLOBAL', rules_db, "SELECT item_link FROM Global_Rules WHERE item_id = ?")
     initPreparedStatement('GET_ITEM_LINK_PERSONAL', rules_db, string.format("SELECT item_link FROM %s WHERE item_id = ?", settings.PersonalTableName))
-    initPreparedStatement('UPDATE_RULE_LINK_NORMAL', rules_db, "UPDATE Normal_Rules SET item_link = ? WHERE item_id = ?")
     initPreparedStatement('UPDATE_RULE_LINK_GLOBAL', rules_db, "UPDATE Global_Rules SET item_link = ? WHERE item_id = ?")
     initPreparedStatement('UPDATE_RULE_LINK_PERSONAL', rules_db, string.format("UPDATE %s SET item_link = ? WHERE item_id = ?", settings.PersonalTableName))
 end
@@ -619,18 +606,12 @@ end
 --- RULES DB
 
 function LNS_DB.LoadRuleDB()
-    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
+    if rules_db == nil then rules_db = LNS_DB.OpenDB(LNS_DB.RulesDB) end
+    LNS_DB.MigrateNormalToGlobal()
     -- Creating tables
     rules_db:exec(string.format([[
 BEGIN TRANSACTION;
 CREATE TABLE IF NOT EXISTS Global_Rules (
-item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
-item_name TEXT NOT NULL,
-item_rule TEXT NOT NULL,
-item_rule_classes TEXT,
-item_link TEXT
-);
-CREATE TABLE IF NOT EXISTS Normal_Rules (
 item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
 item_name TEXT NOT NULL,
 item_rule TEXT NOT NULL,
@@ -674,7 +655,7 @@ PRAGMA wal_checkpoint;
         end
     end
 
-    for _, tbl in ipairs({ "Global_Rules", "Normal_Rules", settings.PersonalTableName, }) do
+    for _, tbl in ipairs({ "Global_Rules", settings.PersonalTableName, }) do
         local stmt = rules_db:prepare("SELECT * FROM " .. tbl)
         local lbl = tbl:gsub("_Rules", "")
         if tbl == settings.PersonalTableName then lbl = 'Personal' end
@@ -715,6 +696,75 @@ function LNS_DB.LoadWildCardRules()
     return Wc_Table
 end
 
+--- Migrate Normal_Rules into Global_Rules (one-time migration).
+--- Normal_Rules entries are inserted into Global_Rules only where the item_id
+--- does not already exist in Global_Rules (Global wins on conflicts).
+--- After migration the Normal_Rules table is dropped.
+---@return boolean true if migration ran, false if already migrated
+function LNS_DB.MigrateNormalToGlobal()
+    if rules_db == nil then rules_db = LNS_DB.OpenDB(LNS_DB.RulesDB) end
+
+    -- Check if Normal_Rules table exists
+    local exists = false
+    local check_stmt = rules_db:prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='Normal_Rules'")
+    if check_stmt then
+        if check_stmt:step() == SQLite3.ROW then
+            exists = true
+        end
+        check_stmt:finalize()
+    end
+
+    if not exists then
+        Logger.Debug(guiLoot.console, "Normal_Rules table not found - migration already complete.")
+        return false
+    end
+
+    -- Count entries before migration
+    local normalCount = 0
+    local count_stmt = rules_db:prepare("SELECT COUNT(*) as cnt FROM Normal_Rules")
+    if count_stmt then
+        if count_stmt:step() == SQLite3.ROW then
+            normalCount = count_stmt:get_value(0)
+        end
+        count_stmt:finalize()
+    end
+
+    -- Ensure Global_Rules table exists before migrating into it
+    rules_db:exec([[
+CREATE TABLE IF NOT EXISTS Global_Rules (
+item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
+item_name TEXT NOT NULL,
+item_rule TEXT NOT NULL,
+item_rule_classes TEXT,
+item_link TEXT
+);
+]])
+
+    -- Insert Normal_Rules entries into Global_Rules where item_id does not already exist
+    local migrated = rules_db:exec([[
+INSERT INTO Global_Rules (item_id, item_name, item_rule, item_rule_classes, item_link)
+SELECT item_id, item_name, item_rule, item_rule_classes, item_link
+FROM Normal_Rules
+WHERE item_id NOT IN (SELECT item_id FROM Global_Rules);
+]])
+
+    if migrated ~= SQLite3.OK then
+        Logger.Error(guiLoot.console,
+            "\arFailed to migrate Normal_Rules into Global_Rules: %s", rules_db:errmsg())
+        return false
+    end
+
+    -- Drop the old table
+    rules_db:exec("DROP TABLE Normal_Rules;")
+    rules_db:exec("PRAGMA wal_checkpoint;")
+
+    Logger.Info(guiLoot.console,
+        "\agMigration complete\ax: merged \ay%d\ax Normal_Rules entries into Global_Rules (Global wins on conflicts). Normal_Rules table dropped.",
+        normalCount)
+    return true
+end
+
 ---comment
 ---@param item_table table Index of ItemId's to set
 ---@param setting any Setting to set all items to
@@ -724,7 +774,7 @@ end
 function LNS_DB.BulkSet(item_table, setting, classes, which_table, delete_items)
     if item_table == nil or type(item_table) ~= "table" then return end
     if which_table == 'Personal_Rules' then which_table = settings.PersonalTableName end
-    local localName = which_table == 'Normal_Rules' and 'NormalItems' or 'GlobalItems'
+    local localName = 'GlobalItems'
     localName = which_table == settings.PersonalTableName and 'PersonalItems' or localName
     if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
 
@@ -795,10 +845,8 @@ function LNS_DB.GetItemLink(itemID, link, which_table)
 
     -- local qry = string.format([[UPDATE %s SET item_link = ? WHERE item_id = ?;]], which_table)
     -- local stmt = rules_db:prepare(qry)
-    local stmt = LNS_DB.PreparedStatements.GET_ITEM_LINK_NORMAL
-    if which_table == 'Global_Rules' then
-        stmt = LNS_DB.PreparedStatements.GET_ITEM_LINK_GLOBAL
-    elseif which_table == settings.PersonalTableName then
+    local stmt = LNS_DB.PreparedStatements.GET_ITEM_LINK_GLOBAL
+    if which_table == settings.PersonalTableName then
         stmt = LNS_DB.PreparedStatements.GET_ITEM_LINK_PERSONAL
     end
     -- if not stmt then
@@ -823,10 +871,8 @@ function LNS_DB.UpdateRuleLink(itemID, link, which_table)
     -- if not stmt then
     --     return
     -- end
-    local stmt = LNS_DB.PreparedStatements.UPDATE_RULE_LINK_NORMAL
-    if which_table == 'Global_Rules' then
-        stmt = LNS_DB.PreparedStatements.UPDATE_RULE_LINK_GLOBAL
-    elseif which_table == settings.PersonalTableName then
+    local stmt = LNS_DB.PreparedStatements.UPDATE_RULE_LINK_GLOBAL
+    if which_table == settings.PersonalTableName then
         stmt = LNS_DB.PreparedStatements.UPDATE_RULE_LINK_PERSONAL
     end
     stmt:bind_values(link, itemID)
@@ -897,9 +943,7 @@ function LNS_DB.UpsertItemRule(action, tableName, itemName, itemID, classes, lin
 
     local stmt
     -- UPSERT operation
-    if tableName == 'Normal_Rules' then
-        stmt = LNS_DB.PreparedStatements.INSERT_RULE_NORMAL
-    elseif tableName == 'Global_Rules' then
+    if tableName == 'Global_Rules' then
         stmt = LNS_DB.PreparedStatements.INSERT_RULE_GLOBAL
     else
         stmt = LNS_DB.PreparedStatements.INSERT_RULE_PERSONAL
@@ -1082,9 +1126,7 @@ function LNS_DB.ImportOldRulesDB(path)
     end
 
     local tmpGlobalDB = {}
-    local tmpNormalDB = {}
     local tmpNamesGlobal = {}
-    local tmpNamesNormal = {}
 
     db:exec("PRAGMA journal_mode=WAL;")
     local query = "SELECT * From Global_Rules;"
@@ -1102,29 +1144,31 @@ function LNS_DB.ImportOldRulesDB(path)
         cntr = cntr + 1
     end
 
+    -- Merge Normal_Rules into Global (Global wins on conflicts)
     query = "SELECT * From Normal_Rules;"
     stmt = db:prepare(query)
-    cntr = 1
-    for row in stmt:nrows() do
-        local itemID = cntr * -1
-
-        tmpNormalDB[itemID] = {
-            item_id      = itemID,
-            item_name    = row.item_name,
-            item_rule    = row.item_rule,
-            item_classes = row.item_classes or 'All',
-        }
-        tmpNamesNormal[row.item_name] = itemID
-        cntr = cntr + 1
+    if stmt then
+        for row in stmt:nrows() do
+            if not tmpNamesGlobal[row.item_name] then
+                local itemID = cntr * -1
+                tmpGlobalDB[itemID] = {
+                    item_id      = itemID,
+                    item_name    = row.item_name,
+                    item_rule    = row.item_rule,
+                    item_classes = row.item_classes or 'All',
+                }
+                tmpNamesGlobal[row.item_name] = itemID
+                cntr = cntr + 1
+            end
+        end
+        stmt:finalize()
     end
-    stmt:finalize()
 
     db:close()
 
 
     local nameSet = {}
     for _, v in pairs(tmpGlobalDB) do nameSet[v.item_name] = true end
-    for _, v in pairs(tmpNormalDB) do nameSet[v.item_name] = true end
 
     -- Resolve IDs in one DB pass
     local resolvedNames = LNS_DB.ResolveItemIDs(nameSet)
@@ -1145,22 +1189,7 @@ function LNS_DB.ImportOldRulesDB(path)
     end
     tmpGlobalDB = newGlobal
 
-    local newNormal = {}
-    -- Replace IDs for tmpNormalDB
-    for k, v in pairs(tmpNormalDB) do
-        local realID = resolvedNames[v.item_name]
-        local id = realID or v.item_id
-        if id < 0 then LNS.HasMissingItems = true end
-        newNormal[id] = {
-            item_id = id,
-            item_name = v.item_name,
-            item_rule = v.item_rule,
-            item_classes = v.item_classes,
-        }
-    end
-
-    tmpNormalDB = newNormal
-    if rules_db == nil then LNS_DB.OpenDB(LNS_DB.RulesDB) end
+    if rules_db == nil then rules_db = LNS_DB.OpenDB(LNS_DB.RulesDB) end
 
     -- insert into the current rules DB
     local qry = string.format([[
@@ -1196,39 +1225,6 @@ item_link = excluded.item_link
             if itemID > 0 then tmpGlobalDB[itemID] = nil end
         end
     end
-
-    qry = string.format([[
-INSERT INTO Normal_Rules (item_id, item_name, item_rule, item_rule_classes, item_link)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT(item_id) DO UPDATE SET
-item_name = excluded.item_name,
-item_rule = excluded.item_rule,
-item_rule_classes = excluded.item_rule_classes,
-item_link = excluded.item_link
-]])
-
-    stmt = rules_db:prepare(qry)
-    if not stmt then
-        rules_db:exec("COMMIT;")
-        rules_db:exec("PRAGMA wal_checkpoint;")
-        return
-    end
-
-    for itemID, data in pairs(tmpNormalDB or {}) do
-        local itemName = data.item_name
-        local itemLink = LNS.ItemLinks[itemID] or 'NULL'
-        local classes = data.item_classes or 'All'
-        local rule = data.item_rule or 'Ask'
-        if itemName then
-            stmt:bind_values(itemID, itemName, rule, classes, itemLink)
-            stmt:step()
-            stmt:reset()
-            LNS.NormalItemsRules[itemID] = rule
-            LNS.NormalItemsClasses[itemID] = classes
-            LNS.ItemNames[itemID] = itemName
-            if itemID > 0 then tmpNormalDB[itemID] = nil end
-        end
-    end
     stmt:finalize()
 
 
@@ -1240,9 +1236,7 @@ item_link = excluded.item_link
 
     -- update our missing tables
     LNS.GlobalItemsMissing = tmpGlobalDB or {}
-    LNS.NormalItemsMissing = tmpNormalDB or {}
     LNS.GlobalMissingNames = tmpNamesGlobal or {}
-    LNS.NormalMissingNames = tmpNamesNormal or {}
 end
 
 return LNS_DB
