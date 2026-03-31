@@ -1,0 +1,356 @@
+/* LootNScoot Documentation Stylesheet */
+
+/* Reset & Base */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    color: #333;
+    background: #f8f9fa;
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #2d2d2d;
+    color: #ccc;
+    padding: 1.5rem 0;
+    overflow-y: auto;
+    z-index: 100;
+}
+
+.sidebar h2 {
+    font-size: 1.2rem;
+    color: #fff;
+    padding: 0 1.25rem 1rem;
+    border-bottom: 1px solid #444;
+    margin-bottom: 0.75rem;
+}
+
+.sidebar ul {
+    list-style: none;
+}
+
+.sidebar li {
+    margin: 0;
+}
+
+.sidebar a {
+    display: block;
+    padding: 0.5rem 1.25rem;
+    color: #bbb;
+    text-decoration: none;
+    font-size: 0.95rem;
+    transition: background 0.15s, color 0.15s, border-left 0.15s;
+    border-left: 3px solid transparent;
+}
+
+.sidebar a:hover {
+    background: #3a3a3a;
+    color: #fff;
+    border-left-color: #6ea8fe;
+}
+
+.sidebar a.active {
+    background: #383838;
+    color: #fff;
+    border-left-color: #6ea8fe;
+    font-weight: 600;
+}
+
+/* Main Content */
+.content {
+    margin-left: 250px;
+    padding: 2.5rem 3rem;
+    max-width: 960px;
+    width: 100%;
+}
+
+/* Headers */
+h1 {
+    font-size: 2rem;
+    color: #1a1a1a;
+    border-bottom: 2px solid #dee2e6;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+h2 {
+    font-size: 1.5rem;
+    color: #222;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 0.4rem;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+
+h3 {
+    font-size: 1.2rem;
+    color: #333;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+h4 {
+    font-size: 1.05rem;
+    color: #444;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Paragraphs & Text */
+p {
+    margin-bottom: 1rem;
+}
+
+strong {
+    color: #1a1a1a;
+}
+
+/* Links */
+a {
+    color: #4a90d9;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #2a6cb8;
+    text-decoration: underline;
+}
+
+/* Code */
+code {
+    font-family: "Cascadia Code", "Fira Code", "Consolas", "Monaco", monospace;
+    font-size: 0.9em;
+    background: #e9ecef;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    color: #c7254e;
+}
+
+pre {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 1rem 1.25rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin-bottom: 1.25rem;
+    line-height: 1.5;
+}
+
+pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.88em;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+}
+
+th, td {
+    padding: 0.6rem 0.85rem;
+    text-align: left;
+    border: 1px solid #ddd;
+}
+
+th {
+    background: #e9ecef;
+    font-weight: 600;
+    color: #333;
+}
+
+tr:nth-child(even) {
+    background: #f5f5f5;
+}
+
+tr:hover {
+    background: #eef2f7;
+}
+
+/* Lists */
+ul, ol {
+    margin-bottom: 1rem;
+    padding-left: 1.5rem;
+}
+
+li {
+    margin-bottom: 0.35rem;
+}
+
+/* Diagram / ASCII art blocks */
+.diagram {
+    background: #1e1e1e;
+    color: #9cdcfe;
+    padding: 1rem 1.25rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin-bottom: 1.25rem;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 0.85em;
+    line-height: 1.4;
+    white-space: pre;
+}
+
+/* Info boxes */
+.note {
+    background: #e7f3ff;
+    border-left: 4px solid #4a90d9;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: 0 4px 4px 0;
+}
+
+.warning {
+    background: #fff8e1;
+    border-left: 4px solid #f0ad4e;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: 0 4px 4px 0;
+}
+
+.tip {
+    background: #e8f5e9;
+    border-left: 4px solid #4caf50;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: 0 4px 4px 0;
+}
+
+/* Quick links grid */
+.link-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.link-grid a {
+    display: block;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    text-decoration: none;
+    color: #333;
+    transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.link-grid a:hover {
+    border-color: #4a90d9;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    text-decoration: none;
+}
+
+.link-grid a strong {
+    display: block;
+    color: #4a90d9;
+    margin-bottom: 0.25rem;
+}
+
+/* Page navigation (bottom of page next/prev links) */
+.page-nav {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #dee2e6;
+    font-size: 0.95rem;
+}
+
+.page-nav a {
+    font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+    .sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        padding: 1rem 0;
+    }
+
+    .sidebar ul {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 0 1rem;
+    }
+
+    .sidebar li {
+        flex: 0 0 auto;
+    }
+
+    .sidebar a {
+        padding: 0.4rem 0.75rem;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+    }
+
+    .sidebar a:hover,
+    .sidebar a.active {
+        border-left: none;
+        border-bottom-color: #6ea8fe;
+    }
+
+    body {
+        flex-direction: column;
+    }
+
+    .content {
+        margin-left: 0;
+        padding: 1.5rem 1rem;
+    }
+}
+
+/* Print */
+@media print {
+    .sidebar {
+        display: none;
+    }
+
+    .content {
+        margin-left: 0;
+        max-width: 100%;
+    }
+
+    pre, .diagram {
+        background: #f5f5f5 !important;
+        color: #333 !important;
+        border: 1px solid #ccc;
+    }
+
+    a {
+        color: #333;
+    }
+
+    .content a::after {
+        content: " (" attr(href) ")";
+        font-size: 0.85em;
+        color: #666;
+    }
+
+    .link-grid a::after,
+    .page-nav a::after {
+        display: none;
+    }
+}

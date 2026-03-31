@@ -3194,18 +3194,46 @@ function LNS.lootCorpse(corpseID)
                 if not item then break end
                 local itemRule = item.itemRule
 
-                Logger.Debug(LNS.guiLoot.console, "\agLooting Corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
-                    item.ID, item.Index, itemRule, item.qKeep, item.newRule)
-
-                LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
-                if mq.TLO.Corpse.Item(item.Index)() then
-                    Logger.Debug(LNS.guiLoot.console, "\ayRetry looting corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
-                        item.ID, item.Index, itemRule, item.qKeep, item.newRule)
-                    LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
+                local skipItem = false
+                if string.find(itemRule, "Quest") then
+                    local onhand = (mq.TLO.FindItemCount(item.Name)() or 0) + (mq.TLO.FindItemBankCount(item.Name)() or 0)
+                    local qTarget = item.qKeep or settings.Settings.QuestKeep or 1
+                    if onhand >= qTarget then
+                        Logger.Info(LNS.guiLoot.console, "\aoQuest recheck\ax: Already have \ag%s\ax/\at%s\ax of \at%s\ax, skipping.", onhand, qTarget, item.Name)
+                        skipItem = true
+                    end
+                end
+                if not skipItem and item.mq_item and item.mq_item.Lore() then
+                    local countHave = (mq.TLO.FindItemCount(item.Name)() or 0) + (mq.TLO.FindItemBankCount(item.Name)() or 0)
+                    if countHave > 0 then
+                        Logger.Info(LNS.guiLoot.console, "\aoLore recheck\ax: Already have \at%s\ax, skipping.", item.Name)
+                        skipItem = true
+                    end
                 end
 
-                mq.delay(1)
-                if mq.TLO.Cursor() then LNS.checkCursor() end
+                if skipItem then
+                    if settings.Settings.TrackHistory then
+                        local allItemsEntry = LNS.insertIntoHistory(item.Name, corpseName, 'Left',
+                            os.date('%Y-%m-%d'), os.date('%H:%M:%S'), item.ItemLink, settings.MyName, LNS.Zone, allItems, not item.iCanUse, itemRule)
+                        if allItemsEntry and LNS.GetTableSize(allItemsEntry) > 0 then
+                            table.insert(allItems, allItemsEntry)
+                        end
+                    end
+                else
+                    Logger.Debug(LNS.guiLoot.console, "\agLooting Corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
+                        item.ID, item.Index, itemRule, item.qKeep, item.newRule)
+
+                    LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
+
+                    if mq.TLO.Corpse.Item(item.Index)() then
+                        Logger.Debug(LNS.guiLoot.console, "\ayRetry looting corpse:\ax itemID=\ao%s\ax, Slot: \ay%s\ax, Decision=\at%s\ax, qKeep=\ay%s\ax, newRule=\ag%s",
+                            item.ID, item.Index, itemRule, item.qKeep, item.newRule)
+                        LNS.lootItem(item.mq_item, item.Index, itemRule, 'leftmouseup', item.qKeep, not item.iCanUse)
+                    end
+
+                    mq.delay(1)
+                    if mq.TLO.Cursor() then LNS.checkCursor() end
+                end
                 if not mq.TLO.Window('LootWnd').Open() then
                     if itemIdx < #itemList then Logger.Warn(LNS.guiLoot.console, "\ayCorpse window closed unexpectedly before finishing looting, corpseID=%s", corpseID) end
                     break

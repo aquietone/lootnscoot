@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Character - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html" class="active">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+
+    <h1>Multi-Character Features</h1>
+
+    <h2>Overview</h2>
+    <p>
+        EverQuest players commonly run multiple characters ("boxing") on separate game clients
+        simultaneously. MacroQuest (MQ) provides an <strong>Actor system</strong> that allows Lua scripts
+        running in different MQ instances to send messages to each other. The actor system works across
+        the network between separate PCs and machines, not just between EQ instances on the same computer.
+    </p>
+    <div class="note">
+        <strong>Cross-machine setup:</strong> For actor communication between MQ instances running on
+        different PCs, network configuration may be required. You may need to add the IP addresses of
+        your other machines to the MQ configuration so that actor messages can be routed across the
+        network. Refer to your MacroQuest documentation for details on configuring cross-machine actor
+        connectivity.
+    </div>
+    <p>
+        LootNScoot uses the Actor system to coordinate looting across all your running characters.
+        When one character discovers a new item, sets a rule, changes a setting, or enters Master
+        Looter mode, that information is broadcast to every other instance of LootNScoot. The Actor
+        module lives in <code>modules/actor.lua</code>.
+    </p>
+
+    <h2>Actor Registration</h2>
+    <p>
+        When LootNScoot initializes, it calls <code>LNS_ACTORS.RegisterActors()</code>, which creates
+        a <strong>mailbox</strong> named <code>lootnscoot</code>:
+    </p>
+    <pre><code>function LNS_ACTORS.RegisterActors()
+    LNS_ACTORS.lootActor = Actors.register('lootnscoot', function(message)
+        local success, result = pcall(callback, message)
+        if not success then
+            Logger.Info(guiLoot.console,
+                string.format('Actor callback failed: %s', result))
+        end
+    end)
+end</code></pre>
+    <p>
+        <code>Actors.register()</code> comes from the <code>actors</code> MQ Lua library. It registers a
+        named mailbox and provides a callback function that is invoked whenever a message arrives. The
+        callback is wrapped in <code>pcall()</code> &mdash; Lua's <strong>protected call</strong>, which
+        runs a function inside an error handler. If the function throws an error, <code>pcall()</code>
+        catches it and returns <code>false</code> plus the error message, instead of crashing. This is
+        critical here because actor messages come from other processes: a malformed or unexpected message
+        should never take down the entire script. The error is logged and execution continues normally.
+    </p>
+    <p>
+        After registration, the script sends a <code>Hello</code> message to announce its presence:
+    </p>
+    <pre><code>actors.Send({ action = 'Hello', Server = settings.EqServer, who = settings.MyName, })</code></pre>
+
+    <h2>Message Format</h2>
+    <p>
+        Actor messages are plain Lua tables. When you call <code>LNS_ACTORS.Send(message)</code>, the
+        table is serialized, transmitted to other MQ instances, and deserialized on the receiving end.
+        The callback receives a callable object; calling <code>message()</code> extracts the Lua table.
+    </p>
+    <p>
+        Common fields found in LootNScoot actor messages:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>who</code></td><td>string</td><td>Character name of the sender.</td></tr>
+            <tr><td><code>action</code></td><td>string</td><td>The action identifier (see Action Reference below).</td></tr>
+            <tr><td><code>Server</code></td><td>string</td><td>EverQuest server name (spaces replaced with underscores). Used for filtering.</td></tr>
+            <tr><td><code>itemID</code></td><td>number</td><td>Database ID of the item.</td></tr>
+            <tr><td><code>item</code></td><td>string</td><td>Item name (the <code>item_name</code> or <code>item</code> field).</td></tr>
+            <tr><td><code>rule</code></td><td>string</td><td>The loot rule (Keep, Sell, Ignore, etc.).</td></tr>
+            <tr><td><code>section</code></td><td>string</td><td>Which rules table: <code>GlobalItems</code> or <code>PersonalItems</code>.</td></tr>
+            <tr><td><code>classes</code></td><td>string</td><td>Class restriction string (e.g., <code>"shm clr dru"</code> or <code>"All"</code>).</td></tr>
+            <tr><td><code>link</code></td><td>string</td><td>EverQuest item link string for in-game inspection.</td></tr>
+            <tr><td><code>settings</code></td><td>table</td><td>Full settings table (used in settings sync messages).</td></tr>
+            <tr><td><code>CorpseID</code></td><td>number</td><td>Spawn ID of the corpse (used in Master Looter messages).</td></tr>
+            <tr><td><code>Count</code></td><td>number</td><td>How many of an item the sender has (inventory + bank).</td></tr>
+        </tbody>
+    </table>
+
+    <div class="warning">
+        <strong>Warning:</strong> Every message includes a <code>Server</code> field. When a message
+        arrives, the callback checks whether <code>Server</code> matches the local
+        <code>settings.EqServer</code>. If it does not match (and is not <code>'NULL'</code>), the message
+        is silently discarded. This prevents cross-server interference when you have characters on
+        different servers running simultaneously.
+    </div>
+
+    <h2>Action Reference</h2>
+    <p>
+        The <code>action</code> field in each message determines what the receiver does with it. Here is
+        a complete reference of every action string the actor callback handles:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Action</th><th>Direction</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Hello</code></td>
+                <td>Broadcast</td>
+                <td>Character announces it is online. Triggers the receiver to send its settings back and add the sender to <code>LNS.BoxKeys</code> (the list of known characters).</td>
+            </tr>
+            <tr>
+                <td><code>sendsettings</code></td>
+                <td>Broadcast</td>
+                <td>Sends this character's full settings table to others. Sent via <code>SendMySettings()</code> after receiving a <code>Hello</code>, on init, and after setting changes.</td>
+            </tr>
+            <tr>
+                <td><code>updatesettings</code></td>
+                <td>Broadcast</td>
+                <td>Pushes updated settings to all characters. If the receiver's own name matches <code>who</code>, it applies the settings locally (used for remote setting changes from another character's UI).</td>
+            </tr>
+            <tr>
+                <td><code>addrule</code></td>
+                <td>Broadcast</td>
+                <td>A new loot rule was added for an item. Global rules are applied by all receivers; personal rules only by the matching character.</td>
+            </tr>
+            <tr>
+                <td><code>modifyitem</code></td>
+                <td>Broadcast</td>
+                <td>An existing item rule was changed. Same handling as <code>addrule</code>.</td>
+            </tr>
+            <tr>
+                <td><code>deleteitem</code></td>
+                <td>Broadcast</td>
+                <td>An item rule was deleted. The receiver removes it from their in-memory rule tables.</td>
+            </tr>
+            <tr>
+                <td><code>new</code></td>
+                <td>Broadcast</td>
+                <td>A new (previously unseen) item was found on a corpse. Other characters add it to their <code>LNS.NewItems</code> table and increment <code>NewItemsCount</code>. If <code>AutoShowNewItem</code> is enabled, the New Item popup opens.</td>
+            </tr>
+            <tr>
+                <td><code>check_item</code></td>
+                <td>Broadcast</td>
+                <td>Master Looter asks all characters to report how many of an item they own. Each receiver counts inventory + bank via <code>mq.TLO.FindItemCount()</code> and <code>mq.TLO.FindItemBankCount()</code>, then sends a response.</td>
+            </tr>
+            <tr>
+                <td><code>recheck_item</code></td>
+                <td>Broadcast</td>
+                <td>Re-requests item counts from all characters (used after the initial check to refresh stale data).</td>
+            </tr>
+            <tr>
+                <td><code>loot_item</code></td>
+                <td>Directed (to specific character)</td>
+                <td>Master Looter assigns an item to a specific character. The receiver adds the item to <code>settings.TempSettings.ItemsToLoot</code>, and the main loop processes it via <code>LootItemML()</code>.</td>
+            </tr>
+            <tr>
+                <td><code>item_gone</code></td>
+                <td>Broadcast</td>
+                <td>An item was looted from a corpse and is no longer available. Receivers remove it from their Master Loot list.</td>
+            </tr>
+            <tr>
+                <td><code>corpse_gone</code></td>
+                <td>Broadcast</td>
+                <td>A corpse has been fully looted or has despawned. Receivers remove the entire corpse entry from the Master Loot list.</td>
+            </tr>
+            <tr>
+                <td><code>master_looter</code></td>
+                <td>Broadcast</td>
+                <td>Toggles Master Looter mode on or off. Receivers update their <code>MasterLooting</code> setting to match.</td>
+            </tr>
+            <tr>
+                <td><code>share_personal_rule</code></td>
+                <td>Broadcast</td>
+                <td>Shares a personal item rule to other characters. Each receiver calls <code>setPersonalItem()</code> to save it in their own personal rules table.</td>
+            </tr>
+            <tr>
+                <td><code>share_buy_item</code></td>
+                <td>Broadcast</td>
+                <td>Shares a buy-item entry (for vendor restocking) to other characters. Receivers call <code>setBuyItem()</code>.</td>
+            </tr>
+            <tr>
+                <td><code>addsafezone</code></td>
+                <td>Broadcast</td>
+                <td>Adds a zone to the safe zone list (zones where looting is disabled). Receivers update <code>LNS.SafeZones</code>.</td>
+            </tr>
+            <tr>
+                <td><code>removesafezone</code></td>
+                <td>Broadcast</td>
+                <td>Removes a zone from the safe zone list.</td>
+            </tr>
+            <tr>
+                <td><code>updatewildcard</code></td>
+                <td>Broadcast</td>
+                <td>A wildcard rule was changed. Receivers set <code>NeedReloadWildCards</code> flag so the main loop reloads wildcard patterns.</td>
+            </tr>
+            <tr>
+                <td><code>reloadrules</code></td>
+                <td>Broadcast</td>
+                <td>Sent after a BulkSet operation. Contains the full updated rules, classes, and links tables. Receivers replace their in-memory rule tables entirely.</td>
+            </tr>
+            <tr>
+                <td><code>ItemsDB_UPDATE</code></td>
+                <td>Broadcast</td>
+                <td>Notifies other characters that the items database has been updated.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Directed Mode</h2>
+    <p>
+        In normal standalone operation, LootNScoot decides when to loot on its own. In <strong>Directed
+        Mode</strong>, another Lua script takes control and tells LootNScoot when to loot. This mode
+        exists because external scripts like RGMercs need precise control over looting timing &mdash;
+        for example, only looting between combat rounds, not while the healer is casting, or only after
+        all mobs in a pull are dead. Without directed mode, LootNScoot's automatic looting could
+        interrupt the controlling script's workflow at the wrong moment.
+    </p>
+
+    <h3>How It Works</h3>
+    <p>
+        To run LootNScoot in directed mode:
+    </p>
+    <pre><code>/lua run lootnscoot directed scriptname</code></pre>
+    <p>
+        This sets <code>LNS.Mode = 'directed'</code> and stores the directing script's name in
+        <code>LNS.DirectorScript</code>. In directed mode, LootNScoot does <em>not</em> loot automatically.
+        Instead, it waits for a <code>doloot</code> message from the director script. When looting finishes,
+        LootNScoot sends a <code>FinishedLooting()</code> response back.
+    </p>
+    <p>
+        The director script can also query and modify LootNScoot's settings remotely, and check
+        combat looting status. If the director script stops running (detected by checking
+        <code>mq.TLO.Lua.Script(DirectorScript).Status()</code>), LootNScoot terminates itself.
+    </p>
+
+    <h3>Directed Actions</h3>
+    <p>
+        Directed mode uses the <code>directions</code> field (instead of <code>action</code>) to distinguish
+        its messages from normal actor traffic:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Direction</th><th>Sender</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>doloot</code></td>
+                <td>Director &rarr; LNS</td>
+                <td>Tells LootNScoot to start a loot cycle. Sets <code>LNS.LootNow = true</code>. May include a <code>limit</code> field for max corpses.</td>
+            </tr>
+            <tr>
+                <td><code>setsetting_directed</code></td>
+                <td>Director &rarr; LNS</td>
+                <td>Updates settings: <code>CombatLooting</code>, <code>CorpseRadius</code>, <code>LootMyCorpse</code>, <code>IgnoreMyNearCorpses</code>.</td>
+            </tr>
+            <tr>
+                <td><code>combatlooting</code></td>
+                <td>Director &rarr; LNS</td>
+                <td>Same as <code>setsetting_directed</code> (handled by the same code path).</td>
+            </tr>
+            <tr>
+                <td><code>getsettings_directed</code></td>
+                <td>Director &rarr; LNS</td>
+                <td>Requests LNS to send its current settings back to the director via the <code>loot_module</code> mailbox.</td>
+            </tr>
+            <tr>
+                <td><code>getcombatsetting</code></td>
+                <td>Director &rarr; LNS</td>
+                <td>Same as <code>getsettings_directed</code> (handled by the same code path).</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        LootNScoot's responses back to the director include:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Subject</th><th>Sender</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>done_looting</code></td>
+                <td>LNS &rarr; Director</td>
+                <td>Sent by <code>FinishedLooting()</code> when the loot cycle completes.</td>
+            </tr>
+            <tr>
+                <td><code>processing</code></td>
+                <td>LNS &rarr; Director</td>
+                <td>Sent by <code>InformProcessing()</code> when LNS begins processing items (selling, tributing, etc.).</td>
+            </tr>
+            <tr>
+                <td><code>done_processing</code></td>
+                <td>LNS &rarr; Director</td>
+                <td>Sent by <code>DoneProcessing()</code> when item processing finishes.</td>
+            </tr>
+            <tr>
+                <td><code>mysetting</code></td>
+                <td>LNS &rarr; Director</td>
+                <td>Response to <code>getsettings_directed</code>, contains full settings and looted corpses list.</td>
+            </tr>
+            <tr>
+                <td><code>settings</code></td>
+                <td>LNS &rarr; Director</td>
+                <td>Sent on init and zone changes, includes combat/corpse settings.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Mailbox Targets</h3>
+    <p>
+        The <code>Send()</code> function routes messages to different mailboxes depending on the target:
+    </p>
+    <pre><code>function LNS_ACTORS.Send(message, mailbox)
+    message.Server = settings.EqServer
+    if mailbox == 'loot_module' then
+        LNS_ACTORS.lootActor:send(
+            { mailbox = mailbox, script = LNS.DirectorScript, }, message)
+    elseif mailbox == 'looted' then
+        LNS_ACTORS.lootActor:send(
+            { mailbox = mailbox, script = LNS.DirectorLNSPath or 'lootnscoot', }, message)
+    else
+        LNS_ACTORS.lootActor:send(
+            { mailbox = 'lootnscoot', script = LNS.DirectorLNSPath or 'lootnscoot', }, message)
+    end
+end</code></pre>
+    <table>
+        <thead>
+            <tr><th>Mailbox Param</th><th>Target Mailbox</th><th>Target Script</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>nil</code> (default)</td>
+                <td><code>lootnscoot</code></td>
+                <td><code>LNS.DirectorLNSPath</code> or <code>'lootnscoot'</code></td>
+                <td>Normal broadcast to all LootNScoot instances.</td>
+            </tr>
+            <tr>
+                <td><code>'loot_module'</code></td>
+                <td><code>loot_module</code></td>
+                <td><code>LNS.DirectorScript</code></td>
+                <td>Directed-mode responses back to the controlling script.</td>
+            </tr>
+            <tr>
+                <td><code>'looted'</code></td>
+                <td><code>looted</code></td>
+                <td><code>LNS.DirectorLNSPath</code> or <code>'lootnscoot'</code></td>
+                <td>Loot event notifications to the embedded version of the script.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Master Looter Mode</h2>
+    <p>
+        Master Looter mode allows one character to coordinate item distribution across the group.
+        Instead of each character independently deciding what to loot, the "master" sees all items
+        on corpses and manually assigns who gets what.
+    </p>
+
+    <h3>Workflow</h3>
+    <ol>
+        <li>
+            <strong>Item Discovery:</strong> When a character finds an item on a corpse,
+            <code>InsertMasterLootList()</code> adds it to the local <code>MasterLootList</code> data
+            structure and broadcasts a <code>check_item</code> message. This message includes the item
+            name, link, corpse ID, item value, NoDrop status, and the sender's own item count.
+        </li>
+        <li>
+            <strong>Count Response:</strong> Other characters receive <code>check_item</code>, count how
+            many of that item they own (using <code>mq.TLO.FindItemCount()</code> +
+            <code>mq.TLO.FindItemBankCount()</code>), and send their count back as another
+            <code>check_item</code> message. They also mark the corpse ID as looted to avoid re-looting.
+        </li>
+        <li>
+            <strong>UI Display:</strong> The Master Looter sees the
+            <a href="ui.html">Master Looter Window</a> (described on the User Interface page)
+            with all corpses, their items, and each character's count for each item.
+        </li>
+        <li>
+            <strong>Assignment:</strong> The Master clicks "Loot for [CharName]", which sends a
+            <code>loot_item</code> action to that specific character with the corpse ID and item name.
+        </li>
+        <li>
+            <strong>Pickup:</strong> The target character receives <code>loot_item</code>, adds the item to
+            <code>settings.TempSettings.ItemsToLoot</code>, and the main loop processes it by navigating
+            to the corpse and looting the specific item via <code>LootItemML()</code>.
+        </li>
+        <li>
+            <strong>Cleanup:</strong> When items are looted or corpses despawn, <code>item_gone</code> and
+            <code>corpse_gone</code> messages remove entries from everyone's Master Loot list.
+        </li>
+    </ol>
+
+    <h3>MasterLootList Structure</h3>
+    <p>
+        The <code>LNS.MasterLootList</code> is a nested Lua table with this structure:
+    </p>
+    <pre><code>MasterLootList[corpseID] = {
+    Items = {
+        ["Item Name"] = {
+            Link    = "item link string",
+            Value   = 1234,
+            NoDrop  = false,
+            Lore    = false,
+            Members = {
+                ["CharName1"] = 3,    -- has 3 of this item
+                ["CharName2"] = 0,    -- has 0
+                ["CharName3"] = 1,    -- has 1
+            },
+        },
+        ["Another Item"] = { ... },
+    },
+}</code></pre>
+    <p>
+        Each corpse is keyed by its spawn ID. Each item on that corpse tracks its link, value, flags,
+        and a <code>Members</code> subtable mapping character names to their inventory counts.
+    </p>
+
+    <div class="diagram">
+<pre>
+Master Looter Coordination Flow
+================================
+
+  Character A (Master)          Character B              Character C
+  =====================         ===========              ===========
+        |                            |                        |
+  [Finds item on corpse]            |                        |
+        |                            |                        |
+  InsertMasterLootList()            |                        |
+        |                            |                        |
+  ---&gt; check_item broadcast ------&gt; |                        |
+        |                      [counts items]                 |
+        |                            |                        |
+        |                      ---&gt; check_item (response) --&gt; |
+        |                            |                  [counts items]
+        |                            |                        |
+        | &lt;--- check_item (response) | &lt;--- check_item -------|
+        |                            |                        |
+  [UI shows all counts]             |                        |
+        |                            |                        |
+  [Master clicks                    |                        |
+   "Loot for B"]                    |                        |
+        |                            |                        |
+  ---&gt; loot_item (to B) ----------&gt; |                        |
+        |                      [adds to ItemsToLoot]         |
+        |                      [navigates to corpse]         |
+        |                      [loots item]                  |
+        |                            |                        |
+        | &lt;--- item_gone ----------- | ----&gt; item_gone ------&gt; |
+        |                            |                        |
+  [removes from ML list]            |              [removes from ML list]
+</pre>
+    </div>
+
+    <h2>Settings Synchronization</h2>
+    <p>
+        When a character starts up and sends a <code>Hello</code> message, other characters respond
+        by setting the <code>SendSettings</code> flag, which triggers <code>SendMySettings()</code> in the
+        main loop. This function packages the full <code>settings.Settings</code> table into a
+        <code>sendsettings</code> message:
+    </p>
+    <pre><code>function LNS_ACTORS.SendMySettings()
+    LNS.Boxes[settings.MyName] = settings.Settings
+    LNS_ACTORS.Send({
+        who             = settings.MyName,
+        action          = 'sendsettings',
+        settings        = settings.Settings,
+        CorpsesToIgnore = LNS.lootedCorpses or {},
+        CombatLooting   = settings.Settings.CombatLooting,
+        CorpseRadius    = settings.Settings.CorpseRadius,
+        LootMyCorpse    = settings.Settings.LootMyCorpse,
+        IgnoreNearby    = settings.Settings.IgnoreMyNearCorpses,
+        Server          = settings.EqServer,
+    })
+end</code></pre>
+    <p>
+        Received settings are stored in <code>LNS.Boxes[who]</code> (a table of character-name to
+        settings). The <a href="ui.html">Settings UI</a> can then display a dropdown of all known
+        characters and let you view or modify any character's settings. When you modify another
+        character's settings through the UI, an <code>updatesettings</code> message is sent, and
+        the target character applies the changes locally.
+    </p>
+
+    <div class="tip">
+        <strong>Tip:</strong> You can view and change any character's <a href="settings.html">settings</a>
+        remotely from any other character's <a href="ui.html">Settings UI</a>. Select the target character
+        from the Actor Selector dropdown. Changes are sent via the <code>updatesettings</code> actor message
+        and applied immediately on the target.
+    </div>
+
+    <h2 id="debug-mailbox">Debug Mailbox</h2>
+    <p>
+        The function <code>DebugMailBox()</code> renders an overlay window that displays all actor
+        messages in real time. It is enabled by:
+    </p>
+    <ul>
+        <li>Running <code>/lns debug on</code> which sets <code>LNS.debugPrint = true</code>.</li>
+        <li>Running <code>/lns mailbox</code> which toggles <code>settings.TempSettings.ShowMailbox</code>.</li>
+    </ul>
+    <p>
+        When debug mode is active, every incoming message is recorded in
+        <code>settings.TempSettings.MailBox</code> as a table with <code>Time</code>, <code>Subject</code>
+        (the action or direction string), and <code>Sender</code> fields. The mailbox viewer displays
+        these entries sorted by time (newest first), giving you a live view of all actor traffic.
+    </p>
+
+    <div class="note">
+        <strong>Note:</strong> The actor system tracks <strong>Messages Per Second (MPS)</strong>. The
+        callback measures time between messages and maintains a running average in
+        <code>settings.TempSettings.MPS</code>. After 10 seconds of inactivity, the counter resets.
+        This metric is useful for diagnosing performance issues when many characters are broadcasting
+        simultaneously.
+    </div>
+
+    <div class="diagram">
+<pre>
+Actor Message Flow (Standalone Mode)
+=====================================
+
+  LootNScoot Instance A              LootNScoot Instance B
+  ========================           ========================
+  modules/actor.lua                  modules/actor.lua
+  mailbox: "lootnscoot"              mailbox: "lootnscoot"
+       |                                  |
+       |  LNS_ACTORS.Send({              |
+       |    action = 'addrule',           |
+       |    itemID = 12345,               |
+       |    rule = 'Keep',                |
+       |    ...                           |
+       |  })                              |
+       |                                  |
+       |---[serialized Lua table]--------&gt;|
+       |                                  |
+       |                            callback(message)
+       |                              local m = message()
+       |                              -- check Server match
+       |                              -- handle action 'addrule'
+       |                              -- update in-memory rules
+       |                                  |
+
+
+  Directed Mode Message Flow
+  ===========================
+
+  Director Script (e.g. RGMercs)     LootNScoot (directed)
+  mailbox: "loot_module"             mailbox: "lootnscoot"
+       |                                  |
+       |---[doloot]----------------------&gt;|
+       |                            LNS.LootNow = true
+       |                            [loots corpses]
+       |                                  |
+       |&lt;--[done_looting]-----------------| via 'loot_module' mailbox
+       |                                  |
+       |---[getsettings_directed]--------&gt;|
+       |                                  |
+       |&lt;--[mysetting]-------------------| via 'loot_module' mailbox
+       |                                  |
+</pre>
+    </div>
+
+    <div class="page-nav">
+        <a href="ui.html">&larr; Prev: User Interface</a>
+        <a href="extending.html">Next: Modifying the Code &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

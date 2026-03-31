@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Layer - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html" class="active">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+    <h1>Database Layer</h1>
+
+    <h2>Overview</h2>
+    <p>
+        LootNScoot stores all persistent data in three separate SQLite database files. SQLite is
+        a lightweight, file-based relational database&mdash;no server process is needed. Each database
+        file lives on disk and is accessed directly by the Lua script.
+    </p>
+    <p>
+        The SQLite library is loaded via <code>require 'lsqlite3'</code> in db.lua. The
+        <code>init.lua</code> entry point uses <code>PackageMan.Require('lsqlite3')</code> to
+        ensure the package is installed first (<strong>PackageMan</strong> is MQ's built-in
+        package manager that automatically downloads and caches Lua libraries on first use).
+        All three databases are opened
+        with <strong>WAL (Write-Ahead Logging) journal mode</strong>:
+    </p>
+    <pre><code>db:exec("PRAGMA journal_mode=WAL;")</code></pre>
+    <p>
+        <strong>WAL mode</strong> is a SQLite configuration that separates reads from writes.
+        Instead of locking the entire database file during a write, changes are appended to a
+        separate log file. This is critical for LootNScoot because multiple EverQuest
+        characters (each running their own LootNScoot instance in a separate process) share
+        the same database files on disk. Without WAL, one character writing a rule would
+        block all others from reading. With WAL, readers and writers can operate
+        simultaneously. This is what makes <a href="multi-character.html">multi-character</a>
+        rule sharing work.
+    </p>
+    <p>
+        All three database files are stored under:
+    </p>
+    <pre><code>[MQ Resources]/LootNScoot/[ServerName]/</code></pre>
+    <p>
+        The paths are constructed in <code>modules/db.lua</code>:
+    </p>
+    <pre><code>LNS_DB.RulesDB   = resourceDir .. "/LootNScoot/" .. server .. "/AdvLootRules.db"
+LNS_DB.ItemsDB   = resourceDir .. "/LootNScoot/" .. server .. "/Items.db"
+LNS_DB.HistoryDB = resourceDir .. "/LootNScoot/" .. server .. "/LootHistory.db"</code></pre>
+
+    <h2>Items.db</h2>
+    <p>
+        The Items database stores detailed stat information about every item LootNScoot has
+        encountered. It serves as a local item catalog so the script can evaluate items
+        without querying the game client repeatedly.
+    </p>
+
+    <h3>Schema</h3>
+    <p>
+        The <code>Items</code> table has 60+ columns. Here are the key groups:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Column Group</th><th>Columns</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Identity</td>
+                <td><code>item_id</code> (INTEGER PRIMARY KEY), <code>name</code> (TEXT NOT NULL)</td>
+                <td>Unique game item ID and display name</td>
+            </tr>
+            <tr>
+                <td>Flags</td>
+                <td><code>nodrop</code>, <code>notrade</code>, <code>tradeskill</code>, <code>quest</code>, <code>lore</code>, <code>augment</code>, <code>stackable</code>, <code>collectible</code></td>
+                <td>Boolean flags (stored as INTEGER 0/1). Key flags: <strong>nodrop</strong> = item cannot be traded once looted; <strong>lore</strong> = only one copy can be held; <strong>tradeskill</strong> = used in crafting recipes</td>
+            </tr>
+            <tr>
+                <td>Value</td>
+                <td><code>sell_value</code>, <code>tribute_value</code></td>
+                <td>Vendor sell price (in copper) and tribute point value</td>
+            </tr>
+            <tr>
+                <td>Stacking</td>
+                <td><code>stack_size</code></td>
+                <td>Maximum stack size for stackable items</td>
+            </tr>
+            <tr>
+                <td>Core Stats</td>
+                <td><code>strength</code>, <code>dexterity</code>, <code>agility</code>, <code>stamina</code>, <code>intelligence</code>, <code>wisdom</code>, <code>charisma</code></td>
+                <td>Base character stat bonuses</td>
+            </tr>
+            <tr>
+                <td>Combat Stats</td>
+                <td><code>hp</code>, <code>mana</code>, <code>ac</code>, <code>attack</code>, <code>damage</code>, <code>haste</code>, <code>regen_hp</code>, <code>regen_mana</code>, <code>spelldamage</code>, <code>spellshield</code>, <code>strikethrough</code>, <code>item_range</code></td>
+                <td>Hit points, mana, armor class, and other combat values</td>
+            </tr>
+            <tr>
+                <td>Resists</td>
+                <td><code>svfire</code>, <code>svcold</code>, <code>svdisease</code>, <code>svpoison</code>, <code>svcorruption</code>, <code>svmagic</code></td>
+                <td>Resistance to various damage types</td>
+            </tr>
+            <tr>
+                <td>Heroic Stats</td>
+                <td><code>heroicstr</code>, <code>heroicdex</code>, <code>heroicagi</code>, <code>heroicsta</code>, <code>heroicint</code>, <code>heroicwis</code>, <code>heroiccha</code>, <code>heroicsv*</code></td>
+                <td>Heroic (enhanced) versions of base stats and resists</td>
+            </tr>
+            <tr>
+                <td>Restrictions</td>
+                <td><code>classes</code> (INTEGER bitmask), <code>class_list</code> (TEXT), <code>races</code> (INTEGER bitmask), <code>race_list</code> (TEXT)</td>
+                <td>Which classes and races can use the item</td>
+            </tr>
+            <tr>
+                <td>Physical</td>
+                <td><code>weight</code>, <code>item_size</code>, <code>weightreduction</code></td>
+                <td>Item weight (tenths of a unit), size category, bag weight reduction</td>
+            </tr>
+            <tr>
+                <td>Miscellaneous</td>
+                <td><code>clickable</code> (TEXT), <code>augtype</code>, <code>icon</code>, <code>link</code></td>
+                <td>Click effect name, augment type mask, display icon ID, item link string</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        Two indexes are created for fast lookups:
+    </p>
+    <pre><code>CREATE INDEX IF NOT EXISTS idx_item_name ON Items (name);
+CREATE INDEX IF NOT EXISTS idx_item_id ON Items (item_id);</code></pre>
+
+    <h3>Adding Items</h3>
+    <p>
+        When a new item is encountered (on a corpse, in a forage, etc.), the
+        <a href="looting-engine.html">looting engine</a> calls <code>LNS.addToItemDB(mq_item)</code>.
+        This function extracts all stats from the MQ item <strong>TLO</strong> (Top-Level
+        Object &mdash; MQ's read-only API for accessing game data, e.g.,
+        <code>mq_item.NoDrop()</code> returns whether the item is NoDrop) and populates
+        the <code>LNS.ALLITEMS</code> table in memory, then calls <code>db.AddItemToDB()</code>
+        to persist it.
+    </p>
+    <p>
+        <code>AddItemToDB()</code> uses the prepared statement <code>ADD_ITEM_TO_DB</code>,
+        which is an INSERT with an <code>ON CONFLICT(item_id) DO UPDATE</code> clause. This means
+        existing items are updated with the latest stats automatically.
+    </p>
+    <p>
+        The <code>LNS.addMyInventoryToDB()</code> function (triggered by <code>/lns importinv</code>)
+        bulk-imports every item in your inventory and bank into Items.db.
+    </p>
+
+    <h3>Querying</h3>
+    <p>
+        <code>LNS_DB.GetItemFromDB(itemName, itemID, query, useItemIDStmt)</code> retrieves item
+        data. When <code>useItemIDStmt</code> is true, it uses the prepared statement
+        <code>GET_ITEM_FROM_DB</code> for fast ID-based lookup. Otherwise, it prepares a custom
+        SQL query (for name-based or pattern searches).
+    </p>
+    <p>
+        <code>LNS_DB.FindItemInDB(query, param, maxResults)</code> is a more flexible search
+        that returns a table of matching items, limited to <code>maxResults</code> entries.
+    </p>
+
+    <h2>AdvLootRules.db</h2>
+    <p>
+        The rules database stores all loot decisions. It contains four tables that define how
+        items should be handled when encountered.
+    </p>
+
+    <h3>Global_Rules Table</h3>
+    <p>
+        The primary rules table, shared across all characters on the same server.
+    </p>
+    <pre><code>CREATE TABLE IF NOT EXISTS Global_Rules (
+    item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
+    item_name TEXT NOT NULL,
+    item_rule TEXT NOT NULL,
+    item_rule_classes TEXT,
+    item_link TEXT
+);</code></pre>
+    <table>
+        <thead>
+            <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>item_id</td><td>INTEGER (PK)</td><td>The unique game item ID. Negative IDs indicate items not yet found in Items.db.</td></tr>
+            <tr><td>item_name</td><td>TEXT</td><td>The item's display name.</td></tr>
+            <tr><td>item_rule</td><td>TEXT</td><td>The loot action: Keep, Sell, Bank, Ignore, Destroy, Quest, Quest|N, Tribute, Ask, CanUse.</td></tr>
+            <tr><td>item_rule_classes</td><td>TEXT</td><td>Comma-separated class short names (e.g., "WAR,PAL,SHD") or "All".</td></tr>
+            <tr><td>item_link</td><td>TEXT</td><td>The MQ item link string (clickable in-game) or "NULL".</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Personal Rules</h3>
+    <p>
+        Each character has their own personal rules table, named <code>[CharName]_Rules</code>.
+        The schema is identical to Global_Rules:
+    </p>
+    <pre><code>CREATE TABLE IF NOT EXISTS CharName_Rules (
+    item_id INTEGER PRIMARY KEY NOT NULL UNIQUE,
+    item_name TEXT NOT NULL,
+    item_rule TEXT NOT NULL,
+    item_rule_classes TEXT,
+    item_link TEXT
+);</code></pre>
+    <p>
+        Personal rules override global rules during <a href="rule-system.html">rule evaluation</a>.
+        This design allows individual characters to have different loot preferences for the
+        same item without modifying the shared Global rules. For example, a warrior might
+        set a Personal "Keep" rule for plate armor that other classes would "Sell".
+    </p>
+
+    <h3>WildCards Table</h3>
+    <pre><code>CREATE TABLE IF NOT EXISTS WildCards (
+    wildcard TEXT PRIMARY KEY NOT NULL UNIQUE,
+    rule TEXT NOT NULL
+);</code></pre>
+    <p>
+        Wildcard rules use Lua pattern matching (similar to regular expressions) to match item
+        names. For example, a wildcard of <code>"Spell: .*"</code> could match all spell scrolls.
+        Wildcards are loaded sorted by length (longest first) so more specific patterns take
+        priority over general ones.
+    </p>
+
+    <h3>SafeZones Table</h3>
+    <pre><code>CREATE TABLE IF NOT EXISTS SafeZones (
+    zone TEXT PRIMARY KEY NOT NULL UNIQUE
+);</code></pre>
+    <p>
+        Stores zone short names where looting is completely disabled. When your character enters
+        a safe zone, <code>lootMobs()</code> returns immediately without scanning for corpses.
+    </p>
+
+    <h3>Rule CRUD Operations</h3>
+    <p>
+        Rules are managed through several database functions:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Function</th><th>Operation</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>UpsertItemRule()</code></td>
+                <td>INSERT ... ON CONFLICT DO UPDATE</td>
+                <td>Creates a new rule or updates an existing one. Uses prepared statements <code>INSERT_RULE_GLOBAL</code> or <code>INSERT_RULE_PERSONAL</code>.</td>
+            </tr>
+            <tr>
+                <td><code>DeleteItemRule()</code></td>
+                <td>DELETE FROM ... WHERE item_id = ?</td>
+                <td>Removes a rule entirely from the specified table.</td>
+            </tr>
+            <tr>
+                <td><code>BulkSet()</code></td>
+                <td>Batch INSERT/DELETE in a transaction</td>
+                <td>Applies a rule change to many items at once. Wraps all operations in BEGIN/COMMIT. Sends actor message to notify other characters.</td>
+            </tr>
+            <tr>
+                <td><code>CheckRulesDB()</code></td>
+                <td>SELECT</td>
+                <td>Checks if a rule exists for a given item ID. Returns found status, rule, classes, and link.</td>
+            </tr>
+            <tr>
+                <td><code>AddWildCard()</code> / <code>DeleteWildCard()</code></td>
+                <td>INSERT OR REPLACE / DELETE</td>
+                <td>Manages wildcard pattern rules. Sends actor messages to sync across characters.</td>
+            </tr>
+            <tr>
+                <td><code>AddSafeZone()</code> / <code>RemoveSafeZone()</code></td>
+                <td>INSERT OR IGNORE / DELETE</td>
+                <td>Manages the safe zone list.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Importing</h3>
+    <p>
+        <code>LNS_DB.ImportOldRulesDB(path)</code> imports rules from a different AdvLootRules.db
+        file (e.g., from a backup or another server). It reads both Global_Rules and Normal_Rules
+        from the source, resolves item IDs against the local Items.db where possible, and inserts
+        them into the current Global_Rules table using upsert.
+    </p>
+    <p>
+        <code>LNS_DB.MigrateNormalToGlobal()</code> is a one-time migration that moves any
+        entries from a legacy <code>Normal_Rules</code> table into <code>Global_Rules</code>.
+        Global rules win on ID conflicts. After migration, <code>Normal_Rules</code> is dropped.
+    </p>
+
+    <h2>LootHistory.db</h2>
+    <p>
+        The history database records every looting action taken, providing an audit trail and
+        enabling the loot report feature.
+    </p>
+
+    <h3>Schema</h3>
+    <pre><code>CREATE TABLE IF NOT EXISTS LootHistory (
+    "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+    "Item" TEXT NOT NULL,
+    "CorpseName" TEXT NOT NULL,
+    "Action" TEXT NOT NULL,
+    "Date" TEXT NOT NULL,
+    "TimeStamp" TEXT NOT NULL,
+    "Link" TEXT NOT NULL,
+    "Looter" TEXT NOT NULL,
+    "Zone" TEXT NOT NULL
+);</code></pre>
+    <table>
+        <thead>
+            <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>id</td><td>INTEGER (auto)</td><td>Auto-incrementing row ID</td></tr>
+            <tr><td>Item</td><td>TEXT</td><td>Item name</td></tr>
+            <tr><td>CorpseName</td><td>TEXT</td><td>Name of the corpse it came from</td></tr>
+            <tr><td>Action</td><td>TEXT</td><td>What was done: "Global Keep", "Personal Sell", "Left", "Ask", "Destroyed", etc.</td></tr>
+            <tr><td>Date</td><td>TEXT</td><td>Date string in YYYY-MM-DD format</td></tr>
+            <tr><td>TimeStamp</td><td>TEXT</td><td>Time string in HH:MM:SS format</td></tr>
+            <tr><td>Link</td><td>TEXT</td><td>MQ item link (clickable)</td></tr>
+            <tr><td>Looter</td><td>TEXT</td><td>Character name who performed the action</td></tr>
+            <tr><td>Zone</td><td>TEXT</td><td>Zone short name where the action occurred</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Querying</h3>
+    <table>
+        <thead>
+            <tr><th>Function</th><th>Query</th><th>Returns</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>LoadHistoricalData()</code></td>
+                <td><code>SELECT DISTINCT Date FROM LootHistory ORDER BY Date DESC</code></td>
+                <td>List of all dates that have loot records</td>
+            </tr>
+            <tr>
+                <td><code>LoadDateHistory(date)</code></td>
+                <td><code>SELECT * FROM LootHistory WHERE Date = ?</code></td>
+                <td>All loot records for a specific date</td>
+            </tr>
+            <tr>
+                <td><code>LoadItemHistory(name)</code></td>
+                <td><code>SELECT * FROM LootHistory WHERE Item LIKE ?</code></td>
+                <td>All loot records matching an item name (supports partial matches)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Deduplication</h3>
+    <p>
+        <code>LNS_DB.CheckHistory(itemName, corpseName, action, date, timestamp)</code> prevents
+        duplicate entries by checking if the same item/corpse/action combination was recorded
+        within the last 60 seconds. It compares timestamps by converting HH:MM:SS to total
+        seconds. If the time difference is 60 seconds or less, the insert is skipped.
+    </p>
+
+    <h2>Prepared Statements</h2>
+    <p>
+        <code>LNS_DB.PrepareStatements()</code> pre-compiles frequently used SQL queries into
+        prepared statements at startup. Prepared statements are faster than compiling SQL on
+        every execution because the database engine parses and optimizes the query once, then
+        reuses the execution plan. Parameters are bound with <code>:bind_values()</code>.
+    </p>
+    <div class="tip">
+        If you add new database queries when
+        <a href="extending.html">modifying the code</a>, follow the existing pattern: define
+        the SQL string, prepare it in <code>PrepareStatements()</code>, and use
+        <code>:bind_values()</code> with <code>:step()</code> / <code>:reset()</code> at
+        call sites. Never concatenate user input into SQL strings directly &mdash; always
+        use parameter binding.
+    </div>
+    <table>
+        <thead>
+            <tr><th>Statement Name</th><th>Database</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>ADD_ITEM_TO_DB</code></td><td>Items.db</td><td>Upsert an item with all 61 stat columns</td></tr>
+            <tr><td><code>GET_ITEM_FROM_DB</code></td><td>Items.db</td><td>Look up an item by ID</td></tr>
+            <tr><td><code>CHECK_HISTORY</code></td><td>LootHistory.db</td><td>Check for recent duplicate history entry</td></tr>
+            <tr><td><code>INSERT_HISTORY</code></td><td>LootHistory.db</td><td>Insert a new loot history record</td></tr>
+            <tr><td><code>INSERT_RULE_GLOBAL</code></td><td>AdvLootRules.db</td><td>Upsert a rule into Global_Rules</td></tr>
+            <tr><td><code>INSERT_RULE_PERSONAL</code></td><td>AdvLootRules.db</td><td>Upsert a rule into [CharName]_Rules</td></tr>
+            <tr><td><code>CHECK_DB_GLOBAL</code></td><td>AdvLootRules.db</td><td>Look up a rule from Global_Rules by item ID</td></tr>
+            <tr><td><code>CHECK_DB_PERSONAL</code></td><td>AdvLootRules.db</td><td>Look up a rule from personal rules by item ID</td></tr>
+            <tr><td><code>GET_ITEM_LINK_GLOBAL</code></td><td>AdvLootRules.db</td><td>Get the item link from Global_Rules</td></tr>
+            <tr><td><code>GET_ITEM_LINK_PERSONAL</code></td><td>AdvLootRules.db</td><td>Get the item link from personal rules</td></tr>
+            <tr><td><code>UPDATE_RULE_LINK_GLOBAL</code></td><td>AdvLootRules.db</td><td>Update an item link in Global_Rules</td></tr>
+            <tr><td><code>UPDATE_RULE_LINK_PERSONAL</code></td><td>AdvLootRules.db</td><td>Update an item link in personal rules</td></tr>
+        </tbody>
+    </table>
+
+    <h2>Lua-Side Caching</h2>
+    <p>
+        While the SQLite databases are the source of truth, LootNScoot maintains several Lua tables
+        in memory for fast access during the <a href="looting-engine.html">looting loop</a>
+        (where speed matters most). This avoids issuing a SQL query for every item on every
+        corpse &mdash; a Lua table lookup by key is effectively instant, while a database
+        query involves disk I/O and SQL parsing overhead. The
+        <a href="rule-system.html">rule priority chain</a> checks these caches first (steps
+        1-2) and only falls back to the database (steps 3-4) for items not yet cached:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Cache Table</th><th>Source</th><th>Contents</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>LNS.GlobalItemsRules</code></td><td>Global_Rules</td><td>Map of item_id to rule string</td></tr>
+            <tr><td><code>LNS.GlobalItemsClasses</code></td><td>Global_Rules</td><td>Map of item_id to classes string</td></tr>
+            <tr><td><code>LNS.PersonalItemsRules</code></td><td>[CharName]_Rules</td><td>Map of item_id to rule string</td></tr>
+            <tr><td><code>LNS.PersonalItemsClasses</code></td><td>[CharName]_Rules</td><td>Map of item_id to classes string</td></tr>
+            <tr><td><code>LNS.ItemLinks</code></td><td>Both rule tables</td><td>Map of item_id to item link string</td></tr>
+            <tr><td><code>LNS.ItemNames</code></td><td>Both rule tables + Items.db</td><td>Map of item_id to item name</td></tr>
+            <tr><td><code>LNS.ItemIcons</code></td><td>Items.db</td><td>Map of item_id to icon ID</td></tr>
+            <tr><td><code>LNS.ALLITEMS</code></td><td>Items.db</td><td>Full item data objects keyed by item_id</td></tr>
+            <tr><td><code>LNS.WildCards</code></td><td>WildCards table</td><td>Ordered list of {wildcard, rule} pairs</td></tr>
+            <tr><td><code>LNS.SafeZones</code></td><td>SafeZones table</td><td>Set of zone names (zone = true)</td></tr>
+        </tbody>
+    </table>
+    <p>
+        Caches are populated at startup by <code>LNS_DB.LoadRuleDB()</code> and updated whenever
+        rules change (via <code>addRule()</code>, <code>setGlobalItem()</code>, <code>setPersonalItem()</code>,
+        or <code>BulkSet()</code>). The database is always written first, then the cache is updated
+        to match.
+    </p>
+
+    <h2>Entity Relationship Diagram</h2>
+    <div class="diagram">
+<pre>
++========================+
+|      Items.db          |
++========================+
+| Items                  |
+|------------------------|
+| item_id (PK)           |
+| name                   |
+| nodrop, notrade, ...   |
+| sell_value             |
+| tribute_value          |
+| strength, hp, ac, ...  |
+| classes, class_list    |
+| icon, link             |
+| (60+ columns total)    |
++========================+
+
+
++===================================+
+|        AdvLootRules.db            |
++===================================+
+|                                   |
+| Global_Rules                      |     CharName_Rules
+| +-----------+----------+         |     +-----------+----------+
+| | item_id   | PK       |         |     | item_id   | PK       |
+| | item_name | TEXT     |         |     | item_name | TEXT     |
+| | item_rule | TEXT     |         |     | item_rule | TEXT     |
+| | item_rule_classes    |         |     | item_rule_classes    |
+| | item_link | TEXT     |         |     | item_link | TEXT     |
+| +-----------------------+         |     +-----------------------+
+|                                   |
+| WildCards                         |     SafeZones
+| +----------+---------+           |     +------+---------+
+| | wildcard | PK TEXT |           |     | zone | PK TEXT |
+| | rule     | TEXT    |           |     +------+---------+
+| +----------+---------+           |
++===================================+
+
+
++========================+
+|    LootHistory.db      |
++========================+
+| LootHistory            |
+|------------------------|
+| id (PK, AUTOINCREMENT) |
+| Item                   |
+| CorpseName             |
+| Action                 |
+| Date (YYYY-MM-DD)      |
+| TimeStamp (HH:MM:SS)   |
+| Link                   |
+| Looter                 |
+| Zone                   |
++========================+
+</pre>
+    </div>
+
+    <div class="note">
+        <strong>Note:</strong> The upsert pattern (<code>INSERT ... ON CONFLICT(item_id) DO UPDATE SET ...</code>)
+        is used throughout the database layer. This means you never need to check whether a row
+        exists before writing&mdash;the database handles it atomically. If the item_id already
+        exists, the row is updated; if not, a new row is inserted.
+    </div>
+
+    <div class="warning">
+        <strong>Warning:</strong> Items that have rules but are not yet in Items.db are assigned
+        <strong>negative IDs</strong>. These are temporary placeholders generated by
+        <code>GetLowestID()</code>, which finds the current minimum ID in the table and subtracts 1.
+        When the actual item is later encountered in-game, the rule can be resolved to the real
+        positive ID. Negative-ID items are tracked in <code>LNS.GlobalItemsMissing</code> and
+        <code>LNS.GlobalMissingNames</code>.
+    </div>
+
+    <div class="page-nav">
+        <a href="looting-engine.html">&larr; Prev: Looting Engine</a>
+        <a href="settings.html">Next: Settings Reference &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

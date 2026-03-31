@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLI Commands - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html" class="active">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+    <h1>CLI Commands</h1>
+
+    <h2>Overview</h2>
+    <p>
+        LootNScoot registers two command binds that both call the same handler function,
+        <code>LNS.commandHandler()</code>. <code>mq.bind()</code> is a MacroQuest (MQ) function
+        that registers a slash command so that typing it in the MQ console (or from a macro)
+        runs a Lua function:
+    </p>
+    <pre><code>mq.bind('/lootutils', LNS.commandHandler)
+mq.bind('/lns', LNS.commandHandler)</code></pre>
+    <p>
+        You can use either <code>/lns</code> or <code>/lootutils</code> interchangeably in the
+        MQ console or from macros. All examples on this page use <code>/lns</code> for brevity.
+    </p>
+    <p>
+        Commands are parsed by splitting the input string into an <code>args</code> table.
+        The first argument determines the command, and subsequent arguments provide parameters.
+        Quoted strings are treated as a single argument (e.g., <code>/lns sell "Rusty Sword"</code>
+        passes <code>"Rusty Sword"</code> as one argument).
+    </p>
+
+    <h2>Quick Action Commands</h2>
+    <p>
+        These commands trigger immediate actions. They are single-word commands with no additional
+        arguments required.
+    </p>
+    <table>
+        <thead>
+            <tr><th>Command</th><th>Description</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>loot</code></td>
+                <td>Trigger an immediate looting cycle. Scans for corpses within range and loots up to <code>MaxCorpsesPerCycle</code> corpses. See <a href="looting-engine.html">Looting Engine</a>.</td>
+                <td><code>/lns loot</code></td>
+            </tr>
+            <tr>
+                <td><code>sellstuff</code></td>
+                <td>Sell all items in your inventory that have a "Sell" rule. Requires targeting a merchant NPC. Reports profit when done.</td>
+                <td><code>/lns sellstuff</code></td>
+            </tr>
+            <tr>
+                <td><code>bankstuff</code></td>
+                <td>Bank all items in your inventory that have a "Bank" rule. Requires targeting a Banker NPC.</td>
+                <td><code>/lns bankstuff</code></td>
+            </tr>
+            <tr>
+                <td><code>tributestuff</code></td>
+                <td>Tribute all items in your inventory that have a "Tribute" rule. Requires targeting a Tribute Master NPC.</td>
+                <td><code>/lns tributestuff</code></td>
+            </tr>
+            <tr>
+                <td><code>cleanup</code></td>
+                <td>Destroy all items in your inventory that have a "Destroy" rule. Requires the <a href="settings.html">DoDestroy</a> setting to be enabled.</td>
+                <td><code>/lns cleanup</code></td>
+            </tr>
+            <tr>
+                <td><code>restock</code></td>
+                <td>Buy items from the <a href="settings.html#BuyItemsTable">BuyItemsTable</a>. Requires targeting a merchant who sells the items.</td>
+                <td><code>/lns restock</code></td>
+            </tr>
+            <tr>
+                <td><code>pause</code></td>
+                <td>Pause automatic looting. Sets <code>LNS.PauseLooting = true</code>.</td>
+                <td><code>/lns pause</code></td>
+            </tr>
+            <tr>
+                <td><code>unpause</code> / <code>resume</code></td>
+                <td>Resume automatic looting. Sets <code>LNS.PauseLooting = false</code>. Both words do the same thing.</td>
+                <td><code>/lns unpause</code></td>
+            </tr>
+            <tr>
+                <td><code>corpsereset</code></td>
+                <td>Clear the looted corpse tracking list (<code>LNS.lootedCorpses</code>). Useful when <code>CheckCorpseOnce</code> is on and you want to re-loot corpses you already visited.</td>
+                <td><code>/lns corpsereset</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Rule Commands</h2>
+    <p>
+        Rule commands let you set loot rules for items. There are several ways to specify which
+        item you mean and whether the rule applies globally (all characters) or personally
+        (this character only).
+    </p>
+    <p>
+        <strong>Valid rule actions:</strong> <code>ask</code>, <code>keep</code>, <code>bank</code>,
+        <code>sell</code>, <code>ignore</code>, <code>destroy</code>, <code>quest</code>,
+        <code>tribute</code>, <code>canuse</code>. These are case-insensitive on input but stored
+        in proper case (e.g., "Keep", "Sell").
+    </p>
+
+    <h3>Quick Rule (Cursor Item)</h3>
+    <p>
+        The fastest way to set a rule: put an item on your cursor (by picking it up from inventory),
+        then type the action as a single command. The rule is applied to the Global_Rules table.
+    </p>
+    <table>
+        <thead>
+            <tr><th>Command</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>/lns keep</code></td><td>Mark cursor item as "Keep" globally</td></tr>
+            <tr><td><code>/lns sell</code></td><td>Mark cursor item as "Sell" globally</td></tr>
+            <tr><td><code>/lns bank</code></td><td>Mark cursor item as "Bank" globally</td></tr>
+            <tr><td><code>/lns ignore</code></td><td>Mark cursor item as "Ignore" globally</td></tr>
+            <tr><td><code>/lns destroy</code></td><td>Mark cursor item as "Destroy" globally</td></tr>
+            <tr><td><code>/lns tribute</code></td><td>Mark cursor item as "Tribute" globally</td></tr>
+            <tr><td><code>/lns canuse</code></td><td>Mark cursor item as "CanUse" globally</td></tr>
+            <tr><td><code>/lns ask</code></td><td>Mark cursor item as "Ask" globally</td></tr>
+        </tbody>
+    </table>
+
+    <div class="tip">
+        <strong>Tip:</strong> Putting an item on your cursor is the quickest way to set rules.
+        Pick up the item, type <code>/lns sell</code>, and the rule is saved immediately using
+        the item's actual game ID and item link.
+    </div>
+
+    <h3>Quest Format</h3>
+    <p>
+        For quest items where you want to keep a specific quantity, use the pipe syntax with
+        the item on your cursor:
+    </p>
+    <pre><code>/lns quest|5</code></pre>
+    <p>
+        This marks the cursor item as "Quest|5", meaning LootNScoot will loot it until you have
+        5 total (inventory + bank). The number after the pipe is the desired count. If no number
+        is provided, the <a href="settings.html">QuestKeep</a> default (10) is used.
+    </p>
+
+    <h3>Rule by Name</h3>
+    <p>
+        You can set rules for items by name without having the item on cursor. The item must
+        exist in the <a href="database.html">Items.db</a> database:
+    </p>
+    <pre><code>/lns sell "Rusty Sword"
+/lns keep "Bone Chips"
+/lns ignore "Bat Wing"</code></pre>
+    <p>
+        The script resolves the item name to an ID using <code>resolveItemIDbyName()</code>.
+        If the item is found, the rule is applied to Global_Rules. If not found, it is logged
+        as a warning.
+    </p>
+
+    <h3>Global vs Personal</h3>
+    <p>
+        By default, rules set via the quick methods above go into Global_Rules (shared across
+        all characters on the server). To explicitly control which table a rule goes into,
+        use the <code>globalitem</code>, <code>normalitem</code>, or <code>personalitem</code>
+        prefixes:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Command</th><th>Table</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>globalitem</code></td>
+                <td>Global_Rules</td>
+                <td><code>/lns globalitem keep "Fire Opal"</code></td>
+            </tr>
+            <tr>
+                <td><code>normalitem</code></td>
+                <td>Global_Rules (alias)</td>
+                <td><code>/lns normalitem sell "Bat Wing"</code></td>
+            </tr>
+            <tr>
+                <td><code>personalitem</code></td>
+                <td>[CharName]_Rules</td>
+                <td><code>/lns personalitem ignore "Rusty Sword"</code></td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        <code>normalitem</code> and <code>globalitem</code> are functionally identical&mdash;both
+        write to Global_Rules. These commands also work with the item on cursor (omit the item name)
+        or with a quoted item name.
+    </p>
+    <p>
+        Quest format works with these prefixes too:
+    </p>
+    <pre><code>/lns globalitem quest "Bone Chips" 20
+/lns personalitem quest "Fire Beetle Eye" 10</code></pre>
+    <p>
+        If the item is not found in Items.db, a rule is still created with a temporary negative
+        ID (see <a href="database.html">Database Layer</a> for details on negative IDs).
+    </p>
+
+    <h2>Configuration Commands</h2>
+    <p>
+        These commands let you view and change <a href="settings.html">settings</a> from the
+        command line.
+    </p>
+    <table>
+        <thead>
+            <tr><th>Command</th><th>Description</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>set &lt;name&gt; &lt;value&gt;</code></td>
+                <td>Change a setting. The name is case-insensitive (uses <a href="settings.html">SettingsEnum</a> for lookup). Boolean settings use <code>on</code> to enable (any other value, including <code>off</code>, disables). Number settings accept any numeric value. String settings accept any string.</td>
+                <td><code>/lns set doloot on</code><br><code>/lns set corpseradius 150</code><br><code>/lns set lootchannel dgt</code></td>
+            </tr>
+            <tr>
+                <td><code>config</code></td>
+                <td>Print all current setting names and values to the MQ console. Non-table, non-function settings are shown.</td>
+                <td><code>/lns config</code></td>
+            </tr>
+            <tr>
+                <td><code>reload</code></td>
+                <td>Reload settings from disk and refresh the UI. Useful after manually editing the settings file.</td>
+                <td><code>/lns reload</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Buy Item Commands</h2>
+    <p>
+        These commands manage the BuyItemsTable, which lists items to automatically purchase
+        from vendors during restocking.
+    </p>
+    <table>
+        <thead>
+            <tr><th>Command</th><th>Description</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>buy</code> (with cursor item)</td>
+                <td>Add the item currently on your cursor to the buy list with quantity 1.</td>
+                <td>Pick up item, then: <code>/lns buy</code></td>
+            </tr>
+            <tr>
+                <td><code>buy &lt;qty&gt;</code> (with cursor item)</td>
+                <td>Add the cursor item with the specified quantity.</td>
+                <td>Pick up item, then: <code>/lns buy 20</code></td>
+            </tr>
+            <tr>
+                <td><code>buy "&lt;name&gt;"</code></td>
+                <td>Add an item by name with quantity 1.</td>
+                <td><code>/lns buy "Bone Chips"</code></td>
+            </tr>
+            <tr>
+                <td><code>buy "&lt;name&gt;" &lt;qty&gt;</code></td>
+                <td>Add an item by name with the specified quantity.</td>
+                <td><code>/lns buy "Bone Chips" 100</code></td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        After adding a buy item, the settings are automatically saved to disk. To actually
+        purchase the items, use <code>/lns restock</code> while targeting a merchant, or
+        enable <code>AutoRestock</code> to buy automatically after selling.
+    </p>
+
+    <h2>UI Commands</h2>
+    <p>
+        These commands control the various windows and display options.
+    </p>
+    <table>
+        <thead>
+            <tr><th>Command</th><th>Description</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>show</code></td>
+                <td>Toggle the main LootNScoot UI window.</td>
+                <td><code>/lns show</code></td>
+            </tr>
+            <tr>
+                <td><code>gui</code> / <code>console</code></td>
+                <td>Toggle the loot console window (shows looting activity log).</td>
+                <td><code>/lns gui</code></td>
+            </tr>
+            <tr>
+                <td><code>report</code></td>
+                <td>Generate and display a loot report in the console.</td>
+                <td><code>/lns report</code></td>
+            </tr>
+            <tr>
+                <td><code>shownew</code> / <code>newitems</code></td>
+                <td>Toggle the new item notification display.</td>
+                <td><code>/lns shownew</code></td>
+            </tr>
+            <tr>
+                <td><code>hidenames</code></td>
+                <td>Toggle hiding character names in the looted items window (shows class abbreviations instead).</td>
+                <td><code>/lns hidenames</code></td>
+            </tr>
+            <tr>
+                <td><code>help</code></td>
+                <td>Open the in-game help window.</td>
+                <td><code>/lns help</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Utility Commands</h2>
+    <table>
+        <thead>
+            <tr><th>Command</th><th>Description</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>find &lt;name or ID&gt;</code></td>
+                <td>Search the <a href="database.html">Items.db</a> for an item by name (string) or by ID (number). Displays matching results in the console.</td>
+                <td><code>/lns find "Rusty Sword"</code><br><code>/lns find 12345</code></td>
+            </tr>
+            <tr>
+                <td><code>lowest</code></td>
+                <td>Display the lowest item ID currently in Global_Rules. Useful for debugging negative ID assignments.</td>
+                <td><code>/lns lowest</code></td>
+            </tr>
+            <tr>
+                <td><code>importinv</code></td>
+                <td>Import all items from your current inventory and bank into Items.db. Useful for populating the database.</td>
+                <td><code>/lns importinv</code></td>
+            </tr>
+            <tr>
+                <td><code>importold</code></td>
+                <td>Open the import dialog to import rules from a different AdvLootRules.db file (e.g., from a backup or another server).</td>
+                <td><code>/lns importold</code></td>
+            </tr>
+            <tr>
+                <td><code>tsbank</code></td>
+                <td>Mark all tradeskill items currently in your bags as "Bank" in Global_Rules.</td>
+                <td><code>/lns tsbank</code></td>
+            </tr>
+            <tr>
+                <td><code>debug [on|off]</code></td>
+                <td>Toggle debug output. With no argument, toggles the current state. With <code>on</code> or <code>off</code>, explicitly sets it.</td>
+                <td><code>/lns debug</code><br><code>/lns debug on</code></td>
+            </tr>
+            <tr>
+                <td><code>quit</code> / <code>exit</code></td>
+                <td>Stop the LootNScoot script. Sends a notification to all group members via DanNet and sets <code>LNS.Terminate = true</code>.</td>
+                <td><code>/lns quit</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Startup Arguments</h2>
+    <p>
+        LootNScoot accepts an argument when launched via <code>/lua run</code> (the MQ command
+        that starts a Lua script). The argument determines the operating mode:
+    </p>
+    <pre><code>/lua run lootnscoot [mode]</code></pre>
+    <table>
+        <thead>
+            <tr><th>Argument</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>standalone</code></td>
+                <td>Run as an independent script with its own main loop. Loots automatically on a timer. This is the normal user-facing mode.</td>
+            </tr>
+            <tr>
+                <td><code>directed &lt;script&gt; [path]</code></td>
+                <td>Run as a library controlled by another script (e.g., RGMercs). Looting only happens when the directing script sets <code>LNS.LootNow = true</code>. This mode exists because external automation frameworks need to control <em>when</em> looting occurs &mdash; for example, RGMercs only wants to loot between combat rounds, not during healing. See <a href="multi-character.html">Multi-Character</a> for details on directed-mode messaging.</td>
+            </tr>
+            <tr>
+                <td><code>once</code></td>
+                <td>Perform a single looting cycle and then stop. Equivalent to calling <code>lootMobs()</code> once.</td>
+            </tr>
+            <tr>
+                <td><code>sellstuff</code></td>
+                <td>Run <code>processItems('Sell')</code> and exit. Requires a merchant to be targeted.</td>
+            </tr>
+            <tr>
+                <td><code>bankstuff</code></td>
+                <td>Run <code>processItems('Bank')</code> and exit. Requires a banker to be targeted.</td>
+            </tr>
+            <tr>
+                <td><code>tributestuff</code></td>
+                <td>Run <code>processItems('Tribute')</code> and exit. Requires a tribute master to be targeted.</td>
+            </tr>
+            <tr>
+                <td><code>cleanup</code></td>
+                <td>Set the <code>NeedsCleanup</code> flag for destroy-marked items to be processed.</td>
+            </tr>
+            <tr>
+                <td><code>restock</code></td>
+                <td>Run <code>processItems('Buy')</code> and exit. Requires a merchant to be targeted.</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        If no argument is provided, the script runs in <strong>once</strong> mode &mdash; it
+        performs initial setup (PackageMan installs, database and config directory creation)
+        and then exits without entering the continuous main loop. This is the
+        <strong>preferred first-run method</strong> on a single character to avoid race
+        conditions during setup. After that, use <code>standalone</code> for persistent
+        background looting.
+    </p>
+
+    <h2>TLO Access</h2>
+    <p>
+        LootNScoot registers a custom <strong>Top-Level Object (TLO)</strong> named <code>LNS</code>
+        that other scripts and macros can query to check the script's status. A TLO is MQ's
+        read-only data API &mdash; think of it as a variable that other scripts can read but not
+        write. MQ has many built-in TLOs (like <code>${Me.Name}</code> for your character name),
+        and Lua scripts can register their own custom ones.
+    </p>
+    <p>
+        The TLO is registered via:
+    </p>
+    <pre><code>mq.AddTopLevelObject('LNS', LNS.TLOHandler)</code></pre>
+    <p>
+        Available members:
+    </p>
+    <table>
+        <thead>
+            <tr><th>TLO Member</th><th>Return Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>${LNS.Looting}</code></td>
+                <td>bool</td>
+                <td>Returns <code>true</code> if LootNScoot is currently in a looting cycle (<code>LNS.IsLooting</code>).</td>
+            </tr>
+            <tr>
+                <td><code>${LNS.Paused}</code></td>
+                <td>bool</td>
+                <td>Returns <code>true</code> if looting is paused (<code>LNS.PauseLooting</code>).</td>
+            </tr>
+            <tr>
+                <td><code>${LNS.Mode}</code></td>
+                <td>string</td>
+                <td>Returns the current operating mode: "standalone", "directed", or "once".</td>
+            </tr>
+            <tr>
+                <td><code>${LNS.SafeZone}</code></td>
+                <td>bool</td>
+                <td>Returns <code>true</code> if the current zone is a safe zone. Optionally accepts a zone short name parameter to check a specific zone: <code>${LNS.SafeZone[zonename]}</code>.</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        These TLO members can be used in MQ macros:
+    </p>
+    <pre><code>/if (${LNS.Looting}) /echo LootNScoot is currently looting
+/if (!${LNS.Paused}) /echo Looting is active</code></pre>
+    <p>
+        Or in other Lua scripts:
+    </p>
+    <pre><code>local isLooting = mq.TLO.LNS.Looting()
+local isPaused = mq.TLO.LNS.Paused()
+local mode = mq.TLO.LNS.Mode()</code></pre>
+
+    <div class="page-nav">
+        <a href="settings.html">&larr; Prev: Settings Reference</a>
+        <a href="ui.html">Next: User Interface &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

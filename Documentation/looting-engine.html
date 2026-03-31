@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Looting Engine - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html" class="active">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+    <h1>Looting Engine</h1>
+
+    <h2>Overview</h2>
+    <p>
+        The looting engine is the core pipeline that drives LootNScoot. It scans for nearby corpses,
+        navigates your character to each one, opens the loot window, evaluates every item against
+        the <a href="rule-system.html">rule system</a>, and picks up (or destroys, or skips) each
+        item accordingly. After looting, items sitting in your inventory can be sold, banked, tributed,
+        destroyed, or restocked through the <strong>processItems()</strong> state machine.
+    </p>
+    <p>
+        EverQuest (EQ) is a 3D MMO where defeated enemies leave behind "corpses" containing loot.
+        MacroQuest (MQ) is a third-party tool that embeds a Lua scripting engine and exposes game data
+        through "TLO" (Top-Level Object) accessors&mdash;for example, <code>mq.TLO.Me.FreeInventory()</code>
+        returns how many empty bag slots you have. LootNScoot automates the tedious process of
+        right-clicking every corpse and deciding what to pick up.
+    </p>
+
+    <h2>Finding Corpses: lootMobs()</h2>
+    <p>
+        The function <code>LNS.lootMobs(limit)</code> is the top-level entry point. It is called
+        on every loop tick in standalone mode, or on demand via <code>/lns loot</code>. The
+        <code>limit</code> parameter defaults to 50 inside the function, but callers typically
+        pass <code>settings.Settings.MaxCorpsesPerCycle</code>, capping how many corpses are
+        processed per call.
+    </p>
+
+    <h3>Pre-checks</h3>
+    <p>Before scanning for corpses, several guard conditions are evaluated in order:</p>
+    <table>
+        <thead>
+            <tr><th>Check</th><th>What It Does</th><th>Outcome If True</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>LNS.PauseLooting</code></td>
+                <td>User paused looting via <code>/lns pause</code></td>
+                <td>Return immediately</td>
+            </tr>
+            <tr>
+                <td><code>LNS.SafeZones[LNS.Zone]</code></td>
+                <td>Current zone is in the safe-zone list (looting disabled)</td>
+                <td>Return immediately</td>
+            </tr>
+            <tr>
+                <td>Invisibility (types 1, 2, 3)</td>
+                <td>Checks <code>mq.TLO.Me.Invis()</code> for normal, undead, and animal invis</td>
+                <td>Return to avoid breaking invis</td>
+            </tr>
+            <tr>
+                <td><code>LNS.InCombat()</code></td>
+                <td>Checks CombatState and XTarget list for aggressive mobs</td>
+                <td>Return unless <code>CombatLooting</code> is enabled</td>
+            </tr>
+            <tr>
+                <td><code>MobsTooClose</code></td>
+                <td>Counts hostile NPCs within <code>MobsTooClose + CorpseRadius</code> range</td>
+                <td>Return unless <code>CombatLooting</code> is enabled</td>
+            </tr>
+            <tr>
+                <td>Dead + Corpse count == 0</td>
+                <td>No NPC or player corpses in range</td>
+                <td>Return immediately</td>
+            </tr>
+            <tr>
+                <td>Loot window already open</td>
+                <td>Another loot operation is in progress</td>
+                <td>Return immediately to avoid conflicts</td>
+            </tr>
+            <tr>
+                <td>Casting a spell (non-Bard)</td>
+                <td>Moving would interrupt casting</td>
+                <td>Return immediately</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Player Corpse Handling</h3>
+    <p>
+        In EQ, when your character dies you leave behind a corpse containing all your gear. LootNScoot
+        checks for your own corpses using a SpawnCount TLO filter:
+    </p>
+    <pre><code>pccorpse &lt;YourName&gt;'s radius &lt;CorpseRadius&gt; zradius &lt;CorpseZRadius&gt;</code></pre>
+    <p>
+        (This is a <strong>spawn</strong> search filter &mdash; a "spawn" is any entity in
+        the EQ game world, including NPCs, players, and corpses. The TLO query returns a
+        count of matching spawns within the specified radius.)
+    </p>
+    <p>Three settings control how player corpses are handled:</p>
+    <ul>
+        <li><strong>LootMyCorpse</strong> (default: false) &mdash; If true, your own corpse is targeted, pulled with <code>/corpse</code>, and looted with <code>/lootall</code>.</li>
+        <li><strong>IgnoreMyNearCorpses</strong> (default: false) &mdash; If true, skip your own corpse entirely and proceed to NPC corpses. Useful on servers where you respawn with all your gear.</li>
+        <li>If both are false and your corpse is nearby, looting pauses entirely until the corpse is gone (e.g., resurrected by a cleric).</li>
+    </ul>
+
+    <h3>NPC Corpse Scanning</h3>
+    <p>
+        NPC corpses are found using MQ's SpawnCount TLO with a filter string:
+    </p>
+    <pre><code>npccorpse radius &lt;CorpseRadius&gt; zradius &lt;CorpseZRadius&gt;</code></pre>
+    <p>
+        <code>CorpseRadius</code> (default 100) is the horizontal distance in game units, and
+        <code>CorpseZRadius</code> (default 50) is the vertical distance. Each corpse found
+        is checked against:
+    </p>
+    <ul>
+        <li><strong>CheckCorpseOnce</strong> &mdash; If enabled (default true), corpses that have already been looted (tracked in <code>LNS.lootedCorpses</code>) are skipped.</li>
+        <li><strong>checkLockedCorpse()</strong> &mdash; Corpses that triggered a "can't loot" event are temporarily locked for <code>LootCheckDelay</code> seconds before retrying.</li>
+        <li><strong>Path length</strong> &mdash; The navigation path length must be less than <code>CorpseRadius</code> to avoid chasing corpses through long winding tunnels.</li>
+    </ul>
+
+    <h3>Directed Mode Gate</h3>
+    <p>
+        If <code>LNS.Mode == 'directed'</code> (the script was started as a library by another script),
+        looting only proceeds when <code>LNS.LootNow</code> has been set to true by the directing script.
+        Otherwise the function returns early.
+    </p>
+
+    <h2>Navigation: navToID()</h2>
+    <p>
+        <code>LNS.navToID(spawnID)</code> moves your character to a corpse using the MQ2Nav plugin,
+        which provides an in-game GPS/pathfinding system. The function:
+    </p>
+    <ol>
+        <li>Checks if you are already within 10 units of the target (if so, returns immediately).</li>
+        <li>Closes the loot window if one is open (to avoid movement conflicts).</li>
+        <li>Issues <code>/nav id &lt;spawnID&gt; dist=10 log=off</code> to begin pathfinding.</li>
+        <li>Waits in a loop, checking <code>mq.TLO.Navigation.Active()</code> every 50ms.</li>
+        <li>Times out after <code>NavTimeout</code> seconds (default 5) to prevent getting stuck.</li>
+        <li>Waits up to 100ms for movement to stop (<code>mq.TLO.Me.Moving()</code>).</li>
+    </ol>
+    <div class="note">
+        <strong>Note:</strong> MQ2Nav requires a mesh file for the current zone. If no mesh exists,
+        navigation commands silently fail and the character will not move to the corpse.
+    </div>
+
+    <h2>Processing a Corpse: lootCorpse()</h2>
+    <p>
+        <code>LNS.lootCorpse(corpseID)</code> handles everything from opening the loot window to
+        picking up each item. Here is the sequence:
+    </p>
+
+    <h3>Opening the Loot Window</h3>
+    <p>
+        The function first clears anything on the cursor via <code>checkCursor()</code>, waits for
+        the character to stop moving and casting, then attempts to open the loot window:
+    </p>
+    <pre><code>for i = 1, 3 do
+    mq.cmdf('/loot')
+    mq.delay(1000, function()
+        return mq.TLO.Window('LootWnd').Open()
+    end)
+    if mq.TLO.Window('LootWnd').Open() then break end
+end</code></pre>
+    <p>
+        <code>mq.cmdf()</code> executes an in-game slash command (here, <code>/loot</code>
+        to open the loot window on the targeted corpse). <code>mq.delay(1000, fn)</code>
+        pauses script execution for up to 1000 milliseconds, but returns early if the
+        callback function returns <code>true</code> (the window opened).
+        It tries up to <strong>3 times</strong>, waiting 1 second each attempt. After the loop,
+        it processes the <code>CantLoot</code> event and waits one more second. If the window
+        still is not open and no <code>CantLoot</code> event fired, it tries <strong>one more
+        time</strong> (a 4th attempt). If another player is looting the same corpse (CantLoot
+        event), the corpse is added to <code>cantLootList</code> with a timestamp so it is
+        temporarily skipped.
+    </p>
+
+    <h3>Item Scanning Loop (Phase 1: Evaluate)</h3>
+    <p>
+        The looting process uses a <strong>two-phase approach</strong>: first scan all items
+        to evaluate rules, then loot them one at a time with rechecks. This separation lets
+        the script classify everything up front before committing to any pickups.
+    </p>
+    <p>
+        Once the loot window is open, the function iterates through every item in the corpse
+        (<code>mq.TLO.Corpse.Items()</code> returns the count). For each item:
+    </p>
+    <ol>
+        <li>Calls <code><a href="rule-system.html">LNS.getRule(corpseItem, 'loot', slotIndex)</a></code> to determine the action (Keep, Sell, Bank, Destroy, Ignore, Ask, Quest, etc.).</li>
+        <li>Records the item data to the <a href="database.html">Items.db</a> via <code>addToItemDB()</code>.</li>
+        <li>Separates items into two lists: <strong>lore items</strong> and <strong>non-lore items</strong>.</li>
+    </ol>
+
+    <h3>Why Lore and Non-Lore Are Separated</h3>
+    <p>
+        In EQ, <strong>Lore</strong> items are unique &mdash; you can only carry one at a
+        time. If you already have a lore item and try to pick up a second copy, the game
+        rejects it. By processing non-lore items first, LootNScoot avoids a situation where
+        a failed lore pickup disrupts the loot window state and prevents looting of
+        subsequent items. Lore items are then processed in a second pass, after all safe
+        pickups are complete. The <a href="rule-system.html">rule system</a> also checks
+        for lore duplicates early in its decision tree to skip them before they even reach
+        this point.
+    </p>
+
+    <h3>Item Looting Loop</h3>
+    <p>
+        After scanning, both lists are iterated in order. For each actionable item
+        (not Ignore, Ask, or NULL), <code>lootItem()</code> is called. Items marked Ignore or Ask
+        are logged to history. Skipped items (Ask) are collected and reported at the end via
+        <code>reportSkippedItems()</code>.
+    </p>
+
+    <h3>Quest and Lore Rechecks at Loot Time</h3>
+    <p>
+        Before each individual <code>lootItem()</code> call, the looting engine rechecks
+        quest item counts and lore status. This is necessary because the initial scan phase
+        evaluates all items on the corpse at once, but picking up items changes your inventory
+        between pickups. Without rechecking, over-looting can occur.
+    </p>
+    <p>
+        <strong>Quest items:</strong> If a corpse contains 5 copies of a quest item and you
+        only need 1 more to reach your <code>qKeep</code> target, the scan phase would mark
+        all 5 as "Quest" (lootable). The recheck before each pickup compares the current
+        <code>FindItemCount + FindItemBankCount</code> against the <code>qKeep</code> target.
+        After picking up the first copy, the count is met, so the remaining 4 are skipped
+        and recorded to history as "Left".
+    </p>
+    <p>
+        <strong>Lore items:</strong> If a corpse somehow contains multiple copies of a lore
+        item, the first pickup succeeds. The recheck before the second pickup detects that
+        <code>FindItemCount + FindItemBankCount &gt; 0</code>, so the duplicate is skipped.
+        Without this recheck, attempting to loot a second lore item would be rejected by the
+        game client and could disrupt the loot window state for remaining items.
+    </p>
+    <p>
+        After all items are processed, the loot window is closed by clicking the Done button:
+    </p>
+    <pre><code>mq.cmdf('/nomodkey /notify LootWnd LW_DoneButton leftmouseup')</code></pre>
+
+    <h2>Picking Up Items: lootItem()</h2>
+    <p>
+        <code>LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)</code> handles the
+        actual pickup of a single item from an open loot window.
+    </p>
+
+    <h3>The /itemnotify Command</h3>
+    <p>
+        MQ provides <code>/itemnotify</code> to simulate mouse clicks on UI elements. To loot
+        slot number <code>index</code>:
+    </p>
+    <pre><code>mq.cmdf('/nomodkey /shift /itemnotify loot%s %s', index, button)</code></pre>
+    <p>
+        The <code>/nomodkey</code> prefix ensures no modifier keys interfere, and <code>/shift</code>
+        is used to trigger the loot action.
+    </p>
+
+    <h3>NoDrop Confirmation Dialog</h3>
+    <p>
+        In EQ, <strong>NoDrop</strong> (also called "No Trade") items are permanently bound
+        to the character who picks them up &mdash; they cannot be traded, sold on the
+        bazaar, or given away. Because this is irreversible, the game shows a confirmation
+        dialog asking if you really want to loot them. LootNScoot
+        automatically clicks "Yes" on this dialog when the
+        <a href="settings.html">LootNoDrop setting</a> is enabled:
+    </p>
+    <pre><code>if mq.TLO.Window('ConfirmationDialogBox').Open() then
+    mq.cmdf('/nomodkey /notify ConfirmationDialogBox Yes_Button leftmouseup')
+end</code></pre>
+
+    <h3>Destroy Handling</h3>
+    <p>
+        If the action is "Destroy", the item is first looted to cursor, then immediately destroyed
+        with <code>/destroy</code>. This removes the item from the game permanently. The
+        <code>DoDestroy</code> <a href="settings.html">setting</a> must be enabled for destroy
+        actions to execute; otherwise "Destroy" is treated as "Ignore".
+    </p>
+    <div class="warning">
+        <strong>Destruction is permanent.</strong> There is no undo. Items destroyed by
+        <code>/destroy</code> are gone forever. The <code>DoDestroy</code> setting defaults
+        to <code>false</code> as a safety measure. Only enable it after you are confident
+        your <a href="rule-system.html">rules</a> are set correctly.
+    </div>
+
+    <h3>Cursor Management: checkCursor()</h3>
+    <p>
+        After looting, <code>LNS.checkCursor()</code> ensures nothing is stuck on the cursor.
+        It loops while <code>mq.TLO.Cursor()</code> is not nil, issuing <code>/autoinv</code>
+        to place cursor items into inventory. If inventory is completely full, it logs a warning
+        and returns.
+    </p>
+
+    <h3>Reporting</h3>
+    <p>
+        If <code>ReportLoot</code> is enabled, looted items are announced to the configured
+        <code>LootChannel</code> (default "dgt", which is DanNet group tell &mdash;
+        <strong>DanNet</strong> is an older MQ communication plugin; LootNScoot uses the
+        newer <a href="multi-character.html">actor system</a> for its own coordination, but
+        the loot channel can still use DanNet commands). Quest items
+        include a count display showing progress (e.g., "3 of 10").
+    </p>
+
+    <h2>Foraging</h2>
+    <p>
+        EQ Rangers and Druids can forage items from the ground. When the game's "forage" event fires,
+        <code>LNS.eventForage()</code> is triggered. It processes items that appear on cursor:
+    </p>
+    <ol>
+        <li>Waits up to 1 second for the foraged item to appear on cursor.</li>
+        <li>Calls <code>getRule(cursorItem, 'forage', 0)</code> to evaluate the item.</li>
+        <li>If the rule says to keep it (and inventory has space), issues <code>/autoinv</code>.</li>
+        <li>If the rule says ignore (or quest count is met), issues <code>/destroy</code>.</li>
+        <li>Loops until the cursor is clear (multiple items can queue up).</li>
+    </ol>
+    <p>
+        The <code>LootForage</code> setting (default true) must be enabled. The
+        <code>LootForageSpam</code> setting controls whether forage actions are echoed to the
+        MQ console.
+    </p>
+
+    <h2>Processing Inventory</h2>
+    <p>
+        <code>LNS.processItems(action)</code> is the state machine that handles selling, banking,
+        tributing, destroying, and buying. It iterates through all 10 inventory bag slots
+        (skipping <code>IgnoreBagSlot</code> if set), examines every item inside each bag, and
+        performs the requested action on items whose rule matches.
+    </p>
+    <p>
+        The function temporarily disables <code>AlwaysEval</code> during processing to prevent
+        re-evaluation of rules mid-operation, restoring it afterward.
+    </p>
+
+    <h3>Selling</h3>
+    <p>
+        Triggered by <code>/lns sellstuff</code> or <code>LNS.processItems('Sell')</code>.
+    </p>
+    <ol>
+        <li><strong>goToVendor()</strong> &mdash; Checks that you have a vendor targeted. If you are more than 15 units away, calls <code>navToID()</code> to walk to them.</li>
+        <li><strong>openVendor()</strong> &mdash; Right-clicks the target to open the Merchant window. Waits up to 5 seconds for <code>MerchantWnd</code> to appear.</li>
+        <li><strong>SellToVendor()</strong> &mdash; For each item marked "Sell", uses <code>/itemnotify</code> to select the item in inventory, waits for the merchant to recognize it, then clicks the Sell button with shift held (to sell the full stack).</li>
+    </ol>
+    <p>
+        The <strong>NEVER_SELL</strong> list is a hardcoded table of items that must never be sold
+        regardless of rules:
+    </p>
+    <pre><code>local NEVER_SELL = {
+    ['Diamond Coin'] = true,
+    ['Celestial Crest'] = true,
+    ['Gold Coin'] = true,
+    ['Taelosian Symbols'] = true,
+    ['Planar Symbols'] = true,
+}</code></pre>
+    <p>
+        After selling, profit is calculated by comparing platinum before and after:
+        <code>(mq.TLO.Me.Cash() - myCoins) / 1000</code>. The result is reported to the
+        loot channel.
+    </p>
+
+    <h3>Banking</h3>
+    <p>
+        Triggered by <code>/lns bankstuff</code>. Requires targeting a Banker NPC.
+    </p>
+    <ol>
+        <li><strong>openBanker()</strong> &mdash; Right-clicks the target to open <code>BigBankWnd</code>.</li>
+        <li><strong>bankItem()</strong> &mdash; Picks up each Bank-marked item with <code>/shift /itemnotify</code>, then clicks the Auto button in the bank window to deposit it. If the bank is full, the item is returned to inventory via <code>/autoinventory</code>.</li>
+    </ol>
+    <p>
+        The <code>BankTradeskills</code> setting (default false) causes the processItem helper to
+        treat any item flagged as a tradeskill material as "Bank" even if it has no explicit rule.
+        The <code>/lns tsbank</code> command bulk-marks all tradeskill items currently in your
+        bags as "Bank".
+    </p>
+
+    <h3>Tributing</h3>
+    <p>
+        Triggered by <code>/lns tributestuff</code>. Requires targeting a Tribute Master NPC.
+    </p>
+    <ol>
+        <li><strong>openTribMaster()</strong> &mdash; Right-clicks the target to open <code>TributeMasterWnd</code>.</li>
+        <li><strong>TributeToVendor()</strong> &mdash; Selects each Tribute-marked item, waits for the tribute value to appear and the Donate button to enable, then clicks Donate. Handles the quantity dialog if it appears.</li>
+    </ol>
+    <p>
+        Items in the NEVER_SELL list are also protected from tributing. After tributing, the
+        window is closed and bags are collapsed.
+    </p>
+
+    <h3>Destroying</h3>
+    <p>
+        Triggered by <code>/lns cleanup</code>.
+    </p>
+    <p>
+        <code>LNS.DestroyItem(item, bag, slot)</code> picks up the item to cursor with
+        <code>/shift /itemnotify</code>, waits for it to appear on cursor, then issues
+        <code>/destroy</code>. Items in NEVER_SELL are protected.
+    </p>
+    <div class="warning">
+        <strong>Warning:</strong> The <code>DoDestroy</code> setting (default false) must be explicitly
+        enabled for destroy to work. When disabled, items marked "Destroy" are treated as "Ignore"
+        and left on corpses. This is a safety measure to prevent accidental item loss.
+    </div>
+
+    <h3>Restocking</h3>
+    <p>
+        <code>LNS.RestockItems()</code> buys items listed in the <code>BuyItemsTable</code> from a
+        targeted merchant. For each item in the table:
+    </p>
+    <ol>
+        <li>Searches the merchant's item list for the item name.</li>
+        <li>Calculates how many are needed: <code>qty - mq.TLO.FindItemCount(itemName)()</code>.</li>
+        <li>Selects the item row, clicks Buy, enters the quantity in the QuantityWnd dialog.</li>
+        <li>Loops if the stack size is smaller than the desired quantity (buys multiple stacks).</li>
+        <li>Retries up to 5 times if item selection fails.</li>
+    </ol>
+    <p>
+        Restocking happens automatically after selling when <code>AutoRestock</code> is enabled
+        (default true), or on demand via <code>/lns restock</code>.
+    </p>
+    <p>
+        The BuyItemsTable format is <code>{[itemName] = quantity}</code>. Items are added via
+        <code>/lns buy "Item Name" 5</code> or through the UI.
+    </p>
+
+    <h2>Looting Sequence Flow</h2>
+    <div class="diagram">
+<pre>
+lootMobs(limit)
+    |
+    +-- Pre-checks (invis, pause, safe zone, combat, bags)
+    |       |
+    |       +-- FAIL --&gt; return false
+    |
+    +-- Scan for player corpses
+    |       |
+    |       +-- LootMyCorpse? --&gt; /corpse + /lootall
+    |       +-- IgnoreMyNearCorpses? --&gt; skip, continue
+    |       +-- Neither? --&gt; pause looting, return
+    |
+    +-- SpawnCount('npccorpse radius R zradius Z')
+    |       |
+    |       +-- Build corpseList (filter looted, locked, path length)
+    |
+    +-- Directed mode gate (skip if not LootNow)
+    |
+    +-- For each corpse in corpseList (up to limit):
+        |
+        +-- navToID(corpseID)
+        |       |
+        |       +-- /nav id &lt;ID&gt; dist=10
+        |       +-- Wait up to NavTimeout seconds
+        |
+        +-- lootCorpse(corpseID)
+        |       |
+        |       +-- /loot (3 attempts, 1s each)
+        |       +-- Scan items: getRule() for each
+        |       +-- Separate lore vs non-lore
+        |       +-- Loot non-lore first, then lore
+        |       |       |
+        |       |       +-- lootItem(item, index, action, ...)
+        |       |       +-- If item still on corpse, retry lootItem once
+        |       |               |
+        |       |               +-- /itemnotify loot&lt;N&gt; leftmouseup
+        |       |               +-- Handle NoDrop confirmation
+        |       |               +-- Handle Destroy (/destroy)
+        |       |               +-- checkCursor() --&gt; /autoinv
+        |       |               +-- Log to history
+        |       |
+        |       +-- Close loot window (Done button)
+        |       +-- reportSkippedItems()
+        |
+        +-- Record in lootedCorpses
+        +-- Send actor message with looted items
+</pre>
+    </div>
+
+    <div class="tip">
+        <strong>Tip:</strong> The <code>MaxCorpsesPerCycle</code> setting (default 5) controls how
+        many corpses are processed in a single lootMobs() call. Lower values reduce the time your
+        character spends running between corpses, which is helpful in dangerous areas. Higher values
+        are more efficient when the area is safe.
+    </div>
+
+    <div class="page-nav">
+        <a href="rule-system.html">&larr; Prev: Rule System</a>
+        <a href="database.html">Next: Database Layer &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

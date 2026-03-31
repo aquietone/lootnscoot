@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rule System - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html" class="active">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+
+    <h1>Rule Evaluation System</h1>
+
+    <p>
+        The rule system is the brain of LootNScoot. Every time an item is encountered on a
+        corpse (a defeated enemy's remains in the game world), the script must decide what
+        to do with it. This page explains the nine possible actions, how rules are looked up
+        and prioritized, and the complete decision tree that <code>getRule()</code> walks
+        through before returning a final verdict. Rules are stored in the
+        <a href="database.html">SQLite database</a> and cached in Lua tables for fast access.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>The Nine Loot Actions</h2>
+
+    <p>
+        Every item rule maps to one of nine actions. Each action determines whether the
+        item is picked up from the corpse and what happens to it afterward.
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Action</th>
+                <th>Picked Up?</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Keep</strong></td>
+                <td>Yes</td>
+                <td>
+                    Loot the item and keep it in your inventory permanently. Used for
+                    gear upgrades, consumables you want to use, or anything you intend
+                    to hold onto.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Sell</strong></td>
+                <td>Yes</td>
+                <td>
+                    Loot the item. When you visit a merchant and issue
+                    <code>/lns sellstuff</code>, all Sell-flagged items are sold
+                    automatically. Subject to <code>MinSellPrice</code> and
+                    <code>StackPlatValue</code> thresholds.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Bank</strong></td>
+                <td>Yes</td>
+                <td>
+                    Loot the item. When you visit a banker and issue
+                    <code>/lns bankstuff</code>, all Bank-flagged items are deposited.
+                    Tradeskill items can also be auto-banked if
+                    <code>BankTradeskills</code> is enabled.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Tribute</strong></td>
+                <td>Yes (when TributeKeep enabled)</td>
+                <td>
+                    Loot the item if its tribute value meets the
+                    <code>MinTributeValue</code> threshold. When you visit a tribute
+                    master and issue <code>/lns tributestuff</code>, all Tribute-flagged
+                    items are tributed. Requires <code>TributeKeep</code> to be enabled
+                    for the item to actually be picked up during looting.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Quest|qty</strong></td>
+                <td>Yes (when LootQuest enabled, up to qty)</td>
+                <td>
+                    Loot the item but only keep up to <code>qty</code> copies. The format
+                    is <code>Quest|5</code> to keep 5, or just <code>Quest</code> to use
+                    the default <code>QuestKeep</code> setting (default 10). Once you have
+                    enough, the item is ignored. Requires <code>LootQuest</code> to be
+                    enabled. Counts are rechecked before each individual item pickup, not
+                    just during the initial corpse scan. This prevents over-looting when a
+                    corpse contains multiple copies of the same quest item (e.g., a corpse
+                    with 5 copies when you only need 1 more).
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Destroy</strong></td>
+                <td>Yes (when DoDestroy enabled)</td>
+                <td>
+                    The item is flagged for destruction. By default (<code>DoDestroy</code>
+                    disabled), items marked Destroy are skipped during looting. When
+                    <code>DoDestroy</code> is enabled, the item is picked up and destroyed.
+                    You can also issue <code>/lns cleanup</code> to destroy Destroy-flagged
+                    items already in your inventory. With <code>AlwaysDestroy</code>,
+                    Ignore-ruled items are also upgraded to Destroy on corpses.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>CanUse</strong></td>
+                <td>No (evaluation only)</td>
+                <td>
+                    The item is checked against your character's class and equipment slot
+                    compatibility. If your class can use the item, the decision is upgraded
+                    to <code>Keep</code> and the item is looted into inventory. If your class
+                    cannot, it becomes <code>Ignore</code>. This is primarily used for
+                    <strong>NoDrop</strong> items (items that cannot be traded once looted)
+                    where you only want to loot items your class is able to use. The script
+                    itself does not equip items &mdash; it places them into inventory via
+                    <code>/autoinv</code>. The EQ game client may auto-equip items into empty
+                    equipment slots if the character can wear them; if the slot is already
+                    occupied, items simply go to inventory.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Ask</strong></td>
+                <td>No</td>
+                <td>
+                    The item is skipped during looting and added to the New Items list.
+                    You must manually decide what to do with it through the UI or
+                    <a href="commands.html">CLI commands</a>. This is the default for
+                    items with no existing rule when <code>UseAutoRules</code> is disabled.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Ignore</strong></td>
+                <td>No</td>
+                <td>
+                    The item is skipped completely. The script will not pick it up and will
+                    not prompt you about it (unless <code>AlwaysDestroy</code> is enabled,
+                    in which case Ignore items are upgraded to Destroy).
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>The shouldLootActions Table</h3>
+
+    <p>
+        Internally, the script uses a lookup table called <code>shouldLootActions</code> to
+        determine which actions result in actually picking up an item:
+    </p>
+
+    <pre><code>local shouldLootActions = {
+    Ask     = false,
+    CanUse  = false,
+    Keep    = true,
+    Bank    = true,
+    Sell    = true,
+    Destroy = false,
+    Ignore  = false,
+    Tribute = false,
+    Quest   = false,
+}</code></pre>
+
+    <p>
+        The values shown above are the <strong>initial defaults</strong>. At runtime, three
+        entries are dynamically updated based on settings:
+    </p>
+    <ul>
+        <li><code>shouldLootActions.Tribute</code> is set to the value of <code>TributeKeep</code></li>
+        <li><code>shouldLootActions.Quest</code> is set to the value of <code>LootQuest</code></li>
+        <li><code>shouldLootActions.Destroy</code> is set to the value of <code>DoDestroy</code></li>
+    </ul>
+    <p>
+        This means Tribute items are only picked up when <code>TributeKeep</code> is enabled,
+        Quest items when <code>LootQuest</code> is enabled, and Destroy items when
+        <code>DoDestroy</code> is enabled. The <code>shouldLootActions</code> table is used
+        both for determining whether to pick up items and for tracking skipped items.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>Rule Priority Chain</h2>
+
+    <p>
+        When <code>getRule()</code> needs to find a rule for an item, it searches through
+        multiple sources in a strict priority order. The first match wins.
+    </p>
+
+    <div class="diagram">
+  Rule Lookup Priority (lookupLootRule):
+  +=======================================================+
+  |                                                       |
+  |  1. Personal Rules (in-memory)                        |
+  |     LNS.PersonalItemsRules[itemID]                    |
+  |     -- Fastest: checks a Lua table directly           |
+  |     -- If found, return immediately                   |
+  |                                                       |
+  |  2. Global Rules (in-memory)                          |
+  |     LNS.GlobalItemsRules[itemID]                      |
+  |     -- Same speed, checked second                     |
+  |     -- If found, return immediately                   |
+  |                                                       |
+  |  3. Personal Rules (database)                         |
+  |     db.CheckRulesDB(itemID, CHECK_DB_PERSONAL)        |
+  |     -- SQL query against [CharName]_Rules table       |
+  |     -- Slower but catches rules not yet cached        |
+  |                                                       |
+  |  4. Global Rules (database)                           |
+  |     db.CheckRulesDB(itemID, CHECK_DB_GLOBAL)          |
+  |     -- SQL query against Global_Rules table           |
+  |                                                       |
+  |  5. WildCard Patterns                                 |
+  |     LNS.CheckWildCards(itemName)                      |
+  |     -- Iterates all wildcard patterns                 |
+  |     -- Uses Lua pattern matching on item name         |
+  |     -- If matched, creates a new rule entry           |
+  |                                                       |
+  |  6. No match found: return 'NULL'                     |
+  |     (getRule then handles as a new item)              |
+  |                                                       |
+  +=======================================================+
+    </div>
+
+    <h3>Step 1-2: In-Memory Lookup</h3>
+
+    <p>
+        The fastest path. <code>lookupLootRule()</code> first checks the Lua tables
+        <code>LNS.PersonalItemsRules</code> and <code>LNS.GlobalItemsRules</code>, which
+        are dictionaries keyed by item ID. If a rule was loaded from the database during
+        a previous lookup, it gets cached here for instant access on subsequent checks.
+        This caching is critical for performance: a single corpse may have a dozen items,
+        and the <a href="looting-engine.html">looting engine</a> processes multiple corpses
+        per cycle. Without caching, each item would require a database query, which is far
+        slower than a Lua table lookup.
+        Personal rules are checked before Global, so a Personal rule always overrides
+        a Global rule for the same item. This is by design &mdash; it allows per-character
+        customization without affecting other characters sharing the same server database.
+    </p>
+
+    <h3>Step 3-4: Database Lookup</h3>
+
+    <p>
+        If the item is not in the in-memory cache, the script queries the SQLite database.
+        It checks the Personal table (<code>[CharName]_Rules</code>) first, then the
+        <code>Global_Rules</code> table. Any rule found in the database is immediately
+        cached into the in-memory tables so subsequent lookups are instant.
+    </p>
+
+    <h3>Step 5: WildCard Patterns</h3>
+
+    <p>
+        If no explicit rule exists for this specific item ID, the script checks wildcard
+        patterns. These are glob-style patterns that match against the item's
+        <strong>name</strong> rather than its ID. If a wildcard matches, a new rule entry
+        is created for the item using the wildcard's assigned action.
+    </p>
+
+    <h3>Step 6: No Match (New Item)</h3>
+
+    <p>
+        If none of the above sources produce a rule, <code>lookupLootRule()</code> returns
+        <code>'NULL'</code>. The calling function <code>getRule()</code> then treats this
+        as a new, never-before-seen item and enters the auto-rules logic or defaults to
+        <code>Ask</code>.
+    </p>
+
+    <div class="tip">
+        <strong>Personal rules always win.</strong> If you set a Personal rule for an item,
+        it overrides any Global rule, any wildcard pattern, and any auto-rule logic. This
+        is by design &mdash; it lets each character have item-specific overrides without
+        affecting other characters on the same server.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>The getRule() Decision Tree</h2>
+
+    <p>
+        After <code>lookupLootRule()</code> returns a rule (or <code>'NULL'</code> for new
+        items), <code>getRule()</code> applies a series of checks and overrides based on
+        your settings and the item's properties. This is the complete decision tree:
+    </p>
+
+    <div class="diagram">
+  getRule(item, fromFunction) Decision Tree:
+  ============================================
+
+  item is nil or ID is 0?
+    YES --&gt; return 'NULL'
+
+  Lookup rule via lookupLootRule()
+    |
+    v
+  AlwaysEval enabled AND rule is Global?
+    YES --&gt; Clear non-critical rules (keep Quest/Keep/Destroy/
+            CanUse/Ask/Bank), force re-evaluation
+    |
+    v
+  Rule == 'NULL' (new item)?
+    YES --&gt; Enter Auto-Rules Logic (see next section)
+    |       Creates rule and adds to NewItems list
+    |
+    v
+  AlwaysAsk enabled OR rule == 'Ask'?
+    YES --&gt; Add to NewItems, return 'Ask'
+    |       (MasterLooting: also notify via actors)
+    |
+    v
+  Rule == 'Ignore'?
+    +--&gt; DoDestroy AND AlwaysDestroy enabled?
+    |     YES --&gt; return 'Destroy' (upgrades Ignore to Destroy)
+    |     NO  --&gt; return 'Ignore'
+    |
+    v
+  Rule == 'Destroy'?
+    YES --&gt; return 'Destroy'
+    |
+    v
+  StackableOnly enabled AND item not stackable?
+    YES --&gt; return 'Ignore'
+    |
+    v
+  Item is Lore AND already owned?
+    YES --&gt; return 'Ignore' (add to skipped list)
+    |
+    v
+  Item is NoDrop AND LootNoDrop disabled?
+    YES --&gt; return 'Ignore' (add to skipped list)
+    |
+    v
+  Class check (Global rules, not Sell/Ask/Tribute/Quest):
+    Your class not in item's class list?
+      YES --&gt; return 'Ignore'
+    |
+    v
+  Rule == 'CanUse' AND item is equippable?
+    Check classes, then check wearable slots:
+      Class can use --&gt; decision = 'Keep' (looted to inventory)
+      Class cannot use --&gt; decision = 'Ignore'
+    |
+    v
+  Rule == 'Sell' or 'Tribute' (Global only)?
+    Check sell/tribute thresholds:
+      Below MinSellPrice --&gt; may change to Ignore
+      Below MinTributeValue --&gt; may change to Ignore
+    |
+    v
+  Bag space check:
+    No free slots AND item not stackable with free stack?
+      YES --&gt; return 'Ignore' ("OUT OF BAG SPACE")
+    |
+    v
+  LootAugments enabled AND item is Augmentation (Global)?
+    YES --&gt; decision = 'Keep'
+    |
+    v
+  KeepSpells enabled AND item is Spell/Song (Global)?
+    YES --&gt; decision = 'Keep'
+    |
+    v
+  Rule contains 'Quest'?
+    Check LootQuest setting
+    Check quantity (Quest|qty format):
+      Have enough --&gt; return 'Ignore'
+      Need more --&gt; check class restrictions
+        Wrong class --&gt; return 'Ignore'
+        Right class --&gt; decision = 'Quest'
+    |
+    v
+  MasterLooting enabled?
+    Rule is Ignore (not Personal) or Destroy --&gt; return 'Ignore'
+    Otherwise --&gt; add to MasterLootList, return 'MasterLooter'
+    |
+    v
+  Return final lootDecision
+    </div>
+
+    <p>
+        The tree is evaluated top-to-bottom. Once a <code>return</code> statement is hit,
+        evaluation stops immediately. This means earlier checks (like AlwaysAsk and
+        StackableOnly) act as "short circuits" that skip all later logic.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>Auto-Rules Logic</h2>
+
+    <p>
+        When an item has no existing rule (<code>lookupLootRule()</code> returned
+        <code>'NULL'</code>) and <code>UseAutoRules</code> is <code>true</code> (the
+        default), the script attempts to assign a sensible default rule based on the
+        item's properties. This logic lives inside <code>getRule()</code> in the
+        "NEW RULES" section.
+    </p>
+
+    <div class="diagram">
+  Auto-Rules Logic (UseAutoRules == true):
+  =========================================
+
+  Is item NoDrop?
+    YES --&gt; Are LootNoDropNew AND LootNoDrop both enabled?
+    |         YES --&gt; Is item equippable?
+    |         |         YES --&gt; rule = 'CanUse'
+    |         |         NO  --&gt; return 'Ask' (don't add to DB)
+    |         NO --&gt; return 'Ask' (don't add to DB)
+    |
+    NO --&gt; Is item equippable?
+             YES --&gt; rule = 'Keep'
+             NO  --&gt; Does item have a sell price &gt; 0?
+                       YES --&gt; rule = 'Sell'
+                       NO  --&gt; Does item have tribute value &gt; 0?
+                                 YES --&gt; rule = 'Tribute'
+                                 NO  --&gt; rule = 'Ask'
+    </div>
+
+    <p>
+        After determining the auto-rule, the script calls
+        <code>LNS.addNewItem(item, rule, link, corpseID, addToDB)</code> to:
+    </p>
+
+    <ul>
+        <li>Add the item to the <code>LNS.NewItems</code> table for UI display</li>
+        <li>Increment <code>LNS.NewItemsCount</code> (triggers the gold coin indicator)</li>
+        <li>Optionally write the rule to the database (skipped for NoDrop items when
+            LootNoDrop settings are disabled)</li>
+    </ul>
+
+    <p>
+        Even though auto-rules assign a rule automatically, the item still appears in the
+        New Items list so you can review and override the decision. If
+        <code>AutoShowNewItem</code> is enabled, the New Items window pops up
+        automatically.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>WildCard Patterns</h2>
+
+    <p>
+        WildCard rules let you create a single rule that applies to many items based on
+        their name. They use standard Lua pattern syntax (not glob syntax). Common pattern
+        elements include:
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Pattern Element</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>.*</code></td>
+                <td>Match any number of any characters</td>
+            </tr>
+            <tr>
+                <td><code>.</code></td>
+                <td>Match exactly one character</td>
+            </tr>
+            <tr>
+                <td><code>%x</code></td>
+                <td>Lua pattern escape (e.g., <code>%.</code> matches a literal dot)</td>
+            </tr>
+            <tr>
+                <td><code>^</code> / <code>$</code></td>
+                <td>Anchor to start / end of string</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>
+        The <code>NormalizePattern()</code> function lowercases literal characters in the
+        pattern while preserving <code>%</code>-escaped sequences exactly as written.
+        Item names are also lowercased before matching, so patterns are case-insensitive.
+    </p>
+
+    <h3>Examples</h3>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Pattern</th>
+                <th>Matches</th>
+                <th>Use Case</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>spell:.*</code></td>
+                <td>Spell: Minor Healing, Spell: Gate, etc.</td>
+                <td>Set a rule for all spell scrolls</td>
+            </tr>
+            <tr>
+                <td><code>.*rune.*</code></td>
+                <td>Greater Rune, Rune of Karana, etc.</td>
+                <td>Match any item with "Rune" in its name</td>
+            </tr>
+            <tr>
+                <td><code>song:.*</code></td>
+                <td>Song: Hymn of Restoration, etc.</td>
+                <td>Set a rule for all song scrolls</td>
+            </tr>
+            <tr>
+                <td><code>tattered .... page</code></td>
+                <td>Tattered Blue Page, Tattered Gold Page</td>
+                <td>Match four-letter color names with <code>.</code> single-character wildcards</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>
+        Wildcards are stored in the database and loaded into <code>LNS.WildCards</code>
+        (an array of <code>{wildcard, rule}</code> entries) at startup. You can add and
+        remove wildcards through the UI or by setting TempSettings flags. When a wildcard
+        matches a new item, a concrete rule entry is created for that specific item ID
+        in the Global Rules table, so the wildcard only needs to match once per item.
+    </p>
+
+    <div class="note">
+        Wildcards are only checked during <code>lookupLootRule()</code> when no Personal
+        or Global rule exists for the item (step 5 in the priority chain). Once a match
+        creates a concrete rule, subsequent lookups find that rule in steps 1-4 and never
+        reach the wildcard check again.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>Adding and Modifying Rules</h2>
+
+    <p>
+        There are several ways to create or change rules:
+    </p>
+
+    <ul>
+        <li>
+            <strong>Through the UI</strong> &mdash; The Global Rules and Personal Rules
+            tabs let you search for items, click the edit button, and set a rule. The
+            New Items popup shows undecided items with dropdown selectors. See the
+            <a href="ui.html">User Interface</a> page for details.
+        </li>
+        <li>
+            <strong>Through CLI commands</strong> &mdash; Commands like
+            <code>/lns set</code> can modify settings that affect rule behavior. See
+            <a href="commands.html">CLI Commands</a>.
+        </li>
+        <li>
+            <strong>Automatically</strong> &mdash; When <code>AddNewSales</code> is
+            enabled, selling an item while the script is running automatically flags it
+            as Sell. Similarly, <code>AddNewTributes</code> flags tributed items as
+            Tribute.
+        </li>
+        <li>
+            <strong>Via actors</strong> &mdash; Other characters can share rules through
+            the <a href="multi-character.html">multi-character</a> system.
+        </li>
+        <li>
+            <strong>Bulk operations</strong> &mdash; The UI supports selecting multiple
+            items and setting them all to the same rule at once.
+        </li>
+    </ul>
+
+    <div class="warning">
+        <strong>Be careful with AlwaysDestroy.</strong> When both <code>DoDestroy</code>
+        and <code>AlwaysDestroy</code> are enabled, all items with an <code>Ignore</code>
+        rule are upgraded to <code>Destroy</code>. This means items will be actively
+        destroyed from corpses to clear them. Non-Quest items marked Ignore will be
+        deleted. Make sure you have intentionally set Ignore rules before enabling this
+        combination &mdash; there is no undo for destroyed items.
+    </div>
+
+    <div class="tip">
+        <strong>Personal overrides Global.</strong> If you want a specific character to
+        handle an item differently from the global rule, create a Personal rule for that
+        character. Personal rules are always checked first and completely override any
+        Global rule, wildcard match, or auto-rule logic for that item on that character.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>Special Items and Edge Cases</h2>
+
+    <h3>NEVER_SELL List</h3>
+
+    <p>
+        A small hardcoded table in <code>init.lua</code> prevents certain currency-like
+        items from being sold:
+    </p>
+
+    <pre><code>local NEVER_SELL = {
+    ['Diamond Coin'] = true,
+    ['Celestial Crest'] = true,
+    ['Gold Coin'] = true,
+    ['Taelosian Symbols'] = true,
+    ['Planar Symbols'] = true,
+}</code></pre>
+
+    <p>
+        These items are skipped during sell processing regardless of their rule.
+    </p>
+
+    <h3>Master Looter Redirect</h3>
+
+    <p>
+        When <code>MasterLooting</code> is enabled, the final step of
+        <code>getRule()</code> redirects most items to the master loot system instead of
+        looting them directly. Items with Ignore (non-Personal) or Destroy rules are still
+        ignored, but everything else is added to <code>LNS.MasterLootList</code> and
+        returns <code>'MasterLooter'</code> as the action. The master looter then assigns
+        items to specific characters. See
+        <a href="multi-character.html">Multi-Character</a> for details.
+    </p>
+
+    <h3>Lore Items</h3>
+
+    <p>
+        <strong>Lore</strong> items are items you can only have one of &mdash; this is an
+        EverQuest item flag enforced by the game client. If
+        <code>mq.TLO.FindItemCount(itemName)</code> plus bank count is greater than zero,
+        the item is automatically Ignored regardless of its rule. Lore checks happen early
+        in the decision tree (before class checks, bag space checks, etc.) so they
+        short-circuit quickly. This early placement is intentional: if the game would
+        reject the pickup anyway, there is no point evaluating class restrictions or bag
+        space.
+    </p>
+
+    <div class="note">
+        The <a href="looting-engine.html">looting engine</a> also separates lore and
+        non-lore items into two processing passes. Non-lore items are looted first because
+        a failed lore pickup (the game rejecting a duplicate) can disrupt the loot window
+        state, and processing safe items first minimizes that risk.
+    </div>
+
+    <div class="tip">
+        <strong>Loot-time recheck:</strong> In addition to the scan-phase lore check described
+        above, the looting engine rechecks <code>FindItemCount + FindItemBankCount &gt; 0</code>
+        immediately before each individual item pickup. The game itself prevents picking up
+        duplicate lore items, but attempting to do so can stall the loot cycle on that corpse.
+        The recheck skips the attempt entirely, keeping the loot loop moving smoothly.
+    </div>
+
+    <h3>Spell and Song Scrolls</h3>
+
+    <p>
+        When <code>KeepSpells</code> is enabled (default <code>true</code>), any item
+        whose name starts with "Spell:" or "Song:" is automatically kept, overriding
+        Global rules (but not Personal rules). This ensures spell scrolls are collected
+        even if a Global rule would otherwise sell or ignore them.
+    </p>
+
+    <div class="page-nav">
+        <a href="architecture.html">&larr; Prev: Architecture</a>
+        <a href="looting-engine.html">Next: Looting Engine &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

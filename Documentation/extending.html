@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modifying the Code - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html" class="active">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+
+    <h1>Modifying the Code</h1>
+
+    <h2>Before You Start</h2>
+    <p>
+        Before making changes, take a few minutes to understand the overall structure. LootNScoot
+        is organized around a central <code>LNS</code> table that acts as shared state across the
+        entire application. Think of <code>LNS</code> as the "brain" of the script &mdash; every
+        module reads from it and writes to it, and it is how the different parts of the code
+        communicate with each other. There is no class hierarchy or object system; it is just one
+        big Lua table passed to every module.
+    </p>
+    <p>
+        Here is how to orient yourself:
+    </p>
+    <table>
+        <thead>
+            <tr><th>File</th><th>Purpose</th><th>Key Contents</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>init.lua</code></td>
+                <td>Main entry point, core logic</td>
+                <td>The <code>LNS</code> table, command handler, rule functions, loot engine, event handlers, main loop</td>
+            </tr>
+            <tr>
+                <td><code>modules/settings.lua</code></td>
+                <td>Settings definitions</td>
+                <td><code>Settings</code> (defaults), <code>SettingsEnum</code> (CLI mapping), <code>Tooltips</code>, <code>SettingsNoDraw</code>, <code>TempSettings</code></td>
+            </tr>
+            <tr>
+                <td><code>modules/ui.lua</code></td>
+                <td>All ImGui rendering</td>
+                <td><code>RenderUIs()</code>, <code>RenderMainUI()</code>, <code>renderNewItem()</code>, <code>RenderModifyItemWindow()</code>, etc.</td>
+            </tr>
+            <tr>
+                <td><code>modules/actor.lua</code></td>
+                <td>Inter-process messaging</td>
+                <td><code>RegisterActors()</code>, <code>Send()</code>, the callback function with all action handlers</td>
+            </tr>
+            <tr>
+                <td><code>modules/db.lua</code></td>
+                <td>SQLite database layer</td>
+                <td><code>SetupItemsTable()</code>, <code>PrepareStatements()</code>, CRUD functions</td>
+            </tr>
+            <tr>
+                <td><code>modules/performance.lua</code></td>
+                <td>Frame timing / ImPlot</td>
+                <td>Performance monitor rendering</td>
+            </tr>
+            <tr>
+                <td><code>modules/loot_hist.lua</code></td>
+                <td>Console / loot history</td>
+                <td>Scrollable log, theme system, report exports</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        Every module receives the central <code>LNS</code> table through a <code>SetLNS()</code> call
+        during initialization. This is how modules access shared state without circular <code>require()</code>
+        dependencies.
+    </p>
+    <p>
+        The best way to understand a code path is to enable debug mode:
+    </p>
+    <pre><code>/lns debug on</code></pre>
+    <p>
+        This activates verbose logging to the console. You will see detailed tables printed for every
+        actor message, rule decision, and setting change. Combined with the
+        <a href="multi-character.html#debug-mailbox">Debug Mailbox</a> viewer, this gives you full
+        visibility into what the script is doing.
+    </p>
+
+    <h2>Common Modifications</h2>
+
+    <h3>Adding a New Setting</h3>
+    <p>
+        <a href="settings.html">Settings</a> control LootNScoot's behavior. Adding a new one
+        requires touching four locations in <code>modules/settings.lua</code> and then referencing
+        it in your logic. The settings system is designed so that new settings are automatically
+        picked up by the UI and <a href="commands.html">CLI</a> &mdash; you do not need to write
+        any rendering or command-parsing code.
+    </p>
+    <p><strong>Step 1:</strong> Open <code>modules/settings.lua</code> and find the
+    <code>LNS_SETTINGS.Settings</code> table (near the top of the file). Add your default value
+    anywhere inside it:</p>
+    <pre><code>LNS_SETTINGS.Settings = {
+    ...
+    MyNewSetting = false,    -- your new boolean setting
+    MyNewNumber  = 50,       -- or a numeric setting
+    ...
+}</code></pre>
+
+    <p><strong>Step 2:</strong> In the same file, find the <code>LNS_SETTINGS.SettingsEnum</code>
+    table. Add the CLI mapping. The key is the lowercase version users type in
+    <a href="commands.html">commands</a>; the value is the ProperCase key in Settings. This mapping
+    exists because Lua is case-sensitive, but users should not have to remember exact casing when
+    typing commands.</p>
+    <pre><code>LNS_SETTINGS.SettingsEnum = {
+    ...
+    mynewsetting = 'MyNewSetting',
+    mynewnumber  = 'MyNewNumber',
+    ...
+}</code></pre>
+    <p>
+        This allows users to run <code>/lns set mynewsetting on</code> or
+        <code>/lns set mynewnumber 75</code>.
+    </p>
+
+    <p><strong>Step 3:</strong> In the same file, find the <code>LNS_SETTINGS.Tooltips</code> table.
+    Add a tooltip &mdash; this text appears when hovering over the setting in the
+    <a href="ui.html">UI</a>.</p>
+    <pre><code>LNS_SETTINGS.Tooltips = {
+    ...
+    MyNewSetting = "Description of what this setting does.",
+    MyNewNumber  = "Description of this numeric setting.",
+    ...
+}</code></pre>
+
+    <p><strong>Step 4 (optional):</strong> If the setting should <em>not</em> appear in the
+    <a href="ui.html">Settings UI</a> (because it is internal or managed by a dedicated UI), add it
+    to <code>SettingsNoDraw</code> in the same file.</p>
+    <pre><code>LNS_SETTINGS.SettingsNoDraw = {
+    ...
+    MyNewSetting = true,   -- hide from the UI
+    ...
+}</code></pre>
+
+    <p><strong>Step 5:</strong> Reference the setting in your logic (typically in <code>init.lua</code>).</p>
+    <pre><code>if settings.Settings.MyNewSetting then
+    -- do something when enabled
+end
+
+if settings.Settings.MyNewNumber &gt; 25 then
+    -- do something when the number exceeds 25
+end</code></pre>
+    <p>
+        That is it. The Settings UI automatically picks up new settings because it iterates
+        <code>settings.Settings</code> dynamically. Boolean settings get toggle switches; non-boolean
+        settings get input fields. The command handler already supports any setting listed in
+        <code>SettingsEnum</code>. Settings synchronization via actors also works automatically because
+        the entire <code>Settings</code> table is broadcast.
+    </p>
+
+    <h3>Adding a New Loot Action</h3>
+    <div class="warning">
+        <strong>Warning:</strong> Adding a new loot action touches multiple files and affects the
+        <a href="rule-system.html">rule system</a>, <a href="looting-engine.html">looting engine</a>,
+        and <a href="ui.html">UI</a>. Test thoroughly &mdash; a typo in the action name will cause
+        items to be silently skipped. Make sure your action string is consistent (exact same casing)
+        across all five locations listed below.
+    </div>
+    <p>
+        Loot actions (also called <a href="rule-system.html">rules</a>) determine what happens to
+        an item. The built-in actions are: Ask, CanUse, Keep, Bank, Sell, Ignore, Destroy, Quest,
+        and Tribute. Here is how to add a new one.
+    </p>
+    <p><strong>Step 1:</strong> Open <code>init.lua</code> and search for <code>local validActions</code>.
+    Add your action. The key is lowercase (for <a href="commands.html">CLI</a> input); the value is
+    ProperCase (the canonical form stored in <a href="rule-system.html">rules</a>).</p>
+    <pre><code>local validActions = {
+    ask     = "Ask",
+    canuse  = "CanUse",
+    keep    = 'Keep',
+    bank    = 'Bank',
+    sell    = 'Sell',
+    ignore  = 'Ignore',
+    destroy = 'Destroy',
+    quest   = 'Quest',
+    tribute = 'Tribute',
+    myaction = 'MyAction',   -- your new action
+}</code></pre>
+
+    <p><strong>Step 2:</strong> In the same file, search for <code>local shouldLootActions</code>
+    (usually a few lines below <code>validActions</code>). Set to <code>true</code> if the item
+    should be picked up from the corpse, or <code>false</code> if it should be left on the corpse.</p>
+    <pre><code>local shouldLootActions = {
+    Ask = false, CanUse = false, Keep = true, Bank = true,
+    Sell = true, Destroy = false, Ignore = false,
+    Tribute = false, Quest = false,
+    MyAction = true,   -- true = pick up the item
+}</code></pre>
+
+    <p><strong>Step 3:</strong> Add handling in the rule evaluation logic. The <code>getRule()</code>
+    function and related decision functions in <code>init.lua</code> determine what rule applies to
+    an item. You may need to add conditions that return your new action.</p>
+
+    <p><strong>Step 4:</strong> Add handling in the item processing functions. If your action needs
+    special behavior after looting (like Sell goes to a vendor, Tribute goes to a tribute master),
+    add the logic in the appropriate processing function in <code>init.lua</code>.</p>
+
+    <p><strong>Step 5:</strong> Open <code>modules/ui.lua</code> and search for <code>local settingList</code>.
+    Add your action so it appears as a radio button in the
+    <a href="ui.html">New Item popup and Modify Item window</a>.</p>
+    <pre><code>local settingList = {
+    "Ask", "CanUse", "Keep", "Ignore", "Destroy",
+    "Quest", "Sell", "Tribute", "Bank",
+    "MyAction",    -- your new action
+}</code></pre>
+
+    <h3>Adding a New CLI Command</h3>
+    <p>
+        <a href="commands.html">CLI commands</a> are handled by <code>LNS.commandHandler()</code> in
+        <code>init.lua</code>. The function receives variadic arguments from the <code>/lns</code>
+        bind (<code>mq.bind()</code> is the MQ function that registers slash commands). Adding a new
+        command means adding another <code>if</code>/<code>elseif</code> branch.
+    </p>
+    <p><strong>Step 1:</strong> Open <code>init.lua</code> and search for <code>function LNS.commandHandler</code>.
+    It is a large function with many <code>if</code>/<code>elseif</code> branches &mdash; one per command.</p>
+    <p><strong>Step 2:</strong> Add your handler following the existing pattern.</p>
+    <pre><code>function LNS.commandHandler(...)
+    local args = { ..., }
+    ...
+
+    if args[1] == 'mycommand' then
+        local param = args[2] or 'default'
+        -- your logic here
+        Logger.Info(LNS.guiLoot.console,
+            "MyCommand executed with param: \ay%s\ax", param)
+        return
+    end
+
+    ...
+end</code></pre>
+    <p>
+        Users can then run <code>/lns mycommand somevalue</code> in-game. Arguments are split by spaces
+        and available as <code>args[1]</code>, <code>args[2]</code>, etc.
+    </p>
+    <p>
+        The bind itself is registered in <code>LNS.setupBinds()</code> and already routes all
+        <code>/lns</code> commands to <code>commandHandler()</code>, so you do not need to register
+        anything new.
+    </p>
+
+    <h3>Adding a New Actor Action</h3>
+    <p>
+        The <a href="multi-character.html">Actor system</a> is MQ's inter-process messaging system
+        that lets LootNScoot instances exchange data. To add a new type of message:
+    </p>
+    <p><strong>Step 1:</strong> Open <code>modules/actor.lua</code> and find the <code>callback</code>
+    function. It is a large <code>if</code>/<code>elseif</code> chain on the <code>action</code> field.
+    Add your new action handler:</p>
+    <pre><code>if action == 'my_new_action' and who ~= settings.MyName then
+    -- handle the received message
+    local someData = lootMessage.myField or 'default'
+    -- update local state
+    LNS.SomeTable[someData] = true
+    settings.TempSettings.NeedSave = true
+    Logger.Debug(guiLoot.console, dbgTbl)
+    return
+end</code></pre>
+
+    <p><strong>Step 2:</strong> Add the <code>Send()</code> call wherever the action originates. This
+    could be in <code>init.lua</code>, <code>ui.lua</code>, or another module.</p>
+    <pre><code>actors.Send({
+    who     = settings.MyName,
+    action  = 'my_new_action',
+    myField = someValue,
+    Server  = settings.EqServer,
+})</code></pre>
+
+    <p><strong>Step 3:</strong> Define the message fields. There is no formal schema &mdash; you simply
+    add whatever fields you need to the message table. The receiver accesses them from
+    <code>lootMessage</code>. By convention, always include <code>who</code>, <code>action</code>, and
+    <code>Server</code>.</p>
+
+    <h3>Adding a New Database Table</h3>
+    <p>
+        The <a href="database.html">database layer</a> uses <strong>lsqlite3</strong> (a Lua binding
+        for the SQLite database engine, loaded via <code>PackageMan</code>). All database operations
+        live in <code>modules/db.lua</code>.
+    </p>
+    <p><strong>Step 1:</strong> Add a <code>CREATE TABLE IF NOT EXISTS</code> statement in
+    <code>SetupItemsTable()</code> (or create a similar setup function).</p>
+    <pre><code>function LNS_DB.SetupMyTable()
+    LNS_DB.db:exec([[
+        CREATE TABLE IF NOT EXISTS MyTable (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            value INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ]])
+end</code></pre>
+
+    <p><strong>Step 2:</strong> Add prepared statements in <code>PrepareStatements()</code>. Prepared
+    statements are pre-compiled SQL queries that are faster and safer than string concatenation.</p>
+    <pre><code>function LNS_DB.PrepareStatements()
+    ...
+    LNS_DB.stmtInsertMyTable = LNS_DB.db:prepare(
+        "INSERT OR REPLACE INTO MyTable (id, name, value) VALUES (?, ?, ?)")
+    LNS_DB.stmtSelectMyTable = LNS_DB.db:prepare(
+        "SELECT * FROM MyTable WHERE name = ?")
+    ...
+end</code></pre>
+
+    <p><strong>Step 3:</strong> Add Lua functions for CRUD (Create, Read, Update, Delete) operations
+    that use the prepared statements.</p>
+    <pre><code>function LNS_DB.InsertMyRecord(id, name, value)
+    LNS_DB.stmtInsertMyTable:bind_values(id, name, value)
+    LNS_DB.stmtInsertMyTable:step()
+    LNS_DB.stmtInsertMyTable:reset()
+end
+
+function LNS_DB.GetMyRecord(name)
+    LNS_DB.stmtSelectMyTable:bind_values(name)
+    local row = LNS_DB.stmtSelectMyTable:nrows()
+    LNS_DB.stmtSelectMyTable:reset()
+    return row
+end</code></pre>
+
+    <p><strong>Step 4:</strong> If you need fast lookups, add a Lua-side cache table on the
+    <code>LNS</code> object and populate it on load.</p>
+    <pre><code>LNS.MyCache = {}
+-- Populate on init:
+for row in LNS_DB.db:nrows("SELECT * FROM MyTable") do
+    LNS.MyCache[row.id] = row
+end</code></pre>
+
+    <h3>Adding a New UI Tab or Window</h3>
+    <p>
+        All <a href="ui.html">UI</a> rendering lives in <code>modules/ui.lua</code> and uses
+        <strong>ImGui</strong> (Immediate Mode GUI) &mdash; a UI library where you redraw the entire
+        interface every frame by calling functions like <code>ImGui.Text()</code> and
+        <code>ImGui.Button()</code>. There is no persistent widget tree; if you stop calling a
+        function, that widget disappears.
+    </p>
+    <p><strong>Step 1:</strong> Add a render function in <code>modules/ui.lua</code>. The
+    <code>ImGui.Begin()</code> / <code>ImGui.End()</code> pair creates a window. The
+    <code>##LNS</code> suffix ensures a unique ImGui ID even if another script uses the same
+    window title.</p>
+    <pre><code>function LNS_UI.renderMyWindow()
+    if not settings.TempSettings.ShowMyWindow then return end
+    local open, show = ImGui.Begin("My Window##LNS", true)
+    if not open then
+        settings.TempSettings.ShowMyWindow = false
+    end
+    if show then
+        ImGui.Text("Hello from my custom window!")
+        if ImGui.Button("Close") then
+            settings.TempSettings.ShowMyWindow = false
+        end
+    end
+    ImGui.End()
+end</code></pre>
+
+    <p><strong>Step 2:</strong> In the same file, find <code>function LNS_UI.RenderUIs()</code>. Add
+    your call alongside the other window render calls, between the theme push and pop:</p>
+    <pre><code>function LNS_UI.RenderUIs()
+    local colCount, styCount = LNS.guiLoot.DrawTheme()
+    ...
+    LNS_UI.renderMyWindow()       -- add your window here
+    ...
+    if colCount &gt; 0 then ImGui.PopStyleColor(colCount) end
+    if styCount &gt; 0 then ImGui.PopStyleVar(styCount) end
+end</code></pre>
+
+    <p><strong>Step 3:</strong> Use a <a href="settings.html">TempSettings</a> flag for show/hide state
+    (TempSettings is runtime-only, never saved to disk &mdash; perfect for UI toggle state). Add a
+    button or <a href="commands.html">CLI command</a> somewhere that sets
+    <code>settings.TempSettings.ShowMyWindow = true</code>.</p>
+    <p>
+        To add a new tab instead of a new window, find the <code>ImGui.BeginTabBar()</code> call in
+        <code>drawItemsTables()</code> and add an <code>ImGui.BeginTabItem()</code> block:
+    </p>
+    <pre><code>if ImGui.BeginTabItem("My Tab") then
+    -- render tab contents
+    ImGui.Text("Tab content here")
+    ImGui.EndTabItem()
+end</code></pre>
+
+    <h2>The Event System</h2>
+    <p>
+        MacroQuest (MQ) can detect specific text patterns in EverQuest's chat output and trigger Lua
+        callbacks. LootNScoot uses this for detecting loot-related game events. Events are registered
+        in <code>setupEvents()</code> inside <code>init.lua</code>:
+    </p>
+    <pre><code>function LNS.setupEvents()
+    mq.event("CantLoot",
+        "#*#may not loot this corpse#*#",
+        LNS.eventCantLoot)
+    mq.event("NoSlot",
+        "#*#There are no open slots for the held item in your inventory#*#",
+        LNS.eventNoSlot)
+    mq.event("Sell",
+        "#*#You receive#*# for the #1#(s)#*#",
+        LNS.eventSell)
+    mq.event("Forage",
+        "You have scrounged up #*#",
+        LNS.eventForage)
+    mq.event("Novalue",
+        "#*#give you absolutely nothing for the #1#.#*#",
+        LNS.eventNovalue)
+    mq.event("Tribute",
+        "#*#We graciously accept your #1# as tribute, thank you!#*#",
+        LNS.eventTribute)
+end</code></pre>
+    <p>
+        The pattern syntax uses <code>#*#</code> as a wildcard (matches any text) and <code>#1#</code>,
+        <code>#2#</code>, etc. as capture groups (the matched text is passed to the handler function
+        as arguments).
+    </p>
+    <p>
+        To add a new event:
+    </p>
+    <pre><code>mq.event("MyEvent",
+    "#*#some game text with #1# capture#*#",
+    function(line, captured1)
+        Logger.Info(LNS.guiLoot.console,
+            "MyEvent fired! Captured: %s", captured1)
+        -- your logic here
+    end)</code></pre>
+    <p>
+        The first argument to the handler is always the full matched line. Subsequent arguments are the
+        captured groups (<code>#1#</code>, <code>#2#</code>, etc.).
+    </p>
+    <p>
+        Events are processed when <code>mq.doevents()</code> is called in the main loop. They do not
+        fire in real time &mdash; they queue up and are processed on the next main loop iteration.
+    </p>
+
+    <h2>Debugging Tips</h2>
+    <p>
+        Since there is no automated test suite, all debugging happens live in the EverQuest client.
+        Here are the tools available to you:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Tool</th><th>How to Enable</th><th>What It Shows</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Debug Mode</td>
+                <td><code>/lns debug on</code></td>
+                <td>Verbose logging of all rule decisions, actor messages, and state changes. Debug-level messages are printed to the console as formatted tables with fields like Lookup, Event, Action, ItemID, etc.</td>
+            </tr>
+            <tr>
+                <td>Mailbox Viewer</td>
+                <td><code>/lns mailbox</code></td>
+                <td>Real-time overlay showing every actor message with timestamp, subject (action), and sender. Requires debug mode to be on.</td>
+            </tr>
+            <tr>
+                <td>Performance Monitor</td>
+                <td>Toggle via toolbar button</td>
+                <td>ImPlot graph of frame timing. Useful for identifying UI render bottlenecks or slow database queries.</td>
+            </tr>
+            <tr>
+                <td>Console Search</td>
+                <td>Filter box in console window</td>
+                <td>Search through loot history and log messages by item name, date, zone, or action.</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>
+        The Logger module supports multiple severity levels:
+    </p>
+    <pre><code>Logger.Debug(LNS.guiLoot.console, "detailed trace info: %s", value)
+Logger.Info(LNS.guiLoot.console, "normal operation: %s", value)
+Logger.Warn(LNS.guiLoot.console, "something unexpected: %s", value)
+Logger.Trace(LNS.guiLoot.console, "execution trace: %s", value)
+Logger.Error(LNS.guiLoot.console, "something went wrong: %s", value)
+Logger.Fatal(LNS.guiLoot.console, "critical failure: %s", value)
+Logger.Help(LNS.guiLoot.console, "help text: %s", value)</code></pre>
+    <p>
+        The levels in ascending severity order are: debug (1), info (2), warn (3), trace (4), error (5), fatal (6), help (7).
+        Each level takes the console reference as the first argument (so output goes to the console
+        window) and supports <code>string.format()</code>-style formatting. You can also pass a
+        table instead of a format string, and the Logger will print it as a structured key-value display.
+    </p>
+
+    <h2>Code Patterns to Follow</h2>
+
+    <h3>The SetLNS Pattern</h3>
+    <p>
+        Every module that needs access to the central <code>LNS</code> state table follows this pattern:
+    </p>
+    <pre><code>local LNS
+
+function MyModule.SetLNS(_LNS)
+    LNS = _LNS
+end</code></pre>
+    <p>
+        The main <code>init.lua</code> creates the <code>LNS</code> table and then calls
+        <code>SetLNS(LNS)</code> on each module during initialization. This gives every module a
+        reference to the same shared state without circular dependencies. If you create a new module,
+        follow this same pattern and call <code>YourModule.SetLNS(LNS)</code> in <code>init.lua</code>'s
+        <code>LNS.init()</code> function.
+    </p>
+
+    <h3>TempSettings Flags</h3>
+    <p>
+        The UI runs in a render callback (called every frame by
+        <a href="ui.html">ImGui</a> &mdash; the immediate-mode GUI library), while the main logic
+        runs in a <code>while</code> loop with <code>mq.delay()</code> calls
+        (<code>mq.delay()</code> pauses script execution for a duration). These two contexts cannot
+        call each other directly. Instead, they communicate through flags in
+        <a href="settings.html">TempSettings</a> &mdash; the runtime-only state table that is never
+        saved to disk.
+    </p>
+    <p>The pattern:</p>
+    <ol>
+        <li>The UI sets a flag: <code>settings.TempSettings.SomeAction = true</code></li>
+        <li>The main loop checks the flag: <code>if settings.TempSettings.SomeAction then</code></li>
+        <li>The main loop acts on it and clears it: <code>settings.TempSettings.SomeAction = false</code></li>
+    </ol>
+    <p>
+        Examples from the codebase: <code>NeedSave</code> (trigger settings write),
+        <code>SendSettings</code> (trigger actor broadcast), <code>NeedsCleanup</code> (trigger
+        destroy pass), <code>doBulkSet</code> (trigger bulk rule application),
+        <code>ModifyItemRule</code> (open the modify item window).
+    </p>
+    <p>
+        <code>TempSettings</code> is defined in <code>modules/settings.lua</code> with sensible
+        defaults. Unlike <code>Settings</code> (which is persisted to disk), <code>TempSettings</code>
+        is ephemeral &mdash; it resets every time the script restarts.
+    </p>
+
+    <h3>Error Handling</h3>
+    <p>
+        Lua does not have try/catch like other languages. Instead, use <code>pcall()</code>
+        (<strong>protected call</strong>) to catch errors. <code>pcall()</code> runs a function and,
+        if it throws an error, catches the error and returns it as a value instead of crashing the
+        entire script. It returns two values: a boolean (<code>true</code> = success,
+        <code>false</code> = error) and either the function's return value or the error message:
+    </p>
+    <pre><code>local success, result = pcall(function()
+    -- code that might error
+end)
+if not success then
+    Logger.Error(LNS.guiLoot.console, "Operation failed: %s", result)
+end</code></pre>
+    <p>
+        LootNScoot uses <code>pcall()</code> in two critical places:
+    </p>
+    <ul>
+        <li><strong>Actor callbacks</strong> &mdash; the entire callback function is wrapped so a bad message
+        never crashes the script.</li>
+        <li><strong>Database operations</strong> &mdash; SQL errors are caught to prevent script termination.</li>
+    </ul>
+    <p>
+        When adding new code that interacts with external systems (database, actors, MQ TLOs), wrap
+        it in <code>pcall()</code> to be safe.
+    </p>
+
+    <h3>Logger Usage</h3>
+    <p>
+        Always log through the Logger module rather than using <code>print()</code> or <code>printf()</code>.
+        The Logger writes to the <a href="ui.html">console window</a> (visible in-game) and respects
+        the theme system. (Note: if you need to run an in-game slash command from Lua, use
+        <code>mq.cmd('/commandname')</code> &mdash; this executes a command as if you typed it in
+        the EQ chat window. But for logging, always use the Logger.)
+    </p>
+    <pre><code>Logger.Info(LNS.guiLoot.console, "message %s", arg)</code></pre>
+    <p>
+        The first argument is always the console reference (<code>LNS.guiLoot.console</code>). You can
+        pass either a format string with arguments, or a Lua table which will be printed as structured
+        key-value pairs. The table form is especially useful for debug output:
+    </p>
+    <pre><code>Logger.Debug(LNS.guiLoot.console, {
+    Lookup   = 'MyFunction()',
+    Event    = 'Something happened',
+    ItemID   = itemID,
+    Rule     = currentRule,
+})</code></pre>
+    <p>
+        EverQuest color codes work in Logger output:
+        <code>\ay</code> = yellow, <code>\ag</code> = green, <code>\ar</code> = red,
+        <code>\at</code> = teal, <code>\ao</code> = orange, <code>\ax</code> = reset to default.
+    </p>
+
+    <div class="warning">
+        <strong>Warning:</strong> Never call <code>mq.delay()</code> from inside an ImGui render
+        function (anything called from <code>RenderUIs()</code>). ImGui render callbacks run on the UI
+        thread every frame. A <code>mq.delay()</code> call will freeze the entire game client for the
+        duration. All waiting, polling, and time-dependent logic must happen in the main loop
+        (<code>LNS.MainLoop()</code>), not in render functions. Use <code>TempSettings</code> flags
+        to communicate between the two.
+    </div>
+
+    <div class="tip">
+        <strong>Tip:</strong> When debugging rule decisions, enable debug mode (<code>/lns debug on</code>)
+        and watch the console. Every rule evaluation logs the item name, the rule that was applied, and why.
+        The structured table output from <code>Logger.Debug()</code> makes it easy to trace the decision
+        chain for any specific item.
+    </div>
+
+    <div class="note">
+        <strong>Note:</strong> LootNScoot has no automated test suite. All testing is done manually
+        in-game. When you make changes, test them by running the script with <code>/lua run lootnscoot</code>
+        and verifying behavior in the EverQuest client. Use debug mode liberally to confirm your changes
+        are working as expected. Pay special attention to
+        <a href="multi-character.html">actor messages</a> if your change affects multi-character
+        features &mdash; test with at least two characters running simultaneously.
+    </div>
+
+    <div class="tip">
+        <strong>Tip:</strong> A practical debugging workflow: (1) enable debug mode with
+        <code>/lns debug on</code>, (2) trigger the behavior you are testing (e.g., loot a corpse
+        with <code>/lns loot</code>), (3) read the console output to see the exact code path
+        that was taken. If you are debugging <a href="multi-character.html">actor messages</a>,
+        also open the mailbox viewer with <code>/lns mailbox</code> to see messages in real time.
+        If the script crashes, check the MQ console for the error message &mdash; Lua error messages
+        include the file name and line number where the error occurred.
+    </div>
+
+    <div class="page-nav">
+        <a href="multi-character.html">&larr; Prev: Multi-Character</a>
+    </div>
+</main>
+</body>
+</html>
