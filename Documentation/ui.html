@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Interface - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html" class="active">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+
+    <h1>User Interface</h1>
+
+    <h2>Overview</h2>
+    <p>
+        LootNScoot's entire graphical interface is built with <strong>ImGui</strong> (Immediate Mode GUI), a UI library
+        embedded within MacroQuest (MQ). If you have never worked with ImGui before, the key concept is this:
+        the UI is <em>redrawn from scratch every single frame</em>. There is no persistent widget tree or stored state
+        in the UI layer itself. Every frame, your rendering function runs, issues drawing commands
+        (<code>ImGui.Text()</code>, <code>ImGui.Button()</code>, etc.), and ImGui turns those commands into pixels.
+        This is called <strong>immediate-mode rendering</strong>.
+    </p>
+    <p>
+        The UI is registered during initialization in <code>init.lua</code> with a single call:
+    </p>
+    <pre><code>mq.imgui.init('LootnScoot', ui.RenderUIs)</code></pre>
+    <p>
+        <code>mq.imgui.init()</code> tells MacroQuest to call <code>ui.RenderUIs()</code> once per frame.
+        That one function is the entry point for the entire UI: it orchestrates every window, popup,
+        and overlay that LootNScoot displays. The UI module lives in <code>modules/ui.lua</code>.
+    </p>
+
+    <h2>Main Window</h2>
+    <p>
+        The primary window is titled <strong>"LootnScoot"</strong> and is rendered by <code>LNS_UI.RenderMainUI()</code>.
+        It has two major display modes: <strong>Items Mode</strong> and <strong>Settings Mode</strong>,
+        toggled by a button in the toolbar. A small floating button widget (<code>RenderBtn()</code>) is also
+        always visible and provides quick access to toggle the main window.
+    </p>
+
+    <h3>Toolbar</h3>
+    <p>
+        Across the top of the main window you will find a row of toolbar controls:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Control</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Debug Toggle</td><td>Turns on verbose debug logging and the actor mailbox viewer. Equivalent to <code>/lns debug on</code>.</td></tr>
+            <tr><td>Help Button</td><td>Opens the built-in Help window (<code>renderHelpWindow()</code>) containing a full command reference.</td></tr>
+            <tr><td>Report Button</td><td>Opens the session loot report and historical data viewer.</td></tr>
+            <tr><td>Historical Data</td><td>Opens the Past History window to look up loot records by date or item name.</td></tr>
+            <tr><td>Console Toggle</td><td>Shows or hides the scrollable loot console (the <code>guiLoot</code> / <code>loot_hist.lua</code> window).</td></tr>
+            <tr><td>Settings / Items</td><td>Switches between the Items tab view and the Settings editor.</td></tr>
+            <tr><td>Performance Monitor</td><td>Opens an ImPlot-based frame-timing graph rendered by the <code>performance</code> module.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Items Mode</h3>
+    <p>
+        When in Items mode the function <code>drawItemsTables()</code> renders a tab bar with three tabs:
+    </p>
+    <ul>
+        <li><strong>Global_Rules</strong> &mdash; rules that apply to all characters on the server.</li>
+        <li><strong>[YourName]_Rules</strong> &mdash; personal rules specific to the current character.</li>
+        <li><strong>All Items</strong> &mdash; every item LootNScoot has ever seen, pulled from the SQLite database.</li>
+    </ul>
+    <p>
+        Each tab displays a paginated, searchable, sortable table. Pagination defaults to
+        <strong>25 items per page</strong> (the constant <code>ITEMS_PER_PAGE</code>) but you can change it
+        from a dropdown (10 to 100 in increments of 10). Navigation controls include first-page, previous,
+        next, and last-page buttons, plus a page counter.
+    </p>
+    <p>
+        Every item row shows an icon, name, sell value, tribute value, and many other columns
+        (stackable, NoDrop, Lore, tradeskill, classes, stats, resists, heroics, and more).
+        Most columns are hidden by default and can be revealed via ImGui's built-in column visibility menu
+        (right-click a column header).
+    </p>
+    <p>
+        Interaction on an item row:
+    </p>
+    <ul>
+        <li><strong>Left-click the icon</strong> &mdash; opens the EverQuest in-game item details window via <code>/executelink</code>.</li>
+        <li><strong>Right-click the icon</strong> &mdash; pops open a standalone details window rendered by <code>Draw_item_info_window()</code>.</li>
+        <li><strong>Click the item name (Selectable)</strong> &mdash; opens the Modify Item window for that item.</li>
+    </ul>
+    <p>
+        The Items mode also includes a <strong>BulkSet</strong> collapsible section. This lets you select
+        multiple items with checkboxes, choose a rule and class restriction, and apply the rule to
+        all selected items at once. The bulk operation broadcasts rule changes via the
+        <a href="multi-character.html">Actor system</a> (MQ's inter-process messaging) to
+        other running characters.
+    </p>
+    <p>
+        When new items are pending (items found on corpses that have no rule yet), a
+        <strong>New Items</strong> tab appears automatically.
+    </p>
+
+    <h3>Settings Mode</h3>
+    <p>
+        When switched to Settings mode, <code>renderSettingsSection()</code> draws the settings editor.
+        It contains:
+    </p>
+    <ul>
+        <li>
+            <strong>Actor Selector Dropdown</strong> &mdash; a combo box listing all connected characters
+            (populated from <code>LNS.BoxKeys</code>). Selecting a different character lets you view
+            and modify their settings remotely. Changes are broadcast via the <code>updatesettings</code>
+            actor action.
+        </li>
+        <li>
+            <strong>Boolean Toggles</strong> &mdash; each boolean setting is rendered as a toggle switch.
+            The list of settings to display is determined by filtering <code>settings.Settings</code> for
+            boolean-type values and excluding anything in <code>settings.SettingsNoDraw</code>.
+        </li>
+        <li>
+            <strong>Numeric Inputs</strong> &mdash; settings like <code>CorpseRadius</code>,
+            <code>SaveBagSlots</code>, <code>MinSellPrice</code>, etc. are rendered as number input fields.
+        </li>
+        <li>
+            <strong>Channel Dropdowns</strong> &mdash; <code>LootChannel</code> and <code>GroupChannel</code>
+            are rendered as combo boxes or text inputs for selecting the in-game chat channel
+            (e.g., <code>dgt</code>, <code>dgze</code>, <code>say</code>).
+        </li>
+    </ul>
+
+    <h2>New Item Popup</h2>
+    <p>
+        Rendered by <code>renderNewItem()</code>, this window appears when a new item is discovered on a corpse
+        and no rule exists for it yet. If the setting <code>AutoShowNewItem</code> is enabled, it pops up
+        automatically; otherwise the user can open it from the New Items tab.
+    </p>
+    <p>
+        The popup displays:
+    </p>
+    <ul>
+        <li>Item icon (rendered via <code>drawIcon()</code>).</li>
+        <li>Item name, ID, and item link.</li>
+        <li>Sell price (broken down into platinum, gold, silver, copper via <code>draw_value()</code>), tribute value, and max stack size.</li>
+        <li>Class restrictions, NoDrop (cannot be traded), Lore (only one can be held per character), Tradeskill, and Augment flags.</li>
+        <li>Corpse ID the item was found on.</li>
+    </ul>
+    <p>
+        Below the item details is a row of <strong>radio buttons</strong> for selecting a
+        <a href="rule-system.html">loot rule</a>. The available choices come from the
+        <code>settingList</code> array:
+    </p>
+    <pre><code>local settingList = {
+    "Ask", "CanUse", "Keep", "Ignore", "Destroy",
+    "Quest", "Sell", "Tribute", "Bank",
+}</code></pre>
+    <p>
+        Additional controls in the popup:
+    </p>
+    <ul>
+        <li><strong>"Loot All" checkbox</strong> &mdash; if checked, the class restriction is ignored and anyone can loot the item.</li>
+        <li><strong>Classes input</strong> &mdash; a text field to restrict which character classes may loot the item (e.g., <code>shm clr dru</code>).</li>
+        <li><strong>"Share to Others" checkbox</strong> &mdash; when checked, the rule decision is broadcast to all other connected characters via the Actor system.</li>
+        <li><strong>OK button</strong> &mdash; saves the rule and removes the item from the new items queue.</li>
+        <li><strong>Cancel button</strong> &mdash; dismisses without saving.</li>
+        <li><strong>Delete button</strong> &mdash; removes the item entry entirely.</li>
+        <li><strong>Inspect (icon click)</strong> &mdash; left-click the icon to open the in-game item window, right-click to pop open a details overlay.</li>
+    </ul>
+
+    <h2>Modify Item Window</h2>
+    <p>
+        Rendered by <code>RenderModifyItemWindow()</code>, this window opens when you click an item name
+        in any items table, or when you use the <code>/lns</code> command to modify an item by name.
+        It allows editing the rule for a specific item.
+    </p>
+    <p>
+        Features of the Modify Item window:
+    </p>
+    <ul>
+        <li><strong>Item Search</strong> &mdash; if the item ID is negative (a legacy ID from the old INI system), LootNScoot automatically searches the database for matching items by name and displays a match table.</li>
+        <li><strong>Rule Radio Buttons</strong> &mdash; the same <code>settingList</code> radio buttons as the New Item popup, plus a Quest quantity input when Quest is selected.</li>
+        <li><strong>Class Restriction Editing</strong> &mdash; a text input field for specifying allowed classes (e.g., <code>shm clr dru</code> or <code>All</code>).</li>
+        <li><strong>Table Selector</strong> &mdash; a dropdown to choose whether the rule goes into <code>Global_Rules</code> or <code>[YourName]_Rules</code> (personal).</li>
+        <li><strong>"Share to Other Characters" checkbox</strong> &mdash; for personal rules, broadcasts the change to other logged-in characters via <code>sharePersonalRuleToOthers()</code>.</li>
+        <li><strong>Item Link Display</strong> &mdash; shows the EQ item link; clicking it opens the in-game item window.</li>
+        <li><strong>Set Rule button</strong> &mdash; commits the change by calling <code>setGlobalItem()</code> or <code>setPersonalItem()</code>.</li>
+        <li><strong>Trash button</strong> &mdash; deletes the rule entirely.</li>
+        <li><strong>Cancel button</strong> &mdash; closes without saving.</li>
+    </ul>
+    <p>
+        When a name search produces multiple matches, a sub-table is displayed with columns for item ID,
+        item name, and a Set button. Clicking Set on a match replaces the old (legacy) entry with the
+        correct database entry.
+    </p>
+
+    <h2>Master Looter Window</h2>
+    <p>
+        Rendered by <code>RenderMasterLooterWindow()</code>, this window only appears when
+        <code>LNS.MasterLootList</code> contains data (i.e., when Master Looter mode is active and items
+        have been found on corpses). See the <a href="multi-character.html">Multi-Character</a> page for
+        how the Master Looter system works at the messaging level.
+    </p>
+    <p>
+        The window shows a list of corpses, each with its items. For each item, you see:
+    </p>
+    <ul>
+        <li>The item name and link.</li>
+        <li>Item value, NoDrop status, and Lore status.</li>
+        <li>A <strong>Members</strong> table showing each connected character and how many of that item they already own (inventory + bank count).</li>
+        <li><strong>"Loot for [CharName]"</strong> buttons for each member, which send a <code>loot_item</code> actor message to the target character.</li>
+        <li><strong>Recheck</strong> button to re-broadcast a <code>recheck_item</code> message and refresh member counts.</li>
+    </ul>
+
+    <h2>Console Window</h2>
+    <p>
+        The console is powered by the <code>guiLoot</code> module (<code>modules/loot_hist.lua</code>).
+        It is a scrollable, filterable log of all loot events, actor messages, debug output, and errors.
+        Key features:
+    </p>
+    <ul>
+        <li>Scrollable text output with automatic scroll-to-bottom.</li>
+        <li>Search and filter functionality to find specific loot events.</li>
+        <li>Theme selection &mdash; the console supports the same theme system as the rest of the UI.</li>
+        <li>Import GUI elements &mdash; LootNScoot injects a custom "Loot N Scoot" menu into the console's menu bar via <code>guiExport()</code>, providing quick access to Sell, Restock, Tribute, Bank, and Cleanup commands for both the local character and the group.</li>
+    </ul>
+
+    <h2>Report Windows</h2>
+    <p>
+        The report system consists of two related views, both rendered by <code>DrawRecord()</code>:
+    </p>
+    <ul>
+        <li>
+            <strong>Session Report</strong> &mdash; shows all loot events from the current play session,
+            stored in <code>settings.TempSettings.SessionHistory</code>.
+        </li>
+        <li>
+            <strong>Historical Data Lookup</strong> &mdash; opened via the Past History window. A date
+            selector dropdown (populated from <code>LNS.HistoricalDates</code>) lets you load loot records
+            for a specific date. You can also search by item name. The table displays Date, Timestamp,
+            Item, Looter, Action, Corpse Name, and Zone columns, with pagination and filtering.
+        </li>
+    </ul>
+
+    <h2>Help Window</h2>
+    <p>
+        Rendered by <code>renderHelpWindow()</code>, this is a built-in command reference displayed in a
+        standalone ImGui window. It contains collapsible sections with tables listing:
+    </p>
+    <ul>
+        <li><strong>Run Commands</strong> &mdash; how to launch LootNScoot in different modes (<code>standalone</code>, <code>once</code>, <code>directed</code>).</li>
+        <li><strong>Basic Commands</strong> &mdash; <code>/lns sellstuff</code>, <code>/lns bankstuff</code>, <code>/lns tributestuff</code>, <code>/lns loot</code>, <code>/lns set</code>, <code>/lns pause</code>, <code>/lns resume</code>, <code>/lns corpsereset</code>, <code>/lns help</code>.</li>
+        <li><strong>Item Commands</strong> &mdash; <code>/lns [sell|keep|quest|bank|ignore|destroy]</code>, <code>/lns buy</code>, <code>/lns find</code>, <code>/lns personalitem</code>, <code>/lns globalitem</code>.</li>
+        <li><strong>Toggles</strong> &mdash; a dynamically generated list of all boolean settings with their tooltip descriptions.</li>
+        <li><strong>Settings</strong> &mdash; a dynamically generated list of all non-boolean settings with their tooltips.</li>
+    </ul>
+
+    <h2>Other Windows</h2>
+    <p>
+        Several additional windows are rendered by <code>RenderUIs()</code> when their conditions are met:
+    </p>
+    <ul>
+        <li>
+            <strong>Clone Window</strong> (<code>renderCloneWindow()</code>) &mdash; allows copying settings
+            from one character to another. Useful when setting up a new alt.
+        </li>
+        <li>
+            <strong>Import DB Window</strong> (<code>renderImportDBWindow()</code>) &mdash; provides a UI
+            for importing an external items database file. Only shown when
+            <code>settings.TempSettings.ShowImportDB</code> is true.
+        </li>
+        <li>
+            <strong>Performance Monitor</strong> &mdash; rendered by the <code>performance</code> module
+            (<code>modules/performance.lua</code>), it uses <strong>ImPlot</strong> (a plotting extension
+            for ImGui) to display real-time frame timing graphs. Useful for diagnosing UI performance issues.
+        </li>
+        <li>
+            <strong>Item Detail Popups</strong> (<code>Draw_item_info_window()</code>) &mdash; standalone
+            windows showing full item statistics. These pop open when you right-click an item icon anywhere
+            in the UI. They display stats, resists, augment slots, damage info, and more, rendered with
+            colored text via the <code>Colors()</code> function.
+        </li>
+    </ul>
+
+    <h2>UI Architecture</h2>
+    <p>
+        Understanding how the pieces fit together will help you navigate the code:
+    </p>
+
+    <div class="diagram">
+<pre>
+RenderUIs()                          [called every frame by mq.imgui]
+  |
+  +-- DrawTheme()                    [apply color/style theme]
+  |
+  +-- enterNewItemRuleInfo()         [process queued new-item decisions]
+  |
+  +-- RenderModifyItemWindow()       [if ModifyItemRule flag is set]
+  |
+  +-- renderNewItem()                [if NewItemsCount &gt; 0]
+  |     +-- Draw_item_info_window()  [for each right-click popup]
+  |
+  +-- processPendingItem()           [if pendingItemData exists]
+  |
+  +-- renderImportDBWindow()         [if ShowImportDB flag is set]
+  |
+  +-- RenderMainUI()                 [the primary LootnScoot window]
+  |     +-- drawItemsTables()        [Items mode: tabs + paginated tables]
+  |     +-- renderSettingsSection()  [Settings mode: toggles + inputs]
+  |
+  +-- RenderBtn()                    [floating mini-button widget]
+  |
+  +-- renderCloneWindow()            [clone settings between characters]
+  |
+  +-- RenderMasterLooterWindow()     [if MasterLootList has data]
+  |
+  +-- DebugMailBox()                 [if ShowMailbox is true]
+  |
+  +-- renderHelpWindow()             [help command reference]
+  |
+  +-- DrawRecord()                   [if PastHistory flag is set]
+  |
+  +-- perf:Render()                  [if performance monitor is visible]
+  |
+  +-- PopStyleColor / PopStyleVar    [clean up theme]
+</pre>
+    </div>
+
+    <h3>DrawTheme()</h3>
+    <p>
+        At the start of every frame, <code>RenderUIs()</code> calls <code>LNS.guiLoot.DrawTheme()</code>.
+        This pushes ImGui style colors and vars onto the stack, returning counts of how many were pushed.
+        At the end of the frame, those are popped to restore defaults. This is how the theme system works
+        in ImGui: push overrides at the top, pop them at the bottom.
+    </p>
+
+    <h3>Color System</h3>
+    <p>
+        The function <code>LNS_UI.Colors(color_name)</code> returns an <code>ImVec4</code> color value by
+        looking up a name in the <code>ColorList</code> table. Available color names include:
+        <code>red</code>, <code>pink</code>, <code>orange</code>, <code>tangarine</code>,
+        <code>yellow</code>, <code>white</code>, <code>blue</code>, <code>softblue</code>,
+        <code>teal</code>, <code>green</code>, <code>grey</code>, <code>purple</code>, and more.
+        If a color name is not found, white (<code>ImVec4(1,1,1,1)</code>) is returned as a fallback.
+    </p>
+
+    <h3>Icon Rendering</h3>
+    <p>
+        EverQuest item icons are rendered using texture animation. The setup:
+    </p>
+    <pre><code>local iconAnimation = mq.FindTextureAnimation('A_DragItem')
+local EQ_ICON_OFFSET = 500
+
+function LNS_UI.drawIcon(iconID, iconSize)
+    if iconSize == nil then iconSize = 16 end
+    if iconID ~= nil then
+        iconAnimation:SetTextureCell(iconID - 500)
+        ImGui.DrawTextureAnimation(iconAnimation, iconSize, iconSize)
+    end
+end</code></pre>
+    <p>
+        <code>mq.FindTextureAnimation('A_DragItem')</code> loads the EQ item icon sprite sheet.
+        Each item has an icon ID; subtracting the offset of 500 gives the correct cell index in the
+        texture atlas. <code>DrawTextureAnimation()</code> then renders that cell at the specified size.
+    </p>
+
+    <div class="tip">
+        <strong>Tip:</strong> Right-clicking an item icon anywhere in the UI will pop open a detailed
+        item stats window. Left-clicking opens the EverQuest in-game item details window. This works
+        in the Items tables, the New Item popup, and the All Items database view.
+    </div>
+
+    <div class="warning">
+        <strong>Warning:</strong> Never call <code>mq.delay()</code> from inside an ImGui render function.
+        <code>mq.delay()</code> is an MQ function that pauses script execution for a specified duration
+        (e.g., <code>mq.delay(1000)</code> pauses for 1 second). ImGui render callbacks run on the main
+        thread every frame. Calling <code>mq.delay()</code> inside one will freeze the entire UI (and
+        possibly the game client) for the duration of the delay. All time-dependent logic must be handled
+        in the main loop, not the render loop. Use
+        <a href="settings.html">TempSettings</a> flags to communicate between the render function and
+        the main loop instead.
+    </div>
+
+    <div class="page-nav">
+        <a href="commands.html">&larr; Prev: CLI Commands</a>
+        <a href="multi-character.html">Next: Multi-Character &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

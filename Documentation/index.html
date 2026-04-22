@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html" class="active">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+
+    <h1>LootNScoot Documentation</h1>
+
+    <div class="note">
+        This documentation targets new developers who may have zero prior experience with
+        MacroQuest, EverQuest scripting, or the Lua programming language. Every concept is
+        explained from the ground up so you can confidently read and modify the LootNScoot
+        source code.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>What is LootNScoot?</h2>
+
+    <p>
+        <strong>LootNScoot</strong> is an automation script for the MMORPG
+        <em>EverQuest</em> (EQ). It handles the tedious task of looting items from
+        defeated monsters, deciding what to keep, sell, bank, tribute, or destroy, and
+        coordinating those decisions across multiple characters, even across separate
+        PCs on the same network.
+    </p>
+
+    <p>Before diving in, here are three foundational terms you will see everywhere:</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Term</th>
+                <th>What It Is</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>MacroQuest (MQ)</strong></td>
+                <td>
+                    A third-party tool that injects into the EverQuest client and exposes a
+                    rich scripting API. MQ provides <em>Top Level Objects</em>
+                    (<strong>TLO</strong>s &mdash; read-only accessors like <code>mq.TLO.Me.Name()</code>)
+                    to read game state (your character's name, nearby
+                    spawns (entities in the game world like NPCs, players, and corpses),
+                    inventory contents) and <code>mq.cmd</code> /
+                    <code>mq.cmdf</code> to execute in-game slash commands (e.g.,
+                    <code>mq.cmd('/sit')</code> makes your character sit down). MQ also bundles
+                    an embedded Lua runtime so scripts can be written in Lua instead of the
+                    older macro language.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Lua</strong></td>
+                <td>
+                    A lightweight, dynamically-typed scripting language. MQ embeds Lua 5.1
+                    (via LuaJIT). All LootNScoot code is pure Lua &mdash; there is no
+                    compilation step, no build system. You edit <code>.lua</code> files and
+                    run them directly inside MQ.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>ImGui</strong></td>
+                <td>
+                    An <em>immediate-mode</em> graphical user interface library. Instead of
+                    creating persistent widget objects, you call drawing functions every
+                    frame. MQ exposes ImGui through <code>mq.imgui</code>, and LootNScoot
+                    uses it to render its settings window, item tables, loot history, and
+                    rule editors.
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>
+        LootNScoot makes decisions using a <strong><a href="rule-system.html">rule-based system</a></strong>. Each item in
+        the game can be assigned an action (Keep, Sell, Bank, Tribute, Quest, Destroy,
+        CanUse, Ask, or Ignore). Rules live in an <a href="database.html">SQLite database</a> and are split into
+        <em>Global</em> rules (shared across characters on a server) and
+        <em>Personal</em> rules (per-character overrides). Personal rules always take
+        priority over Global rules, allowing each character to customize loot behavior
+        without affecting others. When the script encounters an
+        item it has never seen, it applies auto-rules based on your <a href="settings.html">settings</a> or prompts you
+        to decide.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>Source File Structure</h2>
+
+    <p>
+        The project lives in a single folder (<code>lootnscoot/</code>) inside MacroQuest's
+        <code>lua</code> directory. Here is every source file and its role:
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>File</th>
+                <th>~Lines</th>
+                <th>Purpose</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>init.lua</code></td>
+                <td>4,488</td>
+                <td>
+                    Core engine. Entry point, main loop, rule evaluation
+                    (<code>getRule</code>, <code>lookupLootRule</code>), looting logic
+                    (<code>lootMobs</code>, <code>lootCorpse</code>), item processing
+                    (sell, bank, tribute, destroy), settings I/O, CLI binds, event handlers.
+                </td>
+            </tr>
+            <tr>
+                <td><code>modules/actor.lua</code></td>
+                <td>595</td>
+                <td>
+                    Multi-character communication via MQ's actor system. Sends and receives
+                    messages for loot coordination, settings sync, master looter commands,
+                    and directed-mode control.
+                </td>
+            </tr>
+            <tr>
+                <td><code>modules/db.lua</code></td>
+                <td>~1,240</td>
+                <td>
+                    Database layer. Opens/creates SQLite databases (Items.db,
+                    AdvLootRules.db, LootHistory.db), provides prepared statements for
+                    CRUD operations, bulk set, import/export, wildcard rules, and
+                    historical data queries.
+                </td>
+            </tr>
+            <tr>
+                <td><code>modules/loot_hist.lua</code></td>
+                <td>~1,000</td>
+                <td>
+                    Loot history tracking and the console/report UI. Records what was
+                    looted, by whom, and when. Provides the in-game loot console window
+                    and the report table.
+                </td>
+            </tr>
+            <tr>
+                <td><code>modules/performance.lua</code></td>
+                <td>136</td>
+                <td>
+                    Lightweight performance profiling utilities for timing code sections
+                    during development and debugging.
+                </td>
+            </tr>
+            <tr>
+                <td><code>modules/settings.lua</code></td>
+                <td>219</td>
+                <td>
+                    Declares every user-facing setting with its default value, tooltip text,
+                    and the <code>TempSettings</code> table used for inter-module
+                    communication between the UI and the main loop.
+                </td>
+            </tr>
+            <tr>
+                <td><code>modules/ui.lua</code></td>
+                <td>~3,910</td>
+                <td>
+                    The entire ImGui user interface: main window, settings panel, rule
+                    tables (Global and Personal), item lookup, new-item popup, modify-item
+                    dialog, wildcard editor, buy-items list, historical data viewer, master
+                    looter window, and the toggle button.
+                </td>
+            </tr>
+            <tr>
+                <td><code>lib/Logger.lua</code></td>
+                <td>~170</td>
+                <td>
+                    Logging utility with level filtering (debug, info, warn, trace, error, fatal, help).
+                    Outputs to both the MQ chat window and the in-game loot console.
+                </td>
+            </tr>
+            <tr>
+                <td><code>lib/scrolling_plot_buffer.lua</code></td>
+                <td>~46</td>
+                <td>
+                    A ring-buffer data structure used by ImPlot to display scrolling
+                    performance graphs.
+                </td>
+            </tr>
+            <tr>
+                <td><code>lib/themes.lua</code></td>
+                <td>~3,530</td>
+                <td>
+                    Comprehensive ImGui color theme definitions for consistent styling across the UI.
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2>Key Dependencies</h2>
+
+    <p>
+        LootNScoot relies on several libraries and plugins. These are not bundled with the
+        script &mdash; they come from MacroQuest or are fetched at runtime.
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Dependency</th>
+                <th>How It Is Loaded</th>
+                <th>What It Provides</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>mq</code></td>
+                <td><code>require 'mq'</code></td>
+                <td>
+                    Core MacroQuest API. Provides <code>mq.TLO</code> for game data,
+                    <code>mq.cmd</code>/<code>mq.cmdf</code> for commands,
+                    <code>mq.imgui</code> for GUI, <code>mq.pickle</code> for
+                    serialization, <code>mq.configDir</code> for file paths, and
+                    <code>mq.delay</code> for yielding.
+                </td>
+            </tr>
+            <tr>
+                <td><code>lsqlite3</code></td>
+                <td><code>PackageMan.Require('lsqlite3')</code></td>
+                <td>
+                    SQLite3 bindings for Lua. Fetched automatically by MQ's PackageMan
+                    on first run. Used for all three databases (Items, Rules, History).
+                </td>
+            </tr>
+            <tr>
+                <td><code>actors</code></td>
+                <td><code>require('actors')</code></td>
+                <td>
+                    MQ's built-in <strong>actor system</strong> for asynchronous inter-process
+                    messaging &mdash; it lets separate EQ instances (each running their own
+                    copy of LootNScoot) exchange data without sharing memory.
+                    Loaded by <code>modules/actor.lua</code> which wraps it.
+                    Characters send and receive Lua tables as messages to
+                    coordinate looting, share settings, and manage master looter state.
+                    See <a href="multi-character.html">Multi-Character</a> for details.
+                </td>
+            </tr>
+            <tr>
+                <td><code>ImGui</code></td>
+                <td>Built into MQ (<code>mq.imgui</code>)</td>
+                <td>
+                    Immediate-mode GUI rendering. All windows, tables, buttons, checkboxes,
+                    and input fields are drawn through ImGui each frame.
+                </td>
+            </tr>
+            <tr>
+                <td><code>ImPlot</code></td>
+                <td>Built into MQ</td>
+                <td>
+                    Plotting extension for ImGui. Used for scrolling performance graphs
+                    in the debug/performance view.
+                </td>
+            </tr>
+            <tr>
+                <td><code>mq.PackageMan</code></td>
+                <td><code>require('mq.PackageMan')</code></td>
+                <td>
+                    MQ's built-in package manager. Automatically downloads and caches
+                    Lua packages (like lsqlite3) the first time they are required.
+                </td>
+            </tr>
+            <tr>
+                <td><code>mq.Utils</code></td>
+                <td><code>require('mq.Utils')</code></td>
+                <td>
+                    File system utilities provided by MQ. Used for checking file
+                    existence, directory creation, and path manipulation.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>MQ2Nav plugin</strong></td>
+                <td><code>/plugin Nav</code> in MQ</td>
+                <td>
+                    <strong>MQ2Nav</strong> is a navigation mesh plugin that provides
+                    pathfinding &mdash; it calculates a walkable route between two points
+                    in the game world, avoiding walls and obstacles. LootNScoot uses it
+                    to walk your character to corpses automatically.
+                    The script will refuse to start if MQ2Nav is not loaded.
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2>How to Run</h2>
+
+    <p>
+        LootNScoot supports three operating modes. You choose a mode by passing command-line
+        arguments when you start the script from the MQ in-game command line.
+    </p>
+
+    <h3>Once Mode (default)</h3>
+    <pre><code>/lua run lootnscoot</code></pre>
+    <p>
+        Performs a single action and then exits. This is the <strong>recommended way to run the
+        script for the very first time</strong> &mdash; on a single character &mdash; so that
+        PackageMan can install dependencies and all databases and config directories are created
+        without race conditions. After the initial setup, you can launch all characters
+        simultaneously in standalone mode.
+    </p>
+    <p>
+        You can also pass extra arguments to perform a specific action and exit:
+    </p>
+    <pre><code>/lua run lootnscoot sellstuff
+/lua run lootnscoot bank
+/lua run lootnscoot tributestuff</code></pre>
+
+    <h3>Standalone Mode</h3>
+    <pre><code>/lua run lootnscoot standalone</code></pre>
+    <p>
+        Runs continuously in the background. The main loop checks for nearby corpses on a
+        timer (controlled by <code>LootCheckDelay</code>), processes sell/bank/tribute
+        queues, and keeps the UI alive. This is the most common mode for everyday use.
+    </p>
+
+    <h3>Directed Mode</h3>
+    <pre><code>/lua run lootnscoot directed scriptname</code></pre>
+    <p>
+        Designed to be launched by another script (such as RGMercs). In this mode,
+        LootNScoot only loots when it receives a command over the actor system or when
+        you manually issue <code>/lns loot</code>. The script will terminate automatically
+        if the directing script stops running.
+    </p>
+
+    <div class="tip">
+        If you embed LootNScoot inside another script's folder, the path would be something
+        like <code>/lua run yourscript/lib/lootnscoot directed scriptname</code>.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>Quick Links</h2>
+
+    <div class="link-grid">
+        <a href="getting-started.html">
+            <strong>Getting Started</strong>
+            <span>Prerequisites, installation, first run walkthrough</span>
+        </a>
+        <a href="architecture.html">
+            <strong>Architecture</strong>
+            <span>Module graph, LNS table, init flow, main loop</span>
+        </a>
+        <a href="rule-system.html">
+            <strong>Rule System</strong>
+            <span>Nine loot actions, priority chain, getRule() decision tree</span>
+        </a>
+        <a href="looting-engine.html">
+            <strong>Looting Engine</strong>
+            <span>Corpse discovery, navigation, loot window interaction</span>
+        </a>
+        <a href="database.html">
+            <strong>Database Layer</strong>
+            <span>SQLite schemas, prepared statements, Items.db, Rules, History</span>
+        </a>
+        <a href="settings.html">
+            <strong>Settings Reference</strong>
+            <span>Every setting, its type, default value, and tooltip</span>
+        </a>
+        <a href="commands.html">
+            <strong>CLI Commands</strong>
+            <span>/lns and /lootutils arguments, in-game usage</span>
+        </a>
+        <a href="ui.html">
+            <strong>User Interface</strong>
+            <span>ImGui windows, tabs, toggle button, new-item popup</span>
+        </a>
+        <a href="multi-character.html">
+            <strong>Multi-Character</strong>
+            <span>Actor messaging, settings sync, master looter</span>
+        </a>
+        <a href="extending.html">
+            <strong>Modifying the Code</strong>
+            <span>Adding rules, new settings, UI changes, module patterns</span>
+        </a>
+    </div>
+
+    <div class="page-nav">
+        <span></span>
+        <a href="getting-started.html">Next: Getting Started &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

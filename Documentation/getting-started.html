@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Getting Started - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html" class="active">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+
+    <h1>Getting Started</h1>
+
+    <p>
+        This page walks you through everything you need before running LootNScoot for the
+        first time, explains what happens during startup, and describes your first
+        looting experience step by step.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>Prerequisites</h2>
+
+    <p>
+        LootNScoot needs a few things in place before it can run. If any of these are
+        missing, the script will either refuse to start or will lack critical functionality.
+    </p>
+
+    <h3>MQ2Nav Plugin (Required)</h3>
+
+    <p>
+        <strong>MQ2Nav</strong> is a MacroQuest (MQ) plugin that provides navigation mesh
+        pathfinding &mdash; it calculates walkable routes through the 3D game world, letting
+        scripts move your character automatically. LootNScoot
+        uses it to walk your character to corpses. The very first thing the script does on
+        startup is check for MQ2Nav using a <strong>TLO</strong> (Top Level Object &mdash;
+        MQ's read-only API for accessing game data):
+    </p>
+
+    <pre><code>if not mq.TLO.Plugin("MQ2Nav").IsLoaded() then
+    print("WARNING!! MQ2Nav is NOT loaded...")
+    mq.exit()
+end</code></pre>
+
+    <p>If MQ2Nav is not loaded, the script prints a warning and exits immediately.</p>
+
+    <div class="warning">
+        <strong>MQ2Nav is mandatory.</strong> Load it before starting LootNScoot by typing
+        <code>/plugin Nav</code> in the MQ command line. On most setups, you can add this
+        to your MQ auto-load configuration so it starts with every session.
+    </div>
+
+    <h3>lsqlite3 (Auto-installed)</h3>
+
+    <p>
+        LootNScoot stores all its data in SQLite databases. It uses the
+        <code>lsqlite3</code> Lua binding to talk to SQLite. This library is fetched
+        automatically by MQ's PackageMan system the first time you run the script:
+    </p>
+
+    <pre><code>local PackageMan = require('mq.PackageMan')
+local sql = PackageMan.Require('lsqlite3')</code></pre>
+
+    <p>
+        <strong>PackageMan</strong> is MQ's built-in package manager. When you call
+        <code>PackageMan.Require('lsqlite3')</code>, it checks if the package is already
+        cached locally. If not, it downloads and installs it. This happens silently on the
+        first run &mdash; you do not need to install anything manually.
+    </p>
+
+    <h3>Items.db (Optional but Recommended)</h3>
+
+    <p>
+        The <a href="database.html">Items database</a> contains metadata for every EverQuest item: name, sell value,
+        tribute value, class restrictions, whether it is <strong>NoDrop</strong> (cannot be
+        traded to other players), <strong>Lore</strong> (only one can be held at a time),
+        tradeskill, and so on. LootNScoot will create an empty database if none exists and
+        populate it as you encounter items, but starting with a pre-built database gives you
+        immediate access to over 117,000 items.
+    </p>
+
+    <p>
+        A default Items.db covering all standard EQEmu server items is available from:<br>
+        <code>https://github.com/grimmier378/emu_itemdb/releases</code>
+    </p>
+
+    <p>
+        Place the downloaded <code>Items.db</code> file at:<br>
+        <code>[MQ Dir]/resources/LootNScoot/[ServerName]/Items.db</code>
+    </p>
+
+    <div class="tip">
+        If your server has customized items, the database will automatically update with
+        correct data as you loot or import those items. The pre-built database is just a
+        head start.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>Installation</h2>
+
+    <p>
+        Installation is simple &mdash; there is no build step, no compilation, and no
+        package to install beyond placing files in the right directory.
+    </p>
+
+    <ol>
+        <li>
+            Locate your MacroQuest <code>lua</code> directory. This is typically
+            <code>[MQ Install Dir]/lua/</code>.
+        </li>
+        <li>
+            Place the entire <code>lootnscoot/</code> folder inside the <code>lua</code>
+            directory so the entry point is at
+            <code>[MQ Dir]/lua/lootnscoot/init.lua</code>.
+        </li>
+        <li>
+            Ensure MQ2Nav is loaded (<code>/plugin Nav</code>).
+        </li>
+        <li>
+            Run the script <strong>once on a single character</strong>:
+            <code>/lua run lootnscoot</code> (no arguments).
+        </li>
+    </ol>
+
+    <p>
+        Running without arguments performs the initial setup &mdash; PackageMan downloads
+        lsqlite3, the script creates its config and database directories, and then it
+        exits cleanly. This one-time setup should be done on a <strong>single character
+        only</strong> to avoid race conditions (multiple characters trying to create the
+        same directories and databases simultaneously).
+    </p>
+
+    <div class="warning">
+        <strong>First launch: one character only.</strong> Run <code>/lua run lootnscoot</code>
+        on a single character and let it finish before starting the script on other characters.
+        Once the initial setup completes, you can safely load all characters at once with
+        <code>/lua run lootnscoot standalone</code>.
+    </div>
+
+    <div class="tip">
+        After your first run, consider these common setup steps:
+        (1) Run <code>/lns importinv</code> to seed the Items database with your existing gear.
+        (2) Open the <a href="ui.html">UI</a> and review the <a href="settings.html">Settings</a> tab.
+        (3) Kill a few enemies and check the New Items popup to verify auto-rules match your preferences.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>First Run</h2>
+
+    <p>
+        When you type <code>/lua run lootnscoot</code> for the first time (no arguments),
+        the script executes <code>init.lua</code> from top to bottom, performs all setup,
+        and then exits. Here is exactly what happens inside the
+        <code>LNS.init(args)</code> function, in order:
+    </p>
+
+    <ol>
+        <li>
+            <strong>Database module initialized</strong> &mdash;
+            <code>db.SetLNS(LNS)</code> gives the database module a reference to the
+            central state table so it can read and write shared data.
+        </li>
+        <li>
+            <strong>Settings loaded or created</strong> &mdash;
+            <code>LNS.loadSettings(true)</code> reads your character's settings file. If
+            no file exists (first run), it creates one with all default values from
+            <code>modules/settings.lua</code> and returns <code>true</code> (needs save).
+        </li>
+        <li>
+            <strong>Prepared statements created</strong> &mdash;
+            <code>db.PrepareStatements()</code> compiles all SQL queries into reusable
+            prepared statements for performance.
+        </li>
+        <li>
+            <strong>Map filter updated</strong> &mdash;
+            <code>/squelch /mapfilter CastRadius</code> is set to the configured
+            <code>CorpseRadius</code> value.
+        </li>
+        <li>
+            <strong>Settings sorted</strong> &mdash;
+            <code>LNS.SortSettings()</code> and <code>LNS.SortTables()</code> organize
+            settings keys alphabetically for the UI.
+        </li>
+        <li>
+            <strong>Actors registered</strong> &mdash;
+            <code>actors.SetLNS(LNS)</code> and <code>actors.RegisterActors()</code>
+            set up the inter-process messaging system.
+        </li>
+        <li>
+            <strong>Bag space checked</strong> &mdash; <code>LNS.CheckBags()</code>
+            counts your available inventory slots.
+        </li>
+        <li>
+            <strong>Events bound</strong> &mdash; <code>LNS.setupEvents()</code>
+            registers MQ event handlers for detecting sells, tributes, and other
+            game events that LootNScoot should react to.
+        </li>
+        <li>
+            <strong>CLI commands registered</strong> &mdash;
+            <code>LNS.setupBinds()</code> creates the <code>/lns</code> and
+            <code>/lootutils</code> slash commands so you can control the script from the
+            MQ command line. See <a href="commands.html">CLI Commands</a> for the full list.
+        </li>
+        <li>
+            <strong>Arguments parsed</strong> &mdash; <code>processArgs(args)</code>
+            reads the command-line arguments (<code>standalone</code>,
+            <code>directed scriptname</code>, etc.) to determine the operating mode.
+            The mode is stored in <code>LNS.Mode</code>. A "Hello" message is broadcast
+            to other running instances if running in standalone mode.
+        </li>
+        <li>
+            <strong>Settings broadcast</strong> &mdash;
+            <code>actors.SendMySettings()</code> sends this character's settings to all
+            other running LootNScoot instances.
+        </li>
+        <li>
+            <strong>ImGui initialized</strong> &mdash;
+            <code>mq.imgui.init('LootnScoot', ui.RenderUIs)</code> registers the UI
+            render function. From this point forward, MQ calls
+            <code>ui.RenderUIs()</code> every frame to draw the LootNScoot windows.
+        </li>
+        <li>
+            <strong>Settings saved if needed</strong> &mdash; If settings were newly
+            created, they are written to disk via <code>mq.pickle()</code>.
+        </li>
+        <li>
+            <strong>Main loop entered</strong> &mdash; <code>LNS.MainLoop()</code>
+            begins and runs until termination. See
+            <a href="architecture.html">Architecture</a> for details on the loop.
+        </li>
+    </ol>
+
+    <!-- ============================================================ -->
+    <h2>File Locations</h2>
+
+    <p>
+        LootNScoot organizes its files by server name and character name so you can play
+        on multiple servers or with multiple characters without data conflicts.
+    </p>
+
+    <div class="diagram">
+[MQ Directory]
+  |
+  +-- lua/
+  |     +-- lootnscoot/           &lt;-- Script source code
+  |           +-- init.lua
+  |           +-- modules/
+  |           |     +-- actor.lua
+  |           |     +-- db.lua
+  |           |     +-- loot_hist.lua
+  |           |     +-- performance.lua
+  |           |     +-- settings.lua
+  |           |     +-- ui.lua
+  |           +-- lib/
+  |                 +-- Logger.lua
+  |                 +-- scrolling_plot_buffer.lua
+  |                 +-- themes.lua
+  |
+  +-- config/
+  |     +-- LootNScoot/
+  |           +-- [ServerName]/
+  |                 +-- [CharName].lua       &lt;-- Per-character settings
+  |                 +-- DB_Updated.lua       &lt;-- DB update tracking
+  |
+  +-- resources/
+        +-- LootNScoot/
+              +-- [ServerName]/
+                    +-- Items.db             &lt;-- Item metadata database
+                    +-- AdvLootRules.db      &lt;-- Global + Personal loot rules
+                    +-- LootHistory.db       &lt;-- Historical loot records
+    </div>
+
+    <p>
+        The <code>[ServerName]</code> is the EQ server name with spaces replaced by
+        underscores (e.g., <code>Project_Lazarus</code>). The <code>[CharName]</code> is
+        your character's display name exactly as it appears in game.
+    </p>
+
+    <div class="note">
+        The settings file uses the <code>.lua</code> extension because it is serialized
+        with <code>mq.pickle()</code> &mdash; an MQ function that converts Lua tables
+        to/from files. The output is valid Lua source code, which means the file
+        is both human-readable (you can open it in a text editor) and directly loadable
+        by Lua's <code>dofile()</code>.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>Your First Loot</h2>
+
+    <p>
+        Here is a narrative walkthrough of what happens the first time a corpse appears near
+        your character while LootNScoot is running in standalone mode.
+    </p>
+
+    <ol>
+        <li>
+            <strong>Corpse detection</strong> &mdash; The main loop calls
+            <code>LNS.lootMobs()</code>, which uses
+            <code>mq.TLO.SpawnCount('npccorpse radius 100 zradius 50')</code> to find
+            NPC corpses within your configured <code>CorpseRadius</code> (default 100
+            units) and <code>CorpseZRadius</code> (default 50 units, the vertical range).
+        </li>
+        <li>
+            <strong>Safety checks</strong> &mdash; Before looting, the script checks:
+            Are you invisible? Are hostile mobs too close (within
+            <code>MobsTooClose</code> range, default 40)? Is your own corpse nearby?
+            Are you in a safe zone? Is looting paused? If any check fails, looting is
+            skipped this cycle.
+        </li>
+        <li>
+            <strong>Navigation</strong> &mdash; The script calls
+            <code>LNS.navToID(corpseID)</code> which uses MQ2Nav to pathfind your
+            character to the corpse. Navigation has a configurable timeout
+            (<code>NavTimeout</code>, default 5 seconds).
+        </li>
+        <li>
+            <strong>Loot window opened</strong> &mdash; Once at the corpse, the script
+            right-clicks it to open the EQ loot window. It waits up to a few seconds for
+            the window to appear.
+        </li>
+        <li>
+            <strong>Item evaluation</strong> &mdash; For each item on the corpse, the
+            script calls <code>LNS.getRule(item, 'loot')</code>. This function looks up
+            existing rules, applies your <a href="settings.html">settings</a>, and returns
+            a decision. See the
+            <a href="rule-system.html">Rule System</a> page for the full decision tree.
+        </li>
+        <li>
+            <strong>Item pickup</strong> &mdash; Based on the decision, the script either
+            loots the item (Keep, Sell, Bank, Tribute, Quest) or skips it (Ask, Ignore,
+            CanUse, Destroy). Items picked up are recorded in the loot history.
+        </li>
+        <li>
+            <strong>New item handling</strong> &mdash; If the script encounters an item it
+            has never seen before, it creates a new rule using auto-rule logic (if
+            <code>UseAutoRules</code> is enabled) and adds the item to the "New Items"
+            list. A gold coin icon appears on the toggle button to alert you.
+        </li>
+        <li>
+            <strong>Loot window closed</strong> &mdash; After processing all items, the
+            script clicks the Done button to close the loot window and moves on to the
+            next corpse (up to <code>MaxCorpsesPerCycle</code>, default 5).
+        </li>
+        <li>
+            <strong>Actor notification</strong> &mdash; Loot data is broadcast to other
+            running LootNScoot instances via the
+            <a href="multi-character.html">actor messaging system</a> so they can update
+            their history and master looter state.
+        </li>
+    </ol>
+
+    <!-- ============================================================ -->
+    <h2>Common First Steps</h2>
+
+    <h3>Setting Up Rules</h3>
+
+    <p>
+        When you first start using LootNScoot, you will not have any rules in your
+        database. The script handles this gracefully:
+    </p>
+
+    <ul>
+        <li>
+            If <code>UseAutoRules</code> is <code>true</code> (the default), the script
+            automatically assigns rules to new items based on their properties. Items with
+            a sell value get <code>Sell</code>, items with tribute value get
+            <code>Tribute</code>, equippable items get <code>Keep</code>, and No Drop
+            equippable items get <code>CanUse</code>.
+        </li>
+        <li>
+            Items that cannot be auto-ruled are set to <code>Ask</code>, which means the
+            script will skip them and add them to the New Items list for you to decide.
+        </li>
+        <li>
+            You can review and change new item rules through the UI (left-click the toggle
+            button) or the New Items window (right-click the toggle button or
+            <code>/lns shownew</code>).
+        </li>
+    </ul>
+
+    <h3>Importing Your Inventory</h3>
+
+    <p>
+        If you want to pre-populate the Items database with everything your character
+        already has, use:
+    </p>
+
+    <pre><code>/lns importinv</code></pre>
+
+    <p>
+        This scans your inventory and bank (if bank data is available) and adds every item
+        to the Items.db database. This is especially useful when starting fresh or migrating
+        to a new server, as it gives the rule system knowledge of items you already own.
+    </p>
+
+    <div class="tip">
+        Bank data may not be current unless you have recently visited your bank or zoned.
+        For the most complete import, visit your bank first and then run the import command.
+    </div>
+
+    <h3>Reviewing Settings</h3>
+
+    <p>
+        Open the main LootNScoot window (<code>/lns show</code> or left-click the toggle
+        button) and navigate to the Settings tab. Every setting has a tooltip explaining
+        what it does. Start with these key settings:
+    </p>
+
+    <ul>
+        <li><strong>CorpseRadius</strong> (default 100) &mdash; How far to search for corpses</li>
+        <li><strong>SaveBagSlots</strong> (default 3) &mdash; Stop looting when this many bag slots remain empty</li>
+        <li><strong>MinSellPrice</strong> (default -1, meaning any) &mdash; Minimum plat value to auto-loot sell items</li>
+        <li><strong>DoLoot</strong> (default true) &mdash; Master switch for automatic looting</li>
+        <li><strong>LootNoDrop</strong> (default false) &mdash; Whether to pick up NoDrop items (items that cannot be traded once looted)</li>
+    </ul>
+
+    <p>
+        For a complete list of every setting, see the
+        <a href="settings.html">Settings Reference</a>.
+    </p>
+
+    <div class="page-nav">
+        <a href="index.html">&larr; Prev: Home</a>
+        <a href="architecture.html">Next: Architecture &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

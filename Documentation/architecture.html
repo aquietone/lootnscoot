@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html" class="active">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+
+    <h1>Architecture</h1>
+
+    <p>
+        This page explains how LootNScoot is structured internally: how the files relate to
+        each other, how data flows between modules, and what the main loop does on every
+        tick. Understanding this architecture is essential before modifying or extending the
+        script.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>High-Level Overview</h2>
+
+    <p>
+        LootNScoot follows a <strong>hub-and-spoke</strong> architecture:
+    </p>
+
+    <ul>
+        <li>
+            <strong>Hub</strong> &mdash; <code>init.lua</code> is the central file. It
+            contains the entry point, the main loop, the rule evaluation engine, the
+            looting logic, and the settings I/O. It creates and owns the <code>LNS</code>
+            table (the shared state object) and passes it to every module.
+        </li>
+        <li>
+            <strong>Spokes (modules/)</strong> &mdash; Each module in the
+            <code>modules/</code> directory handles one domain: <code>actor.lua</code> for
+            messaging, <code>db.lua</code> for databases, <code>ui.lua</code> for the
+            GUI, <code>settings.lua</code> for configuration declarations,
+            <code>loot_hist.lua</code> for history, and <code>performance.lua</code>
+            for profiling.
+        </li>
+        <li>
+            <strong>Utilities (lib/)</strong> &mdash; Small helper libraries in
+            <code>lib/</code> that are used by the modules: logging, plot buffers, and
+            themes. These have no knowledge of LootNScoot's domain logic.
+        </li>
+    </ul>
+
+    <!-- ============================================================ -->
+    <h2>Module Dependency Graph</h2>
+
+    <p>
+        The following diagram shows which file <code>require()</code>s which. Arrows point
+        from the file that calls <code>require</code> to the file being required.
+    </p>
+
+    <div class="diagram">
+                              +------------------+
+                              |    init.lua      |
+                              | (entry point,    |
+                              |  hub of all      |
+                              |  logic)          |
+                              +--------+---------+
+                                       |
+              +----------+-------------+-------------+----------+
+              |          |             |             |          |
+              v          v             v             v          v
+        +---------+ +---------+ +-----------+ +----------+ +----------+
+        | modules | | modules | | modules   | | modules  | | modules  |
+        | actor   | | db      | | settings  | | ui       | | loot_hist|
+        +---------+ +---------+ +-----------+ +----------+ +----------+
+              |          |                          |          |
+              |          v                          |          |
+              |    +-----------+                    |          |
+              |    | lsqlite3  |                    |          |
+              |    | (via      |                    |          |
+              |    | PackageMan)|                   |          |
+              |    +-----------+                    |          |
+              v                                     v          v
+        +---------+                           +-----------+  +----------+
+        | MQ Actor|                           | mq.imgui  |  | lib/     |
+        | System  |                           | (ImGui)   |  | Logger   |
+        +---------+                           +-----------+  +----------+
+
+        modules/performance.lua  -- standalone, used by init.lua for timing
+        lib/scrolling_plot_buffer.lua  -- used by ui.lua for ImPlot graphs
+        lib/themes.lua  -- used by ui.lua for color theming
+    </div>
+
+    <p>
+        Notice that <code>init.lua</code> requires all the modules at the top of the file,
+        but the modules do <strong>not</strong> require <code>init.lua</code> back. Instead,
+        they receive the shared <code>LNS</code> state table through the
+        <code>SetLNS()</code> pattern described below.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>The LNS Table</h2>
+
+    <p>
+        <code>LNS</code> is a plain Lua table declared at the top of <code>init.lua</code>:
+    </p>
+
+    <pre><code>local LNS = {}</code></pre>
+
+    <p>
+        This single table is the central state object for the entire script. Almost
+        everything that needs to be shared between modules is stored here. Here are the
+        most important fields grouped by category:
+    </p>
+
+    <h3>Rule Data</h3>
+    <p>
+        These tables are in-memory caches of what is stored in the
+        <a href="database.html">SQLite database</a>. They exist for performance &mdash;
+        during looting, every item on every corpse needs a rule lookup, and querying
+        the database each time would be too slow. Instead, rules are cached in plain
+        Lua tables for instant key-based access.
+    </p>
+    <table>
+        <thead>
+            <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>GlobalItemsRules</code></td>
+                <td>table {[itemID] = ruleString}</td>
+                <td>In-memory cache of Global loot rules, keyed by item ID</td>
+            </tr>
+            <tr>
+                <td><code>GlobalItemsClasses</code></td>
+                <td>table {[itemID] = classString}</td>
+                <td>Class restrictions for global rules (e.g., "WAR CLR" or "All")</td>
+            </tr>
+            <tr>
+                <td><code>PersonalItemsRules</code></td>
+                <td>table {[itemID] = ruleString}</td>
+                <td>In-memory cache of Personal (per-character) rules</td>
+            </tr>
+            <tr>
+                <td><code>PersonalItemsClasses</code></td>
+                <td>table {[itemID] = classString}</td>
+                <td>Class restrictions for personal rules</td>
+            </tr>
+            <tr>
+                <td><code>WildCards</code></td>
+                <td>table (array of {wildcard, rule})</td>
+                <td>Pattern-based rules that match item names using glob syntax</td>
+            </tr>
+            <tr>
+                <td><code>ItemLinks</code></td>
+                <td>table {[itemID] = linkString}</td>
+                <td>Cached item links for right-click inspection in the UI</td>
+            </tr>
+            <tr>
+                <td><code>ItemNames</code></td>
+                <td>table {[itemID] = nameString}</td>
+                <td>Cached item names for display in tables</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>Runtime State</h3>
+    <table>
+        <thead>
+            <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>Mode</code></td>
+                <td>string</td>
+                <td>"once", "standalone", or "directed"</td>
+            </tr>
+            <tr>
+                <td><code>Terminate</code></td>
+                <td>boolean</td>
+                <td>When true, the main loop exits and the script shuts down</td>
+            </tr>
+            <tr>
+                <td><code>PauseLooting</code></td>
+                <td>boolean</td>
+                <td>Temporarily stops all looting without exiting</td>
+            </tr>
+            <tr>
+                <td><code>IsLooting</code></td>
+                <td>boolean</td>
+                <td>True while actively interacting with a corpse</td>
+            </tr>
+            <tr>
+                <td><code>LootNow</code></td>
+                <td>boolean</td>
+                <td>In directed mode, set to true when a loot command is received</td>
+            </tr>
+            <tr>
+                <td><code>Zone</code></td>
+                <td>string</td>
+                <td>Current zone short name, updated every loop tick</td>
+            </tr>
+            <tr>
+                <td><code>Instance</code></td>
+                <td>number</td>
+                <td>Current instance ID, used for zone change detection</td>
+            </tr>
+            <tr>
+                <td><code>SafeZones</code></td>
+                <td>table {[zoneName] = true}</td>
+                <td>Zones where looting is disabled (e.g., guild lobby)</td>
+            </tr>
+            <tr>
+                <td><code>lootedCorpses</code></td>
+                <td>table {[corpseID] = boolean}</td>
+                <td>Tracks corpses already attempted this zone (true = looted, false = empty/failed)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>UI and History State</h3>
+    <table>
+        <thead>
+            <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>ShowUI</code></td>
+                <td>boolean</td>
+                <td>Whether the main LootNScoot window is visible</td>
+            </tr>
+            <tr>
+                <td><code>showNewItem</code></td>
+                <td>boolean</td>
+                <td>Whether the new-item popup window is visible</td>
+            </tr>
+            <tr>
+                <td><code>NewItems</code></td>
+                <td>table</td>
+                <td>Items encountered without existing rules, waiting for user decision</td>
+            </tr>
+            <tr>
+                <td><code>NewItemsCount</code></td>
+                <td>number</td>
+                <td>Count of undecided items (drives the gold coin indicator)</td>
+            </tr>
+            <tr>
+                <td><code>guiLoot</code></td>
+                <td>module reference</td>
+                <td>Reference to loot_hist module for console and history features</td>
+            </tr>
+            <tr>
+                <td><code>MasterLootList</code></td>
+                <td>table or nil</td>
+                <td>When master looting, tracks items available on corpses for assignment</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2>The SetLNS Pattern</h2>
+
+    <p>
+        Since Lua's <code>require()</code> system caches modules on first load, you cannot
+        have circular dependencies. The modules need access to the <code>LNS</code> table
+        defined in <code>init.lua</code>, but they are loaded before <code>LNS</code> is
+        populated. The solution is a one-way injection pattern:
+    </p>
+
+    <pre><code>-- In init.lua, after LNS is created and populated:
+db.SetLNS(LNS)
+actors.SetLNS(LNS)
+ui.SetLNS(LNS)
+
+-- Inside each module (e.g., modules/db.lua):
+local LNS = {}
+
+function module.SetLNS(_LNS)
+    LNS = _LNS
+end</code></pre>
+
+    <p>
+        Each module declares a local <code>LNS</code> variable (initially empty) and
+        exposes a <code>SetLNS()</code> function. During initialization,
+        <code>init.lua</code> calls each module's <code>SetLNS()</code> and passes in the
+        real <code>LNS</code> table. From that point on, the module's local
+        <code>LNS</code> variable points to the same table in memory, so any changes
+        made by any module are visible to all others.
+    </p>
+
+    <div class="note">
+        This works because Lua tables are reference types. When you assign
+        <code>LNS = _LNS</code>, both variables point to the <strong>same</strong> table
+        object. There is no copying involved.
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>Initialization Flow</h2>
+
+    <p>
+        Here is the complete startup sequence as a diagram. Each box represents a function
+        call or significant step.
+    </p>
+
+    <div class="diagram">
+  init.lua loaded by MQ Lua runtime
+            |
+            v
+  require() all modules and libs
+  (actor, db, settings, ui, loot_hist, perf, Logger)
+            |
+            v
+  Check MQ2Nav loaded ----NO---&gt; print error, mq.exit()
+            |
+           YES
+            v
+  Create LNS = {} table
+  Set LNS.MyClass, LNS.MyRace, LNS.Mode = 'once'
+  Initialize guiLoot (loot_hist module)
+            |
+            v
+  ui.SetLNS(LNS)
+  guiLoot.init()
+            |
+            v
+  LNS.init(args) called:
+    |
+    +--&gt; db.SetLNS(LNS)
+    +--&gt; loadSettings(true) --&gt; reads/creates [config]/CharName.lua
+    +--&gt; db.PrepareStatements()
+    +--&gt; mapfilter CastRadius set to CorpseRadius
+    +--&gt; SortSettings(), SortTables()
+    +--&gt; actors.SetLNS(LNS), actors.RegisterActors()
+    +--&gt; CheckBags()
+    +--&gt; setupEvents()
+    +--&gt; setupBinds()      --&gt; registers /lns, /lootutils, /looted
+    +--&gt; zoneID = mq.TLO.Zone.ID()
+    +--&gt; processArgs(args) --&gt; sets LNS.Mode, may do one-shot loot
+    +--&gt; actors.SendMySettings()
+    +--&gt; mq.imgui.init('LootnScoot', ui.RenderUIs)
+    +--&gt; guiLoot.GetSettings()
+    +--&gt; writeSettings() if needed
+    +--&gt; directed mode: send settings to director
+            |
+            v
+  LNS.MainLoop() entered
+            |
+            v
+  (loop runs until LNS.Terminate == true)
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>Main Loop</h2>
+
+    <p>
+        <code>LNS.MainLoop()</code> is a <code>while not LNS.Terminate do</code> loop that
+        runs continuously. Each iteration (called a "tick") performs the following checks
+        and actions in order. The loop ends with a <code>mq.delay(10)</code> call &mdash;
+        an MQ function that pauses script execution for approximately 10 milliseconds,
+        yielding control back to MQ so it can process other tasks (rendering, other
+        scripts, game events) before the next tick.
+    </p>
+
+    <div class="diagram">
+  MainLoop tick:
+  +----------------------------------------------------------+
+  |  1. Update Zone and Instance                             |
+  |     LNS.Zone = mq.TLO.Zone.ShortName()                  |
+  |     LNS.Instance = mq.TLO.Me.Instance()                 |
+  |                                                          |
+  |  2. Game State Check                                     |
+  |     if GameState != "INGAME" --&gt; Terminate               |
+  |                                                          |
+  |  3. Director Check (directed mode only)                  |
+  |     if director script stopped --&gt; Terminate             |
+  |                                                          |
+  |  4. Zone Change Detection                                |
+  |     if zone changed: clear corpse list, reset state,     |
+  |     notify director, clear master loot list              |
+  |                                                          |
+  |  5. Safe Zone Check                                      |
+  |     if in safe zone: warn once, skip looting             |
+  |                                                          |
+  |  6. Process TempSettings Flags (pre-loot)                |
+  |     DoImport, RemoveSafeZone, RemoveMLItem,              |
+  |     RemoveMLCorpse, ItemsToLoot, SendLoot,               |
+  |     SendRemoveItem, AddWildCard, DeleteWildCard,         |
+  |     NeedReloadWildCards                                   |
+  |                                                          |
+  |  7. Loot Mobs (if DoLoot and not directed)               |
+  |     or Loot Now (if directed and LootNow == true)        |
+  |     Respects LootCheckDelay timing                       |
+  |                                                          |
+  |  8. Process Items State Machine                          |
+  |     doSell --&gt; processItems('Sell')                      |
+  |     doBuy  --&gt; processItems('Buy')                       |
+  |     doTribute --&gt; processItems('Tribute')                |
+  |     doBulkSet --&gt; db.BulkSet()                           |
+  |                                                          |
+  |  9. History Updates                                      |
+  |     Sync guiLoot report and console visibility           |
+  |     Load historical data if requested                    |
+  |                                                          |
+  | 10. Process Events                                       |
+  |     mq.doevents()                                        |
+  |                                                          |
+  | 11. Settings Sync                                        |
+  |     UpdateSettings, SendSettings                         |
+  |     LookUpDateData, FindItemHistory                      |
+  |                                                          |
+  | 12. Settings Save (if NeedSave flag is set)              |
+  |     Update BuyItems, pickle settings, reload,            |
+  |     notify actors, re-sort tables                        |
+  |                                                          |
+  | 13. Item Lookups                                         |
+  |     Process GetItems queue, search requests              |
+  |                                                          |
+  | 14. New Items Counter                                    |
+  |     Reset showNewItem if count reaches zero              |
+  |                                                          |
+  | 15. Cleanup (if NeedsCleanup and not casting)            |
+  |     processItems('Destroy')                              |
+  |                                                          |
+  | 16. mq.delay(10) -- yield to MQ                          |
+  +----------------------------------------------------------+
+    </div>
+
+    <p>
+        This order matters. Zone changes are detected early so the rest of the tick operates
+        on the correct zone data. TempSettings flags are processed before looting so that
+        UI actions (like adding a wildcard) take effect immediately. Settings saves happen
+        near the end so that all changes from the current tick are captured. For details
+        on the looting steps (7), see the <a href="looting-engine.html">Looting Engine</a>
+        page. For the rule evaluation used during looting, see the
+        <a href="rule-system.html">Rule System</a>.
+    </p>
+
+    <!-- ============================================================ -->
+    <h2>The TempSettings Pattern</h2>
+
+    <p>
+        One of the most important architectural patterns in LootNScoot is the
+        <strong>TempSettings</strong> table. This is the primary mechanism for communication
+        between the <a href="ui.html">UI module</a> and the main loop.
+    </p>
+
+    <p>
+        The challenge: <strong>ImGui</strong> (the immediate-mode GUI library &mdash; see
+        the <a href="index.html">Home</a> page) rendering happens on a separate callback
+        (<code>ui.RenderUIs()</code> is called by MQ every frame), while the main loop runs
+        in <code>LNS.MainLoop()</code>. These two cannot directly call each other's
+        functions safely &mdash; if a button click triggered a slow database import inside
+        the render callback, the entire UI would freeze. Instead, they communicate through
+        shared boolean flags in <code>settings.TempSettings</code>, and the main loop
+        performs the actual work on the next tick.
+    </p>
+
+    <h3>How It Works</h3>
+
+    <ol>
+        <li>
+            <strong>UI sets a flag</strong> &mdash; When the user clicks "Save" in the UI,
+            the render function sets <code>settings.TempSettings.NeedSave = true</code>.
+        </li>
+        <li>
+            <strong>Main loop reads the flag</strong> &mdash; On the next tick, the main
+            loop checks <code>if settings.TempSettings.NeedSave then</code> and performs
+            the actual save operation.
+        </li>
+        <li>
+            <strong>Main loop clears the flag</strong> &mdash; After completing the
+            operation, the main loop sets
+            <code>settings.TempSettings.NeedSave = false</code>.
+        </li>
+    </ol>
+
+    <p>Here are the most commonly used TempSettings flags:</p>
+
+    <table>
+        <thead>
+            <tr><th>Flag</th><th>Set By</th><th>Read By</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>NeedSave</code></td>
+                <td>UI, actors</td>
+                <td>MainLoop</td>
+                <td>Write settings to disk, reload, notify actors</td>
+            </tr>
+            <tr>
+                <td><code>UpdateSettings</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Pickle settings and reload them</td>
+            </tr>
+            <tr>
+                <td><code>SendSettings</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Broadcast settings to other characters via actors</td>
+            </tr>
+            <tr>
+                <td><code>DoImport</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Import an old rules database file</td>
+            </tr>
+            <tr>
+                <td><code>AddWildCard</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Add a new wildcard pattern rule</td>
+            </tr>
+            <tr>
+                <td><code>DeleteWildCard</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Remove a wildcard pattern rule</td>
+            </tr>
+            <tr>
+                <td><code>NeedReloadWildCards</code></td>
+                <td>UI, db</td>
+                <td>MainLoop</td>
+                <td>Reload wildcard rules from the database into memory</td>
+            </tr>
+            <tr>
+                <td><code>doBulkSet</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Apply a rule to multiple items at once</td>
+            </tr>
+            <tr>
+                <td><code>NeedsCleanup</code></td>
+                <td>UI, binds</td>
+                <td>MainLoop</td>
+                <td>Destroy items marked for destruction</td>
+            </tr>
+            <tr>
+                <td><code>LookUpItem</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Search the Items.db for an item by name</td>
+            </tr>
+            <tr>
+                <td><code>LookUpDateData</code></td>
+                <td>UI</td>
+                <td>MainLoop</td>
+                <td>Load historical loot data for a specific date</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="note">
+        <strong>Why not call functions directly?</strong> In an immediate-mode GUI, the
+        render function is called every frame (potentially 60+ times per second) by the
+        host application (MQ). If the render function triggered a lengthy operation like
+        a database import, it would block rendering and freeze the UI. By setting a flag
+        and letting the main loop handle it, the work happens at the appropriate time
+        in the script's execution cycle, and the UI remains responsive.
+    </div>
+
+    <p>
+        The TempSettings table also carries data payloads alongside flags. For example,
+        when adding a wildcard, the UI sets three values:
+    </p>
+
+    <pre><code>settings.TempSettings.AddWildCard = true
+settings.TempSettings.NewWildCard = "Spell:*"
+settings.TempSettings.NewWildCardRule = "Keep"</code></pre>
+
+    <p>
+        The main loop reads all three, performs the database operation, and then clears
+        them:
+    </p>
+
+    <pre><code>if settings.TempSettings.AddWildCard then
+    if settings.TempSettings.NewWildCard ~= '' then
+        db.AddWildCard(settings.TempSettings.NewWildCard,
+                       settings.TempSettings.NewWildCardRule)
+        settings.TempSettings.NewWildCard = ''
+        settings.TempSettings.NewWildCardRule = 'Ask'
+    end
+    settings.TempSettings.AddWildCard = false
+end</code></pre>
+
+    <p>
+        This pattern appears dozens of times throughout the main loop. Recognizing it is
+        the key to understanding how user actions in the GUI translate into actual
+        operations in the script.
+    </p>
+
+    <div class="page-nav">
+        <a href="getting-started.html">&larr; Prev: Getting Started</a>
+        <a href="rule-system.html">Next: Rule System &rarr;</a>
+    </div>
+</main>
+</body>
+</html>

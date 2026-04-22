@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings Reference - LootNScoot Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+    <h2><a href="index.html" style="color: inherit; text-decoration: none;">LootNScoot Docs</a></h2>
+    <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="getting-started.html">Getting Started</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="rule-system.html">Rule System</a></li>
+        <li><a href="looting-engine.html">Looting Engine</a></li>
+        <li><a href="database.html">Database Layer</a></li>
+        <li><a href="settings.html" class="active">Settings Reference</a></li>
+        <li><a href="commands.html">CLI Commands</a></li>
+        <li><a href="ui.html">User Interface</a></li>
+        <li><a href="multi-character.html">Multi-Character</a></li>
+        <li><a href="extending.html">Modifying the Code</a></li>
+    </ul>
+</nav>
+<main class="content">
+    <h1>Settings Reference</h1>
+
+    <h2>Overview</h2>
+    <p>
+        LootNScoot stores per-character settings as a Lua table serialized to disk using
+        <code>mq.pickle()</code>. <code>mq.pickle()</code> is a MacroQuest (MQ) function that
+        converts a Lua table into a human-readable text file and writes it to disk. The output
+        is valid Lua code, so you can open the file in a text editor and read it directly.
+        This is why it is preferred over binary formats &mdash; easy to inspect and manually edit
+        if needed. The settings file path follows the MQ convention:
+    </p>
+    <pre><code>config/LootNScoot/[ServerName]/[CharName].lua</code></pre>
+    <p>
+        When the script starts, it loads settings from this file. If the file does not exist,
+        default values from <code>modules/settings.lua</code> are used and a new file is created.
+        Settings are saved automatically when changed through the <a href="ui.html">UI</a> or
+        <a href="commands.html">CLI commands</a>, calling <code>LNS.writeSettings()</code> which
+        serializes the table back to disk with <code>mq.pickle()</code>.
+    </p>
+    <p>
+        The settings module is defined in <code>modules/settings.lua</code> and accessed throughout
+        the codebase as <code>settings.Settings.&lt;SettingName&gt;</code>.
+    </p>
+
+    <h2>Settings by Category</h2>
+
+    <h3>Looting Behavior</h3>
+    <p>These settings control what gets looted and how the looting process works.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>DoLoot</td><td>bool</td><td>true</td><td>Enable automatic looting in standalone mode. When false, the script runs but does not loot corpses.</td></tr>
+            <tr><td>LootForage</td><td>bool</td><td>true</td><td>Enable looting of foraged items (items your character picks up from the ground using the Forage skill).</td></tr>
+            <tr><td>LootNoDrop</td><td>bool</td><td>false</td><td>Enable looting of <strong>NoDrop</strong> items. NoDrop is an EverQuest item flag meaning the item cannot be traded to other players once picked up &mdash; it is permanently bound to the character who loots it.</td></tr>
+            <tr><td>LootNoDropNew</td><td>bool</td><td>false</td><td>Enable looting of NoDrop items that have no existing rule. Both LootNoDropNew and LootNoDrop must be enabled for new NoDrop items to be added to the database.</td></tr>
+            <tr><td>LootQuest</td><td>bool</td><td>true</td><td>Enable looting of items marked with a "Quest" rule. NoDrop quest items also require LootNoDrop to be on.</td></tr>
+            <tr><td>LootMyCorpse</td><td>bool</td><td>false</td><td>Loot your own character's corpse if it is nearby. Does not check for pending resurrections.</td></tr>
+            <tr><td>LootAugments</td><td>bool</td><td>false</td><td>Loot augmentation items. Overrides global rules for augments; personal rules still take priority.</td></tr>
+            <tr><td>KeepSpells</td><td>bool</td><td>true</td><td>Keep spell scrolls regardless of global rule. Personal rules will override this setting.</td></tr>
+            <tr><td>CanWear</td><td>bool</td><td>false</td><td>Only loot NoDrop new items that your character's class can use. This controls whether NoDrop items are <em>looted</em> (picked up from the corpse into inventory), not whether they are equipped. The EQ game client may auto-equip looted items into empty equipment slots.</td></tr>
+            <tr><td>CheckCorpseOnce</td><td>bool</td><td>true</td><td>Only check each corpse once. If enabled, previously looted corpses are skipped on subsequent scans.</td></tr>
+            <tr><td>StackableOnly</td><td>bool</td><td>false</td><td>Only loot stackable items (items that can stack in a single inventory slot).</td></tr>
+            <tr><td>CombatLooting</td><td>bool</td><td>false</td><td>Allow looting while in combat. Not recommended for the main tank.</td></tr>
+            <tr><td>MaxCorpsesPerCycle</td><td>number</td><td>5</td><td>Maximum number of corpses to process per lootMobs() call. Controls throughput vs. time spent looting.</td></tr>
+            <tr><td>LootCheckDelay</td><td>number</td><td>0</td><td>Seconds to wait between loot checks. Also applied to locked corpses before rechecking them.</td></tr>
+            <tr><td>NavTimeout</td><td>number</td><td>5</td><td>Maximum seconds to spend navigating to a corpse before giving up.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Radius and Range</h3>
+    <p>These settings define the distances (in game units) used for corpse scanning.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>CorpseRadius</td><td>number</td><td>100</td><td>Horizontal radius to scan for lootable corpses.</td></tr>
+            <tr><td>CorpseZRadius</td><td>number</td><td>50</td><td>Vertical (Z-axis) radius to scan for corpses. Prevents looting corpses on different floors.</td></tr>
+            <tr><td>MobsTooClose</td><td>number</td><td>40</td><td>If hostile NPCs are within this range (plus CorpseRadius), looting is skipped unless CombatLooting is on.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Inventory</h3>
+    <p>Settings that control bag and inventory management.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>SaveBagSlots</td><td>number</td><td>3</td><td>Number of bag slots to keep empty at all times. Looting stops when free slots drop to this number.</td></tr>
+            <tr><td>IgnoreBagSlot</td><td>number</td><td>0</td><td>Skip this bag slot number (1-10) when buying, selling, tributing, and destroying items. 0 means no slot is ignored.</td></tr>
+            <tr><td>BankTradeskills</td><td>bool</td><td>false</td><td>Automatically treat tradeskill flagged items as "Bank" when processing inventory for banking.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Sell and Tribute</h3>
+    <p>Settings controlling the sell, tribute, and vendor interaction behavior.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>MinSellPrice</td><td>number</td><td>-1</td><td>Minimum vendor sell price (in platinum) to keep an item. -1 means accept any price.</td></tr>
+            <tr><td>StackPlatValue</td><td>number</td><td>0</td><td>Minimum total sell value for a full stack of a stackable item.</td></tr>
+            <tr><td>MinTributeValue</td><td>number</td><td>100</td><td>Minimum tribute point value to keep an item when TributeKeep is enabled.</td></tr>
+            <tr><td>TributeKeep</td><td>bool</td><td>false</td><td>Keep items that meet the MinTributeValue threshold for tributing.</td></tr>
+            <tr><td>AddNewSales</td><td>bool</td><td>true</td><td>Automatically tag items as "Sell" if you manually sell them while the script is running.</td></tr>
+            <tr><td>AddNewTributes</td><td>bool</td><td>true</td><td>Automatically tag items as "Tribute" if you manually tribute them while the script is running.</td></tr>
+            <tr><td>AutoTag</td><td>bool</td><td>false</td><td>Automatically mark items for sale if they meet the MinSellPrice threshold.</td></tr>
+            <tr><td>AutoRestock</td><td>bool</td><td>true</td><td>Automatically restock items from the BuyItemsTable after selling at a vendor.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Destroy</h3>
+    <p>Settings for the destroy (permanently delete) functionality.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>DoDestroy</td><td>bool</td><td>false</td><td>Enable destroy functionality. When false, items marked "Destroy" are treated as "Ignore" instead. This is a safety setting.</td></tr>
+            <tr><td>AlwaysDestroy</td><td>bool</td><td>false</td><td>Destroy all non-quest items marked "Ignore" to clean corpses. Requires DoDestroy to also be true.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Quest</h3>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>QuestKeep</td><td>number</td><td>10</td><td>Default quantity to keep for quest items when no specific count is set (i.e., when rule is "Quest" instead of "Quest|N").</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Rule Evaluation</h3>
+    <p>Settings that affect how the <a href="rule-system.html">rule system</a> evaluates items.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>GlobalLootOn</td><td>bool</td><td>true</td><td>Enable global rules. If disabled, only personal rules are evaluated.</td></tr>
+            <tr><td>AlwaysEval</td><td>bool</td><td>false</td><td>Re-evaluate all non-quest global item rules. Useful after changing MinSellPrice to update existing rules.</td></tr>
+            <tr><td>UseAutoRules</td><td>bool</td><td>true</td><td>Let LootNScoot automatically decide loot rules for new (previously unseen) items.</td></tr>
+            <tr><td>AlwaysAsk</td><td>bool</td><td>false</td><td>Treat all items as "Ask" regardless of their rule. Useful for reviewing what would be looted without actually looting.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Reporting</h3>
+    <p>Settings that control what information is reported and where.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>ReportLoot</td><td>bool</td><td>true</td><td>Report looted items to the configured channel.</td></tr>
+            <tr><td>ReportSkippedItems</td><td>bool</td><td>false</td><td>Report items that were skipped (Ignore/Ask) to the configured channel.</td></tr>
+            <tr><td>SpamLootInfo</td><td>bool</td><td>false</td><td>Echo verbose loot information to the MQ console.</td></tr>
+            <tr><td>LootForageSpam</td><td>bool</td><td>false</td><td>Echo foraged item processing to the MQ console.</td></tr>
+            <tr><td>LootChannel</td><td>string</td><td>"dgt"</td><td>Channel to report loot to. "dgt" is DanNet group tell. Can also use EQ chat channels.</td></tr>
+            <tr><td>GroupChannel</td><td>string</td><td>"dgze"</td><td>Channel for group commands. "dgze" is DanNet group zone execute. Default for multi-character coordination.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>UI</h3>
+    <p>Settings controlling the user interface display.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>HideNames</td><td>bool</td><td>false</td><td>Hide character names in the looted items window, showing class short names instead.</td></tr>
+            <tr><td>RecordData</td><td>bool</td><td>true</td><td>Enable recording loot data for the report feature.</td></tr>
+            <tr><td>AutoShowNewItem</td><td>bool</td><td>false</td><td>Automatically show the new item dialog when an unrecognized item is encountered.</td></tr>
+            <tr><td>ShowInfoMessages</td><td>bool</td><td>true</td><td>Show or hide [INFO] level messages in the loot console window.</td></tr>
+            <tr><td>ShowConsole</td><td>bool</td><td>false</td><td>Show or hide the loot console window on startup.</td></tr>
+            <tr><td>ShowReport</td><td>bool</td><td>false</td><td>Print the loot report to the console and toggle the report table window.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>Multi-Character</h3>
+    <p>Settings for multi-boxing and multi-character coordination.</p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>MasterLooting</td><td>bool</td><td>false</td><td>Enable Master Looter mode. You will be prompted for who should receive items marked as Sell, Keep, or Tribute.</td></tr>
+            <tr><td>IgnoreMyNearCorpses</td><td>bool</td><td>false</td><td>Ignore your own nearby corpses and proceed to loot NPC corpses. Useful on servers where you respawn with all gear.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>History</h3>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Type</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>TrackHistory</td><td>bool</td><td>true</td><td>Enable inserting loot results into the <a href="database.html">LootHistory.db</a> history table.</td></tr>
+        </tbody>
+    </table>
+
+    <h2>SettingsEnum</h2>
+    <p>
+        The <code>SettingsEnum</code> table maps lowercase CLI-friendly names to their proper-case
+        counterparts used internally. This exists because Lua is case-sensitive:
+        <code>DoLoot</code> and <code>doloot</code> are different keys. Since users typing
+        <a href="commands.html">CLI commands</a> should not need to remember exact casing,
+        <code>SettingsEnum</code> bridges the gap. For example, <code>/lns set doloot false</code>
+        maps to <code>settings.Settings.DoLoot = false</code>.
+    </p>
+    <table>
+        <thead>
+            <tr><th>CLI Name (lowercase)</th><th>Internal Name</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>doloot</td><td>DoLoot</td></tr>
+            <tr><td>lootforage</td><td>LootForage</td></tr>
+            <tr><td>lootnodrop</td><td>LootNoDrop</td></tr>
+            <tr><td>lootnodropnew</td><td>LootNoDropNew</td></tr>
+            <tr><td>lootquest</td><td>LootQuest</td></tr>
+            <tr><td>lootmycorpse</td><td>LootMyCorpse</td></tr>
+            <tr><td>lootaugments</td><td>LootAugments</td></tr>
+            <tr><td>keepspells</td><td>KeepSpells</td></tr>
+            <tr><td>canwear</td><td>CanWear</td></tr>
+            <tr><td>checkcorpseonce</td><td>CheckCorpseOnce</td></tr>
+            <tr><td>stackableonly</td><td>StackableOnly</td></tr>
+            <tr><td>combatlooting</td><td>CombatLooting</td></tr>
+            <tr><td>maxcorpsespercycle</td><td>MaxCorpsesPerCycle</td></tr>
+            <tr><td>lootcheckdelay</td><td>LootCheckDelay</td></tr>
+            <tr><td>NavTimeout</td><td>NavTimeout</td></tr>
+            <tr><td>corpseradius</td><td>CorpseRadius</td></tr>
+            <tr><td>corpseZradius</td><td>CorpseZRadius</td></tr>
+            <tr><td>mobstooclose</td><td>MobsTooClose</td></tr>
+            <tr><td>savebagslots</td><td>SaveBagSlots</td></tr>
+            <tr><td>ignorebagslot</td><td>IgnoreBagSlot</td></tr>
+            <tr><td>banktradeskills</td><td>BankTradeskills</td></tr>
+            <tr><td>minsellprice</td><td>MinSellPrice</td></tr>
+            <tr><td>stackplatvalue</td><td>StackPlatValue</td></tr>
+            <tr><td>mintributevalue</td><td>MinTributeValue</td></tr>
+            <tr><td>tributekeep</td><td>TributeKeep</td></tr>
+            <tr><td>addnewsales</td><td>AddNewSales</td></tr>
+            <tr><td>addnewtributes</td><td>AddNewTributes</td></tr>
+            <tr><td>autotag</td><td>AutoTag</td></tr>
+            <tr><td>autorestock</td><td>AutoRestock</td></tr>
+            <tr><td>dodestroy</td><td>DoDestroy</td></tr>
+            <tr><td>alwaysdestroy</td><td>AlwaysDestroy</td></tr>
+            <tr><td>questkeep</td><td>QuestKeep</td></tr>
+            <tr><td>globallooton</td><td>GlobalLootOn</td></tr>
+            <tr><td>alwayseval</td><td>AlwaysEval</td></tr>
+            <tr><td>useautorules</td><td>UseAutoRules</td></tr>
+            <tr><td>reportloot</td><td>ReportLoot</td></tr>
+            <tr><td>reportskippeditems</td><td>ReportSkippedItems</td></tr>
+            <tr><td>spamlootinfo</td><td>SpamLootInfo</td></tr>
+            <tr><td>lootforagespam</td><td>LootForageSpam</td></tr>
+            <tr><td>lootchannel</td><td>LootChannel</td></tr>
+            <tr><td>groupchannel</td><td>GroupChannel</td></tr>
+            <tr><td>hidenames</td><td>HideNames</td></tr>
+            <tr><td>recorddata</td><td>RecordData</td></tr>
+            <tr><td>autoshownewitem</td><td>AutoShowNewItem</td></tr>
+            <tr><td>showinfomessages</td><td>ShowInfoMessages</td></tr>
+            <tr><td>showconsole</td><td>ShowConsole</td></tr>
+            <tr><td>showreport</td><td>ShowReport</td></tr>
+            <tr><td>masterlooting</td><td>MasterLooting</td></tr>
+            <tr><td>ignoremynearcorpses</td><td>IgnoreMyNearCorpses</td></tr>
+            <tr><td>trackhistory</td><td>TrackHistory</td></tr>
+            <tr><td>processingeval</td><td>ProcessingEval</td></tr>
+        </tbody>
+    </table>
+
+    <h2>SettingsNoDraw</h2>
+    <p>
+        Some settings are hidden from the UI to avoid confusion or because they are managed
+        internally. The <code>SettingsNoDraw</code> table lists settings that should not appear
+        in the settings editor:
+    </p>
+    <table>
+        <thead>
+            <tr><th>Setting</th><th>Hidden Value</th><th>Reason</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Version</td><td>true</td><td>Read-only version string</td></tr>
+            <tr><td>logger</td><td>true</td><td>Internal logger reference</td></tr>
+            <tr><td>LootFile</td><td>true</td><td>Internal file path</td></tr>
+            <tr><td>SettingsFile</td><td>true</td><td>Internal file path</td></tr>
+            <tr><td>NoDropDefaults</td><td>true</td><td>Internal lookup table</td></tr>
+            <tr><td>CorpseRotTime</td><td>true</td><td>Internal timing value</td></tr>
+            <tr><td>Terminate</td><td>true</td><td>Script termination flag</td></tr>
+            <tr><td>BuyItemsTable</td><td>true</td><td>Managed through dedicated Buy UI, not a simple toggle</td></tr>
+            <tr><td>ShowReport</td><td>true</td><td>Toggled via command, not settings editor</td></tr>
+            <tr><td>ShowConsole</td><td>true</td><td>Toggled via command, not settings editor</td></tr>
+            <tr><td>LookupLinks</td><td>true</td><td>Internal lookup table</td></tr>
+            <tr><td>MasterLooting</td><td>false (drawn)</td><td>Explicitly marked as visible despite being in the table</td></tr>
+        </tbody>
+    </table>
+
+    <h2>TempSettings</h2>
+    <p>
+        <code>TempSettings</code> is a table of runtime-only volatile state that is <strong>never
+        saved to disk</strong>. It is reset every time the script starts. This separation from
+        <code>Settings</code> is intentional: <code>Settings</code> holds persistent configuration
+        that survives restarts (saved via <code>mq.pickle()</code>), while <code>TempSettings</code>
+        holds transient UI state, inter-frame communication flags, and temporary data that only
+        makes sense during the current session. Mixing them would clutter the settings file with
+        values that are meaningless on reload.
+    </p>
+    <table>
+        <thead>
+            <tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Edit</td><td>table</td><td>Tracks items currently being edited in the UI</td></tr>
+            <tr><td>ImportDBFileName</td><td>string</td><td>Filename for the import dialog</td></tr>
+            <tr><td>ImportDBFilePath</td><td>string</td><td>Full path for database import</td></tr>
+            <tr><td>ItemsToLoot</td><td>table</td><td>Queue of items assigned to this character by Master Looter</td></tr>
+            <tr><td>UpdatedBuyItems</td><td>table</td><td>Buy items pending save</td></tr>
+            <tr><td>DeletedBuyKeys</td><td>table</td><td>Buy items pending deletion</td></tr>
+            <tr><td>RemoveMLItemInfo</td><td>table</td><td>Master Loot items to remove</td></tr>
+            <tr><td>RemoveMLCorpseInfo</td><td>table</td><td>Master Loot corpses to remove</td></tr>
+            <tr><td>SortedSettingsKeys</td><td>table</td><td>Cached sorted keys for settings display</td></tr>
+            <tr><td>SortedToggleKeys</td><td>table</td><td>Cached sorted keys for toggle display</td></tr>
+            <tr><td>ModifyItemMatches</td><td>table/nil</td><td>Search results for item modification</td></tr>
+            <tr><td>ShowHelp</td><td>bool</td><td>Whether the help window is open</td></tr>
+            <tr><td>ShowImportDB</td><td>bool</td><td>Whether the import dialog is open</td></tr>
+            <tr><td>UpdateSettings</td><td>bool</td><td>Flag indicating settings need to be pushed to UI</td></tr>
+            <tr><td>SendSettings</td><td>bool</td><td>Flag indicating settings should be sent to other characters</td></tr>
+            <tr><td>LastModID</td><td>number</td><td>ID of the last modified item</td></tr>
+            <tr><td>LastZone</td><td>string/nil</td><td>Previous zone for zone-change detection</td></tr>
+            <tr><td>LastInstance</td><td>string/nil</td><td>Previous instance for instance-change detection</td></tr>
+            <tr><td>SafeZoneWarned</td><td>bool</td><td>Whether the safe zone warning has been shown this zone</td></tr>
+            <tr><td>Popped</td><td>table</td><td>Tracks popup notifications already shown</td></tr>
+            <tr><td>NewItemData</td><td>table</td><td>Cached data for newly encountered items</td></tr>
+            <tr><td>GetItems</td><td>table</td><td>Items requested from other characters</td></tr>
+            <tr><td>NewBuyItem</td><td>string</td><td>Text input buffer for adding new buy items</td></tr>
+        </tbody>
+    </table>
+
+    <h2 id="BuyItemsTable">BuyItemsTable</h2>
+    <p>
+        The <code>BuyItemsTable</code> is stored inside the settings and persisted to disk. It is
+        a simple Lua table mapping item names to desired quantities:
+    </p>
+    <pre><code>{
+    ["Bone Chips"] = 100,
+    ["Bat Wing"] = 20,
+    ["Fish Rolls"] = 40,
+}</code></pre>
+    <p>
+        Items in this table are automatically purchased from vendors after selling (when
+        <code>AutoRestock</code> is true) or on demand via <code>/lns restock</code>.
+        See the <a href="commands.html">CLI Commands</a> page for how to manage buy items.
+    </p>
+    <p>
+        To add via CLI: <code>/lns buy "Bone Chips" 100</code><br>
+        To add with item on cursor: <code>/lns buy</code> (adds 1) or <code>/lns buy 100</code> (adds 100)
+    </p>
+
+    <div class="tip">
+        <strong>Tip:</strong> Use <code>/lns config</code> to print all current setting values to
+        the MQ console. This is the quickest way to verify your configuration without opening the UI.
+    </div>
+
+    <div class="page-nav">
+        <a href="database.html">&larr; Prev: Database Layer</a>
+        <a href="commands.html">Next: CLI Commands &rarr;</a>
+    </div>
+</main>
+</body>
+</html>
