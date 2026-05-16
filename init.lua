@@ -2886,6 +2886,9 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         return
     end
 
+    -- clear cursor items before looting item
+    LNS.checkCursor()
+
     -- Check to see if we are allowed to loot this item
     if shouldLootActions[actionToTake] then
         if mq.TLO.Window('ConfirmationDialogBox').Open() then
@@ -2921,6 +2924,10 @@ function LNS.lootItem(mq_item, index, doWhat, button, qKeep, cantWear)
         Logger.Debug(LNS.guiLoot.console, string.format("eval = %s", eval))
         if actionLower == 'destroy' then
             mq.delay(10000, function() return mq.TLO.Cursor.ID() == cItemID end)
+            if mq.TLO.Cursor.ID() ~= cItemID then
+                Logger.Warn(LNS.guiLoot.console, "lootItem(): Cursor item does not match, can not destroy: %s", itemName)
+                return
+            end
             eval = isGlobalItem == true and 'Global Destroy' or 'Destroy'
             eval = isPersonalItem == true and 'Personal Destroy' or eval
             Logger.Debug(LNS.guiLoot.console, string.format("Destroying (\ay%s\ax) Eval (\ao%s\ax)", itemName, eval))
